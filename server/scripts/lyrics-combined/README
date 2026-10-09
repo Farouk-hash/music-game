@@ -1,0 +1,82 @@
+# lyrics-combined
+
+Runs both lyrics sources and produces a single `lyrics-final.json` with
+the best available lyrics for each track.
+
+## Sources
+
+| Source | Producer | Output |
+|---|---|---|
+| lyrics.nu | `scripts/lyrics-scrapping/` | `lyrics-scrapping/lyrics-bodies.json` |
+| matb3aa | `scripts/matb3aa-lyrics/` | `matb3aa-lyrics/lyrics-bodies.json` |
+
+## Winner rules
+
+1. **matb3aa placeholders discarded** — any matb3aa entry with `charCount < 100` is dropped.
+2. **lyrics.nu kept whole** — no length filter on lyrics.nu entries.
+3. **Only one source has lyrics** → that source wins.
+4. **Both have lyrics** → **longest wins**. On tie, matb3aa wins.
+5. **Neither has lyrics** → track recorded as `no-lyrics`.
+
+## Run
+
+From `E:\matb3aa-game\server`:
+
+node scripts/lyrics-combined/index.js
+
+text
+
+One artist only:
+node scripts/lyrics-combined/index.js --artist=65
+
+text
+
+Skip stages (useful if you've already fetched one source):
+node scripts/lyrics-combined/index.js --skip-matb3aa
+node scripts/lyrics-combined/index.js --skip-lyricsnu
+
+
+
+## Flags
+
+| Flag | Effect |
+|---|---|
+| `--artist=N` | Filter to one artist across all stages |
+| `--fresh` | Re-fetch everything (ignore cached JSON) |
+| `--skip-matb3aa` | Skip the matb3aa stage (use existing `matb3aa-lyrics/lyrics-bodies.json`) |
+| `--skip-lyricsnu` | Skip the lyrics.nu stage (use existing `lyrics-scrapping/lyrics-bodies.json`) |
+
+## Output
+
+`lyrics-final.json`:
+
+```json
+{
+  "generatedAt": "...",
+  "summary": {
+    "tracksTotal": 10307,
+    "fromLyricsNuOnly": ...,
+    "fromMatb3aaOnly": ...,
+    "fromBothLongest": ...,
+    "fromBothTieMatb3aa": ...,
+    "discardedMatb3aaPlaceholder": ...,
+    "noLyrics": ...,
+    "coverage": 88.1
+  },
+  "tracks": [
+    {
+      "artistId": 65,
+      "artistName": "تامر حسني",
+      "trackName": "اغنية بغير عليها",
+      "lyrics": "...",
+      "source": "lyrics-nu",
+      "sourceDetail": "matb3aa-placeholder-lyrics-nu-wins",
+      "bytes": 945,
+      "charCount": 535,
+      "lineCount": 22,
+      "matb3aaId": 2353,
+      "songUrl": "https://lyrics.nu/kalimat-aghani/.../",
+      "isSynced": false
+    }
+  ]
+}

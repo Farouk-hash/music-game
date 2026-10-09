@@ -1,0 +1,342 @@
+Here's the handoff prompt. Save it as `E:\matb3aa-game\handoff-lyrics-pipeline-v1.md` and paste it as the first message of your next session.
+
+---
+
+You are continuing a working project. **Do not re-derive the setup or re-verify anything below.** Everything here is confirmed working unless explicitly marked broken. Read it in full before proposing anything.
+
+## The Project
+
+Two consumers of one Cloudflare Worker, plus a data pipeline that feeds them:
+
+1. **`admin/`** — build tool for curating audio clips and lyrics. Port 5173.
+2. **`game/`** — the player-facing quiz app. Port 5174.
+3. **`server/`** — local Express + orchestration. Port 3001.
+4. **`music-game-wrangler/`** — Cloudflare Worker holding D1 + R2.
+
+```
+matb3aa.com ─┐
+mp3quran.net ─┼─→ Express (admin + pipeline, 3001) ──→ Worker ──→ D1 + R2
+local files ─┘                                          ↑
+                                                        │
+                                          game/ (5174) ─┘ direct
+```
+
+The game does **not** go through Express. It fetches the Worker directly, proxied through Vite in dev.
+
+## Architecture
+
+| Piece | Location | Port | Notes |
+|---|---|---|---|
+| Express server | `server/` | 3001 | FFmpeg orchestration, catalogue proxies, publish pipeline, **lyrics pipeline job runner** |
+| Admin app | `admin/` | 5173 | React + Vite + TanStack Query. Dark violet theme. Cairo font. |
+| Game app | `game/` | 5174 | React + Vite + TanStack Query. Warm dark theme (copper accent). |
+| Worker | `music-game-wrangler/` | Cloudflare | Shared backend. D1 (`music-game-db`) + R2 (`music-game-audio`). |
+
+**Worker base URL:** `https://music-game-wrangler.abdulrahman-muhammad2090.workers.dev`
+
+## D1 Schema
+
+```sql
+CREATE TABLE genres (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  display_name TEXT NOT NULL,
+  image TEXT,
+  is_customized INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE artists (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  genre_ids TEXT NOT NULL DEFAULT '[]',
+  image TEXT,
+  tracks_count INTEGER NOT NULL DEFAULT 0,
+  is_customized INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE tracks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  artist_id INTEGER,
+  r2_key TEXT,
+  r2_reversed_key TEXT,
+  position TEXT,             -- start | middle | end | custom
+  label TEXT,
+  album_name TEXT,
+  featured_artists TEXT
+);
+CREATE UNIQUE INDEX idx_tracks_unique_clip ON tracks(artist_id, name, position);
+
+-- NEW this session
+CREATE TABLE lyrics (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  artist_id     INTEGER NOT NULL,
+  track_name    TEXT    NOT NULL,
+  lyrics        TEXT,
+  created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX idx_lyrics_unique ON lyrics(artist_id, track_name);
+CREATE INDEX idx_lyrics_artist ON lyrics(artist_id);
+```
+
+**Key semantics:**
+- One `tracks` row = one slot = `(artist_id, name, position)`. Both forward and reversed renditions live on the same row.
+- One `lyrics` row = one song = `(artist_id, track_name)`. Multiple `tracks` rows with the same `(artist_id, name)` share one `lyrics` row.
+- `artists.tracks_count` — should be `COUNT(DISTINCT t.name)` per artist. Backfill SQL was provided.
+
+## What Was Built This Session
+
+### 1. Lyrics pipeline (CLI + server-triggered)
+
+**Folder structure:**
+
+```
+server/scripts/
+├── matb3aa-lyrics/          (matb3aa source — CLI, standalone)
+│   ├── search-tracks.js
+│   ├── fetch-lyrics.js
+│   └── index.js
+├── lyrics-scrapping/        (lyrics.nu source — CLI, standalone)
+│   ├── match-lyrics-nu.js
+│   ├── fetch-lyrics-bodies.js
+│   └── index.js
+├── lyrics-combined/         (comparison — CLI)
+│   ├── compare-sources.js
+│   └── index.js
+└── pipeline/
+    └── run.js               ← NEW: orchestrator, self-contained
+```
+
+**`pipeline/run.js`** is the one file that matters going forward. It:
+- Imports nothing from sibling folders — all logic duplicated inline
+- Dumps D1 via `wrangler` subprocess (`shell: true` on Windows)
+- Runs matb3aa search + fetch, then lyrics.nu match + fetch, then compares
+- Bulk upserts to Worker `/lyrics/bulk` in batches of 200
+- Emits JSON progress lines to stdout for the Express parent to parse
+- Non-JSON lines become log entries
+
+**Usage:**
+
+```
+node server/scripts/pipeline/run.js --artist=65
+node server/scripts/pipeline/run.js --artists=65,9,42
+node server/scripts/pipeline/run.js --missing-only
+```
+
+**Progress line shape:**
+
+```json
+{"stage":"matb3aa-search","done":25,"total":275}
+{"stage":"done","status":"done","summary":{...}}
+```
+
+### 2. Lyrics source facts (confirmed this session)
+
+**matb3aa** — first-choice source, same site the audio pipeline uses:
+
+```
+GET https://www.matb3aa.com/api/v1/search?query={name}&loader=searchPage
+Headers: User-Agent (browser), Referer: https://www.matb3aa.com/, Origin: https://www.matb3aa.com
+→ { results: { tracks: { data: [{ id, name, artists: [{id}], album: {...}, duration }] } } }
+
+GET https://www.matb3aa.com/api/v1/tracks/{id}/lyrics?duration=0
+→ { is_synced: false, lines: [{ text }], status: "success" }
+```
+
+Match rule: `result.name === track.name` AND `result.artists[].id` includes `track.artist_id`.
+- 98.2% match rate observed on artist 65 (270 / 275)
+- Fetches succeed for ~71% of matched IDs; the rest return `{"message": "تعذر إحضار..."}` = "no lyrics available" (not an error)
+- **`fetch-failed` label is wrong** for those 29% — it should be `no-lyrics-available`. Low priority to fix.
+
+**lyrics.nu** — fallback source:
+
+```
+/singer/{singer-slug}/page/{N}/  → song list (60 per page)
+/kalimat-aghani/{song-slug}/{singer-slug}/  → HTML with <section class="w3-container w3-margin-bottom">LYRICS</section>
+```
+
+- Slug resolution via `/singers-names-that-start-with/{letter}/`
+- Arabic normalization + Levenshtein matching
+- ~79% match rate on artist 65 (216 / 275)
+- `fetch-failed` and `no-lyrics-section` are real miss reasons
+
+### 3. Compare rules (in `run.js`)
+
+- **Discard** matb3aa entries with `charCount < 100` (they're placeholders like `"كلمات اغنية X - Y"`)
+- **Keep** all lyrics.nu entries
+- **Only one source has lyrics** → that one wins
+- **Both have lyrics** → **longest wins**; tie goes to matb3aa
+- **Neither** → track skipped
+
+### 4. Pipeline jobs API (Express)
+
+```
+POST /api/pipeline/jobs
+  body: { scope: 'artist', artistId: 65 }
+       | { scope: 'artists', artistIds: [65,9,42] }
+       | { scope: 'missing-only' }
+  → { job: { id, status: 'starting', ... } }
+
+GET /api/pipeline/jobs/:id
+  → { job: { id, status, stage, progress: {done,total}, summary, log, error } }
+
+POST /api/pipeline/jobs/:id/cancel
+  → { ok: true, job }
+
+GET /api/pipeline/jobs
+  → { jobs: [...] }
+```
+
+- In-memory registry (`server/lib/job-registry.js`). Not persisted — jobs vanish on server restart.
+- Child spawned via `server/routes/pipeline-routes.js`. Parses JSON lines from stdout, updates job record.
+- `SIGKILL` on cancel. Partial D1 writes persist; re-run is idempotent (upsert on `(artist_id, track_name)`).
+
+### 5. Worker `/lyrics` routes
+
+```
+GET    /lyrics                    list w/ filters (artist_id, search, has_lyrics, limit, offset)
+GET    /lyrics/stats              total/withLyrics/withoutLyrics + perArtist[]
+GET    /lyrics/by-track           ?artist_id=&track_name=
+GET    /lyrics/:id
+POST   /lyrics                    { artist_id, track_name, lyrics }
+POST   /lyrics/bulk               { items: [...] } — max 200 per request
+PUT    /lyrics/:id                { lyrics }
+DELETE /lyrics/:id
+```
+
+**All read queries LEFT JOIN artists** so responses include `artist_name`. Search matches track_name OR artist name.
+
+**Critical routing gotcha:** the Worker's route matcher uses **named capture groups** (`(?<id>\d+)`), NOT positional `(\d+)`. Positional groups silently fail — the handler receives `{}` and `id` is `undefined`. Every parameterized route must use `(?<id>\d+)` and read `p.id` from the third arg.
+
+### 6. Express proxy
+
+`server/routes/cloud-flare-routes/lyrics.js` — mirrors the Worker routes.
+
+### 7. Admin — `/published/lyrics`
+
+**Hooks:**
+- `useLyrics.js` — `useLyrics(filters)`, `useLyricsById`, `useLyricsByTrack`, `useLyricsStats`
+- `useLyricsMutations.js` — `edit`, `editAsync`, `remove`, `removeAsync`, `create`, `createAsync`, `bulkInsert`, `bulkInsertAsync` + flags
+- `usePipelineJob.js` — polls `/pipeline/jobs/:id` every 2s, stops on terminal state
+- `useStartPipeline.js` — `start`, `cancel` + flags
+- `useCloudflareArtists.js` — lives at `admin/src/hooks/useCloudflareArtists.js` (NOT in `cloud-flare/`). Returns `{ artists, count, ids, byId, loading, error }` — flat, not `{ data }`.
+
+**Components:**
+- `LyricsCard.jsx` — one row: track name, `Has lyrics` / `No lyrics` badge, char count, Preview/Edit/Delete
+- `LyricsArtistSection.jsx` — collapsible per-artist section, header shows coverage counts
+- `LyricsEditModal.jsx` — textarea edit; **must be keyed by `editing.id ?? editing.track_name`** in parent to reset state per row (no `useEffect` + `setState`)
+- `LyricsPreviewModal.jsx` — read-only preview with `dir="auto"`
+- `BulkInsertLyricsModal.jsx` — paste or upload JSON. **Normalizes camelCase → snake_case** (`artistId` → `artist_id`, `trackName` → `track_name`). Accepts either array or `{ tracks: [...] }` shape.
+- `FetchLyricsBar.jsx` — scope selector (one artist / multiple / missing-only) + Fetch button
+- `PipelineJobPanel.jsx` — stage label, progress bar, elapsed timer, summary, cancel. **Must be mounted near the top of the page**, not after the list.
+- `PublishedLyrics.jsx` — the page. `useCloudflareArtists()` for the fetch dropdown (full artist list); `stats.perArtist` only for the *filter* dropdown (scoped to artists with lyrics).
+
+**Elapsed timer gotcha:** `Date.now()` in render body triggers React 19's `Cannot call impure function during render`. Use a `useElapsedSeconds(startedAt, active)` hook with `setInterval` — see `PipelineJobPanel.jsx`.
+
+**React rules-of-hooks gotcha:** `PipelineJobPanel` must not have `if (!job) return null` before `useElapsedSeconds`. Either remove the early return (parent guards it) or put the hook above it.
+
+### 8. Admin conventions confirmed
+
+- `api.get(path)` takes **one arg** — no query object. Build query strings manually.
+- `api.post/put(path, body)`, `api.delete(path)`
+- `cloudflare.get/post/put/delete` on the Express side takes `(path, body?)`
+- Modal shell: `<Modal>` (raw) or `<ModalForm>` (with footer + submit handling)
+- `useMutation` flags: `isPending`, `variables`, `error`, `reset`
+- Token classes: `bg-surface`, `bg-surface-subtle`, `bg-surface-muted`, `border-surface-border`, `text-ink`, `text-ink-muted`, `text-ink-subtle`, `text-brand-500`, `text-brand-400`, `bg-brand-500/10`, `text-warning`, `text-danger`, `text-emerald-400`
+
+## Confirmed results
+
+- **Artist 65 (`--artist=65`)**: 275 in scope, 270 matb3aa matched, 216 lyrics.nu matched, **242 with lyrics**, 242 inserted, 0 errors, ~4 min
+- **Full catalogue state**: 7,338 lyrics rows in D1 before the artist-65 test (from an earlier bulk insert), now ~7,100 after clearing artist 65 for a test
+- **matb3aa coverage**: ~71% of matched tracks actually have lyrics; the rest return a "no lyrics" message that gets mislabeled as `fetch-failed`
+
+## Known open items
+
+1. **`fetch-failed` mislabeling in matb3aa stage** — the "no lyrics" response is being recorded as a failure. Doesn't affect final output (the row is just skipped), but the log counts are inflated. Fix is small: detect `{ message: "تعذر..." }` and label as `no-lyrics-available`.
+
+2. **`artists.tracks_count` backfill** — the count currently over-counts (one per position instead of one per name). SQL provided:
+   ```sql
+   UPDATE artists
+   SET tracks_count = (
+     SELECT COUNT(DISTINCT t.name) FROM tracks t
+     WHERE t.artist_id = artists.id AND t.r2_key IS NOT NULL
+   );
+   ```
+   Not yet run. Verify with a preview query first.
+
+3. **`PublishedLyrics.jsx` panel positioning** — `PipelineJobPanel` currently renders at the bottom of the page. Should be moved directly below `FetchLyricsBar` for visibility during long jobs.
+
+4. **`PipelineJobPanel` pre-emit state** — before the child emits its first line, the panel shows only "Starting…". Optional polish: pulsing dot indicator.
+
+5. **`FetchLyricsBar` dropdown** — after moving to `useCloudflareArtists`, the artist list is complete (163 artists). Coverage counts inline are optional polish.
+
+6. **`/game/catalog` uses `tracks_count > 0`** — after the backfill, artists with only duplicate-named tracks will still be counted correctly. Verify game doesn't break after backfill.
+
+7. **Game levels** — three play modes are built (`/play`, `/play-two`, `/play-three`) with deficit-based question type distribution. Not touched this session.
+
+8. **Admin bulk publish (from previous sessions)** — the "select multiple artists → publish clips" feature has two known issues not touched this session:
+   - `ArtistCard.jsx` has duplicated click handlers on the checkbox wrapper
+   - Scaling to 3000+ clips needs `BATCH_SIZE = 10`, retry with backoff, "retry failed" button, and 30-minute timeouts on Node + Vite proxy
+
+## Environment
+
+- **Windows.** `cmd` for wrangler, PowerShell for scripts.
+- Node 18+ (uses global `fetch`).
+- Express server at `E:\matb3aa-game\server\` uses ESM (`"type": "module"`).
+- D1 dump commands use `npx wrangler d1 execute music-game-db --remote --json --command="..."` with `> file.json` redirect.
+- **`spawn('npx.cmd', [...])` fails with `EINVAL` on Windows.** Use `spawn(fullCommandString, [], { shell: true })`.
+
+## Commands
+
+```cmd
+:: Dev (server + admin)
+cd E:\matb3aa-game
+npm run dev
+
+:: Individual
+npm run dev:server
+npm run dev:admin
+
+:: Worker
+cd E:\matb3aa-game\music-game-wrangler
+npx wrangler deploy
+npx wrangler tail
+
+:: D1
+npx wrangler d1 execute music-game-db --remote --command="SELECT ..."
+
+:: Pipeline (standalone)
+cd E:\matb3aa-game\server
+node scripts\pipeline\run.js --artist=65
+node scripts\pipeline\run.js --missing-only
+```
+
+## Style the user prefers
+
+- **Complete files, not fragments.** They paste whole files.
+- **Tables** to explain changes.
+- **One clear next step.**
+- **Note what to test** and what to paste back.
+- **Concise.** Experienced with React/Node.
+- **Recommend explicitly** when there are tradeoffs.
+- The user pauses and asks design questions before coding — respect that rhythm.
+
+## Most likely next tasks
+
+1. **Run the `tracks_count` backfill** and verify
+2. **Fix the `fetch-failed` label** in matb3aa stage
+3. **Move `PipelineJobPanel` to the top** of `PublishedLyrics.jsx`
+4. **Wire lyrics into the game** — a question type that uses lyrics (fill-in-blank, name-the-track-from-a-lyric, etc.)
+5. **Run `--missing-only` for the full catalogue** once the pipeline is trusted
+6. **Resume the admin bulk-publish feature** (item 8 above)
+
+Ask what the user wants to do next.
+
+---
+
+## END OF PROMPT
+
+Save this as `E:\matb3aa-game\handoff-lyrics-pipeline-v1.md`. Paste it as the first message of your next session. It's self-contained.

@@ -1,0 +1,676 @@
+[
+  {
+    "results": [
+      {
+        "artist_id": 295,
+        "artist_name": "ابو الانوار"
+      },
+      {
+        "artist_id": 262,
+        "artist_name": "ابيوسف"
+      },
+      {
+        "artist_id": 281,
+        "artist_name": "احلام"
+      },
+      {
+        "artist_id": 19,
+        "artist_name": "احمد جمال"
+      },
+      {
+        "artist_id": 473,
+        "artist_name": "احمد حلمي"
+      },
+      {
+        "artist_id": 341,
+        "artist_name": "احمد سانتا"
+      },
+      {
+        "artist_id": 64,
+        "artist_name": "احمد سعد"
+      },
+      {
+        "artist_id": 1,
+        "artist_name": "احمد شيبة"
+      },
+      {
+        "artist_id": 184,
+        "artist_name": "احمد عدوية"
+      },
+      {
+        "artist_id": 7,
+        "artist_name": "احمد فيلو"
+      },
+      {
+        "artist_id": 144,
+        "artist_name": "احمد كامل"
+      },
+      {
+        "artist_id": 142,
+        "artist_name": "احمد مكي"
+      },
+      {
+        "artist_id": 104,
+        "artist_name": "ادهم سليمان"
+      },
+      {
+        "artist_id": 229,
+        "artist_name": "ادهم نابلسي"
+      },
+      {
+        "artist_id": 574,
+        "artist_name": "اسلام كابونجا"
+      },
+      {
+        "artist_id": 74,
+        "artist_name": "اصالة نصري"
+      },
+      {
+        "artist_id": 427,
+        "artist_name": "الاخرس"
+      },
+      {
+        "artist_id": 43,
+        "artist_name": "الجوكر"
+      },
+      {
+        "artist_id": 630,
+        "artist_name": "الحاجة نبيلة"
+      },
+      {
+        "artist_id": 564,
+        "artist_name": "الشامي"
+      },
+      {
+        "artist_id": 27,
+        "artist_name": "المدفعجية"
+      },
+      {
+        "artist_id": 688,
+        "artist_name": "الوايلي"
+      },
+      {
+        "artist_id": 28,
+        "artist_name": "اليسا"
+      },
+      {
+        "artist_id": 80,
+        "artist_name": "امال ماهر"
+      },
+      {
+        "artist_id": 458,
+        "artist_name": "امير عيد"
+      },
+      {
+        "artist_id": 599,
+        "artist_name": "اميرة اديب"
+      },
+      {
+        "artist_id": 103,
+        "artist_name": "امينة"
+      },
+      {
+        "artist_id": 96,
+        "artist_name": "انغام"
+      },
+      {
+        "artist_id": 317,
+        "artist_name": "اورتيجا"
+      },
+      {
+        "artist_id": 316,
+        "artist_name": "اوكا"
+      },
+      {
+        "artist_id": 6,
+        "artist_name": "اوكا و اورتيجا"
+      },
+      {
+        "artist_id": 32,
+        "artist_name": "ايهاب توفيق"
+      },
+      {
+        "artist_id": 302,
+        "artist_name": "باتيستوتا"
+      },
+      {
+        "artist_id": 234,
+        "artist_name": "بلاك تيما"
+      },
+      {
+        "artist_id": 130,
+        "artist_name": "بهاء سلطان"
+      },
+      {
+        "artist_id": 24,
+        "artist_name": "بوسي"
+      },
+      {
+        "artist_id": 65,
+        "artist_name": "تامر حسني"
+      },
+      {
+        "artist_id": 85,
+        "artist_name": "تامر عاشور"
+      },
+      {
+        "artist_id": 441,
+        "artist_name": "تميم يونس"
+      },
+      {
+        "artist_id": 643,
+        "artist_name": "توليتا"
+      },
+      {
+        "artist_id": 603,
+        "artist_name": "تومي"
+      },
+      {
+        "artist_id": 589,
+        "artist_name": "تووليت"
+      },
+      {
+        "artist_id": 124,
+        "artist_name": "جورج وسوف"
+      },
+      {
+        "artist_id": 343,
+        "artist_name": "حجازي متقال"
+      },
+      {
+        "artist_id": 413,
+        "artist_name": "حسن ابو الروس"
+      },
+      {
+        "artist_id": 351,
+        "artist_name": "حسن الاسمر"
+      },
+      {
+        "artist_id": 23,
+        "artist_name": "حسن شاكوش"
+      },
+      {
+        "artist_id": 119,
+        "artist_name": "حسين الجسمي"
+      },
+      {
+        "artist_id": 4,
+        "artist_name": "حكيم"
+      },
+      {
+        "artist_id": 56,
+        "artist_name": "حمادة هلال"
+      },
+      {
+        "artist_id": 44,
+        "artist_name": "حمزة نمرة"
+      },
+      {
+        "artist_id": 662,
+        "artist_name": "حمو المرشدي"
+      },
+      {
+        "artist_id": 84,
+        "artist_name": "حمو بيكا"
+      },
+      {
+        "artist_id": 331,
+        "artist_name": "حميد الشاعرى"
+      },
+      {
+        "artist_id": 337,
+        "artist_name": "حودة بندق"
+      },
+      {
+        "artist_id": 513,
+        "artist_name": "خفاش"
+      },
+      {
+        "artist_id": 571,
+        "artist_name": "دافن شي"
+      },
+      {
+        "artist_id": 233,
+        "artist_name": "داليدا"
+      },
+      {
+        "artist_id": 86,
+        "artist_name": "دنيا سمير غانم"
+      },
+      {
+        "artist_id": 463,
+        "artist_name": "دنيا وائل"
+      },
+      {
+        "artist_id": 171,
+        "artist_name": "دياب"
+      },
+      {
+        "artist_id": 59,
+        "artist_name": "دينا الوديدي"
+      },
+      {
+        "artist_id": 349,
+        "artist_name": "رابح صقر"
+      },
+      {
+        "artist_id": 551,
+        "artist_name": "راشد الماجد"
+      },
+      {
+        "artist_id": 191,
+        "artist_name": "راغب علامة"
+      },
+      {
+        "artist_id": 66,
+        "artist_name": "رامي جمال"
+      },
+      {
+        "artist_id": 18,
+        "artist_name": "رامي صبري"
+      },
+      {
+        "artist_id": 145,
+        "artist_name": "رامي عصام"
+      },
+      {
+        "artist_id": 242,
+        "artist_name": "رامي عياش"
+      },
+      {
+        "artist_id": 592,
+        "artist_name": "رحمه محسن"
+      },
+      {
+        "artist_id": 45,
+        "artist_name": "رضا البحراوي"
+      },
+      {
+        "artist_id": 253,
+        "artist_name": "زاب ثروت"
+      },
+      {
+        "artist_id": 644,
+        "artist_name": "زاد | Zad"
+      },
+      {
+        "artist_id": 520,
+        "artist_name": "زياد ظاظا"
+      },
+      {
+        "artist_id": 16,
+        "artist_name": "سادات"
+      },
+      {
+        "artist_id": 87,
+        "artist_name": "سامو زين"
+      },
+      {
+        "artist_id": 5,
+        "artist_name": "سعد الصغير"
+      },
+      {
+        "artist_id": 25,
+        "artist_name": "سعد لمجرد"
+      },
+      {
+        "artist_id": 534,
+        "artist_name": "سمر طارق"
+      },
+      {
+        "artist_id": 282,
+        "artist_name": "سمسم شهاب"
+      },
+      {
+        "artist_id": 11,
+        "artist_name": "سميرة سعيد"
+      },
+      {
+        "artist_id": 608,
+        "artist_name": "سيد النقشبندي"
+      },
+      {
+        "artist_id": 22,
+        "artist_name": "شارموفرز"
+      },
+      {
+        "artist_id": 266,
+        "artist_name": "شاهين"
+      },
+      {
+        "artist_id": 141,
+        "artist_name": "شحته كاريكا"
+      },
+      {
+        "artist_id": 263,
+        "artist_name": "شذى"
+      },
+      {
+        "artist_id": 651,
+        "artist_name": "شعبان عبد الرحيم"
+      },
+      {
+        "artist_id": 433,
+        "artist_name": "شفيقة"
+      },
+      {
+        "artist_id": 405,
+        "artist_name": "شهاب"
+      },
+      {
+        "artist_id": 236,
+        "artist_name": "شواحه"
+      },
+      {
+        "artist_id": 10,
+        "artist_name": "شيرين عبد الوهاب"
+      },
+      {
+        "artist_id": 79,
+        "artist_name": "صابر الرباعي"
+      },
+      {
+        "artist_id": 29,
+        "artist_name": "طارق الشيخ"
+      },
+      {
+        "artist_id": 305,
+        "artist_name": "عاصي الحلاني"
+      },
+      {
+        "artist_id": 398,
+        "artist_name": "عامر منيب"
+      },
+      {
+        "artist_id": 250,
+        "artist_name": "عايدة الايوبي"
+      },
+      {
+        "artist_id": 3,
+        "artist_name": "عبد الباسط حموده"
+      },
+      {
+        "artist_id": 273,
+        "artist_name": "عبد الفتاح جريني"
+      },
+      {
+        "artist_id": 366,
+        "artist_name": "عبد المجيد عبد الله"
+      },
+      {
+        "artist_id": 498,
+        "artist_name": "عزيز مرقة"
+      },
+      {
+        "artist_id": 260,
+        "artist_name": "عصام صاصا"
+      },
+      {
+        "artist_id": 308,
+        "artist_name": "عفروتو"
+      },
+      {
+        "artist_id": 230,
+        "artist_name": "على الحجار"
+      },
+      {
+        "artist_id": 239,
+        "artist_name": "عمر كمال"
+      },
+      {
+        "artist_id": 482,
+        "artist_name": "عمرو جابر"
+      },
+      {
+        "artist_id": 9,
+        "artist_name": "عمرو دياب"
+      },
+      {
+        "artist_id": 168,
+        "artist_name": "عمرو مصطفي"
+      },
+      {
+        "artist_id": 261,
+        "artist_name": "عنبه"
+      },
+      {
+        "artist_id": 583,
+        "artist_name": "فارس سكر"
+      },
+      {
+        "artist_id": 209,
+        "artist_name": "فضل شاكر"
+      },
+      {
+        "artist_id": 509,
+        "artist_name": "فليكس"
+      },
+      {
+        "artist_id": 73,
+        "artist_name": "كاظم الساهر"
+      },
+      {
+        "artist_id": 91,
+        "artist_name": "كايروكي"
+      },
+      {
+        "artist_id": 533,
+        "artist_name": "كريم اسامة"
+      },
+      {
+        "artist_id": 269,
+        "artist_name": "كزبرة"
+      },
+      {
+        "artist_id": 83,
+        "artist_name": "لؤي"
+      },
+      {
+        "artist_id": 598,
+        "artist_name": "للا فضة"
+      },
+      {
+        "artist_id": 386,
+        "artist_name": "ليجي سي"
+      },
+      {
+        "artist_id": 522,
+        "artist_name": "لينا شاماميان"
+      },
+      {
+        "artist_id": 108,
+        "artist_name": "ماهر زين"
+      },
+      {
+        "artist_id": 67,
+        "artist_name": "محمد حماقي"
+      },
+      {
+        "artist_id": 350,
+        "artist_name": "محمد رشدي"
+      },
+      {
+        "artist_id": 163,
+        "artist_name": "محمد رمضان"
+      },
+      {
+        "artist_id": 391,
+        "artist_name": "محمد سعد"
+      },
+      {
+        "artist_id": 294,
+        "artist_name": "محمد سعيد"
+      },
+      {
+        "artist_id": 81,
+        "artist_name": "محمد عبده"
+      },
+      {
+        "artist_id": 149,
+        "artist_name": "محمد فؤاد"
+      },
+      {
+        "artist_id": 381,
+        "artist_name": "محمد فوزي"
+      },
+      {
+        "artist_id": 743,
+        "artist_name": "محمد كيلاني"
+      },
+      {
+        "artist_id": 290,
+        "artist_name": "محمد محي"
+      },
+      {
+        "artist_id": 35,
+        "artist_name": "محمد منير"
+      },
+      {
+        "artist_id": 457,
+        "artist_name": "محمد هنيدي"
+      },
+      {
+        "artist_id": 541,
+        "artist_name": "محمود التهامي"
+      },
+      {
+        "artist_id": 347,
+        "artist_name": "محمود الحسيني"
+      },
+      {
+        "artist_id": 107,
+        "artist_name": "محمود العسيلي"
+      },
+      {
+        "artist_id": 2,
+        "artist_name": "محمود الليثي"
+      },
+      {
+        "artist_id": 345,
+        "artist_name": "محمود معتمد"
+      },
+      {
+        "artist_id": 167,
+        "artist_name": "مدحت صالح"
+      },
+      {
+        "artist_id": 264,
+        "artist_name": "مروان بابلو"
+      },
+      {
+        "artist_id": 293,
+        "artist_name": "مروان موسي"
+      },
+      {
+        "artist_id": 60,
+        "artist_name": "مسار إجباري"
+      },
+      {
+        "artist_id": 770,
+        "artist_name": "مستر كردي"
+      },
+      {
+        "artist_id": 322,
+        "artist_name": "مسلم"
+      },
+      {
+        "artist_id": 37,
+        "artist_name": "مصطفي حجاج"
+      },
+      {
+        "artist_id": 258,
+        "artist_name": "مصطفي قمر"
+      },
+      {
+        "artist_id": 304,
+        "artist_name": "مصطفي كامل"
+      },
+      {
+        "artist_id": 438,
+        "artist_name": "موسي سام"
+      },
+      {
+        "artist_id": 303,
+        "artist_name": "مولوتوف"
+      },
+      {
+        "artist_id": 535,
+        "artist_name": "موند - Mond"
+      },
+      {
+        "artist_id": 580,
+        "artist_name": "ميادة الحناوي"
+      },
+      {
+        "artist_id": 88,
+        "artist_name": "نانسي عجرم"
+      },
+      {
+        "artist_id": 225,
+        "artist_name": "نبيل شعيل"
+      },
+      {
+        "artist_id": 546,
+        "artist_name": "نيكول سابا"
+      },
+      {
+        "artist_id": 62,
+        "artist_name": "هانى شاكر"
+      },
+      {
+        "artist_id": 173,
+        "artist_name": "هاني عادل"
+      },
+      {
+        "artist_id": 121,
+        "artist_name": "هدى"
+      },
+      {
+        "artist_id": 78,
+        "artist_name": "هشام عباس"
+      },
+      {
+        "artist_id": 201,
+        "artist_name": "هيفاء وهبي"
+      },
+      {
+        "artist_id": 165,
+        "artist_name": "وائل جسار"
+      },
+      {
+        "artist_id": 186,
+        "artist_name": "وائل كفوري"
+      },
+      {
+        "artist_id": 49,
+        "artist_name": "واما | Wama"
+      },
+      {
+        "artist_id": 219,
+        "artist_name": "وليد توفيق"
+      },
+      {
+        "artist_id": 251,
+        "artist_name": "ويجز"
+      }
+    ],
+    "success": true,
+    "meta": {
+      "served_by": "v3-prod",
+      "served_by_region": "WEUR",
+      "served_by_colo": "MRS",
+      "served_by_primary": true,
+      "timings": {
+        "sql_duration_ms": 1.4237
+      },
+      "duration": 1.4237,
+      "changes": 0,
+      "last_row_id": 0,
+      "changed_db": false,
+      "size_after": 2568192,
+      "rows_read": 175,
+      "rows_written": 0,
+      "total_attempts": 1
+    }
+  }
+]

@@ -1,0 +1,543 @@
+Here's the v28 handoff. Save as `E:\matb3aa-game\handoff-v28.md`.
+
+---
+
+```
+You are continuing a working project. **Do not re-derive the setup or re-verify anything below.** Everything here is confirmed working unless explicitly marked broken. Read it in full before proposing anything.
+
+## The Project
+
+Two consumers of one Cloudflare Worker, plus a data pipeline that feeds them:
+
+1. **`admin/`** — build tool for curating audio clips, lyrics, artists, album years. Port 5173.
+2. **`game/`** — the player-facing quiz app. Port 5174 locally; also deployed to Cloudflare Pages.
+3. **`server/`** — local Express + orchestration. Port 3001.
+4. **`music-game-wrangler/`** — Cloudflare Worker holding D1 + R2.
+
+```
+matb3aa.com ─┐
+mp3quran.net ─┼─→ Express (admin + pipeline, 3001) ──→ Worker ──→ D1 + R2
+albumaty.com ─┤                                           ↑
+local files ──┘                                           │
+                    Local dev (5174) ─┐                   │
+                                      ├───────────────────┘
+                    Pages (pages.dev) ─┘
+```
+
+The game does **not** go through Express. It fetches the Worker directly.
+
+## Architecture
+
+| Piece | Location | URL |
+|---|---|---|
+| Express server | `server/` | `http://localhost:3001` |
+| Admin app | `admin/` | `http://localhost:5173` |
+| Game (local dev) | `game/` | `http://localhost:5174` |
+| Game (deployed) | Cloudflare Pages | `https://music-game-9vn.pages.dev` |
+| Worker | `music-game-wrangler/` | `https://music-game-wrangler.abdulrahman-muhammad2090.workers.dev` |
+
+**Backend shared:** both game clients hit the same Worker + D1 + R2.
+
+## Deployment (Cloudflare Pages)
+
+**Live testing URL:** `https://music-game-9vn.pages.dev`
+
+**How it works:**
+- `game/src/lib/api.js` reads `import.meta.env.VITE_API_BASE ?? '/api/game'`. Exposes only `api.get(path)` and `api.post(path, body)` — **no options object, no AbortController**.
+- `game/.env.production` — `VITE_API_BASE=https://music-game-wrangler.abdulrahman-muhammad2090.workers.dev/game`.
+- `game/public/_redirects` — `/* /index.html 200` for SPA fallback.
+- Worker `CORS_HEADERS` uses `Access-Control-Allow-Origin: '*'`.
+
+**Redeploy:**
+```cmd
+cd E:\matb3aa-game\game
+npm run build
+npx wrangler pages deploy dist --project-name=music-game --branch=production
+```
+
+**Deploy the Worker:**
+```cmd
+cd E:\matb3aa-game\music-game-wrangler
+npx wrangler deploy
+```
+**Must be run from `music-game-wrangler/`, not `game/`.**
+
+**Custom domain:** adding one later requires **zero code changes**.
+
+## Styling system — Tailwind + CSS variables
+
+**This is critical to understand before styling any new component.**
+
+- `game/src/styles/tokens.css` — the ONE file with hex values. Warm dark theme, copper accent (`--accent: #c98a5a`), Cairo font, LTR.
+- `game/tailwind.config.js` — maps every utility class to a CSS variable. **No hex in this file.**
+
+**Tokens → Tailwind classes (all work):**
+
+| Utility | Maps to |
+|---|---|
+| `bg-bg`, `bg-surface`, `bg-surface-2` | `--bg`, `--surface`, `--surface-2` |
+| `border-border` | `--border` |
+| `text-ink`, `text-ink-muted`, `text-ink-subtle` | `--ink`, `--ink-muted`, `--ink-subtle` |
+| `bg-accent`, `text-accent`, `border-accent`, `bg-accent-soft` | `--accent`, `--accent-2`, `--accent-soft` |
+| `text-correct`, `bg-correct-soft`, `border-correct` | `--correct`, `--correct-soft` |
+| `text-wrong`, `bg-wrong-soft`, `border-wrong` | `--wrong`, `--wrong-soft` |
+| `text-highlight` | `--highlight` |
+| `bg-brand-500` | **DOES NOT EXIST.** Use `bg-accent` + `text-bg` instead. |
+
+**Opacity modifiers (`/40`, `/10`, etc.) DO NOT WORK** on these classes. The tokens are defined as hex strings (`--correct: #7f9463`), and Tailwind's `/40` modifier requires an RGB triplet (`rgb(var(--x) / <alpha-value>)`). **Use full-opacity colors.** If opacity is ever needed, change `tokens.css` to expose `--correct-rgb` and update `tailwind.config.js` — that's a project-wide refactor, not worth it right now.
+
+**UI primitives:**
+- `game/src/components/ui/Button.jsx` — `<Button variant="primary|secondary|ghost|danger" size="sm|md|lg">`. Primary is `bg-accent text-bg`.
+- `game/src/components/layout/BorderContainer.jsx` — card wrapper. `<BorderContainer border="all" padding="md|lg">`.
+- `game/src/components/ui/SegmentedProgress.jsx` — accepts `segments={[{ fill, tier }]}` where `tier` is `'correct' | 'wrong' | 'neutral'`.
+- `game/src/lib/icons.jsx` — named exports `IconXxx`. Includes `IconEye` and `IconEyeOff` (added v28).
+
+## D1 Schema
+
+```sql
+CREATE TABLE genres (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  display_name TEXT NOT NULL,
+  image TEXT,
+  is_customized INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE artists (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  genre_ids TEXT NOT NULL DEFAULT '[]',
+  image TEXT,
+  tracks_count INTEGER NOT NULL DEFAULT 0,
+  is_customized INTEGER NOT NULL DEFAULT 0,
+  source TEXT NOT NULL DEFAULT 'matb3aa',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_artists_source ON artists(source);
+
+CREATE TABLE tracks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  artist_id INTEGER,
+  r2_key TEXT,
+  r2_reversed_key TEXT,
+  position TEXT,
+  label TEXT,
+  album_name TEXT,
+  featured_artists TEXT
+);
+CREATE UNIQUE INDEX idx_tracks_unique_clip ON tracks(artist_id, name, position);
+
+CREATE TABLE lyrics (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  artist_id     INTEGER NOT NULL,
+  track_name    TEXT    NOT NULL,
+  lyrics        TEXT,
+  created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX idx_lyrics_unique ON lyrics(artist_id, track_name);
+
+CREATE TABLE album_years (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  artist_id     INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+  album_name    TEXT    NOT NULL,
+  released_year INTEGER NOT NULL,
+  created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX idx_album_years_unique ON album_years(artist_id, album_name);
+```
+
+## D1 Parameter Limit — CRITICAL
+
+**Cloudflare D1 hard-caps bound parameters at 100 per SQL statement.** Exceeding it returns `D1_ERROR: too many SQL variables at offset N: SQLITE_ERROR`. This is a platform limit, not a bug in the code.
+
+**Any query that binds a variable-length array (`scopeArtistIds`, etc.) must chunk to ≤90 elements per query.** Shared helper:
+
+`music-game-wrangler/src/utilities/chunkedIn.js`:
+```js
+export const D1_CHUNK_SIZE = 90;
+export async function chunkedIn(items, chunkSize, fn) {
+  if (!items.length) return [];
+  const size = chunkSize > 0 ? chunkSize : D1_CHUNK_SIZE;
+  const out = [];
+  for (let i = 0; i < items.length; i += size) {
+    const chunk = items.slice(i, i + size);
+    const rows = await fn(chunk);
+    for (const r of rows) out.push(r);
+  }
+  return out;
+}
+```
+
+### Audit: all `IN (...)` sites and their chunking status
+
+| File | Function | Params | Status |
+|---|---|---|---|
+| `resolvers-lyrics.js` | `lyricsByIds` | N artists | ✅ chunked |
+| `resolvers.js` | `artistsByIds` | N artists | ✅ chunked |
+| `resolvers-years.js` | `artistsByIdsAndYears` | N artists | ✅ chunked |
+| `rounds.js` | `fetchFeaturedSlots` | N artists | ✅ chunked |
+| `round-mutli.js` | `fetchFeaturedSlots` | N artists | ✅ chunked |
+| `distractors.js` | `trackNameDistractors` Tier 3 | N artists | ✅ chunked |
+| `distractors.js` | `albumNameDistractors` Tier 3 | N artists | ✅ chunked |
+| `distractors.js` | `artistNameDistractors` Tier 0 | N artists | ✅ chunked |
+| Everything else | binds genre IDs, years, or single IDs | small | ✅ safe |
+
+**If a new `D1_ERROR: too many SQL variables` appears, it is a new query. Add chunking, do not raise D1_CHUNK_SIZE above 90.**
+
+## Worker Endpoints
+
+### Tracks
+```
+GET /tracks           list. Query: artist_id, position, search, album_name, has_forward, has_reversed, has_featured, limit (cap 20000), offset
+GET /tracks/:id       single slot
+POST /tracks          create
+PUT /tracks/:id       update — MUST send ALL fields
+DELETE /tracks/:id    removes whole slot
+DELETE /tracks/:id/reversed   clears only r2_reversed_key
+```
+
+**Response shape:** `{ tracks, count, total, limit, offset }`.
+
+**Possible duplicate controller at `src/controllers/admin/tracks.js` with an old 1000 clamp.** Verify with `dir src\controllers\admin\*.js`. If it exists and `/tracks` caps at 1000, that's the culprit.
+
+### Game
+```
+GET /game/catalog               genres + artists + years + counts (includes counts.reversedClips)
+GET /game/round                 Level 1 — response: { rounds: [{ type, clip, question: { prompt, options, correctValue } }], meta }
+GET /game/round-multi           Level 2 — response: { rounds: [{ questions: [...] }] }
+GET /game/round-set             Level 3 — response: { sets: [{ clips: [...], questions: [...] }] }
+GET /game/round-multiplayer     Multiplayer wrapper — response: { players: [{ rounds: [...] }] }
+```
+
+**IMPORTANT — response shape flattening.** `/game/round` returns each round with a nested `question` object. Consumers must flatten:
+```js
+{
+  ...r,
+  type:         r.type ?? r.question?.type,
+  prompt:       r.question?.prompt ?? r.prompt,
+  options:      r.question?.options ?? r.options,
+  correctValue: r.question?.correctValue ?? r.correctValue,
+}
+```
+`useSuddenDeath` does this. If a new consumer sees `undefined` prompt / correctValue, it forgot to flatten.
+
+**`count` cap:** `MAX_COUNT = 500` in `rounds.js`, `round-mutli.js`, `round-sets.js`, `round-multiplayer.js`.
+
+**The Worker can return more rounds than requested** when it retries a slot with different types. Consumers that need exactly N must `.slice(0, N)`.
+
+### Clips, Album years, Lyrics
+See v19 handoff for full CRUD list.
+
+## Question Types — 8 total
+
+**Audio (5):** `name-track`, `name-artist`, `name-album`, `name-featured`, `name-position`
+**Lyrics (3):** `lyrics-track`, `lyrics-artist`, `lyrics-album`
+
+`VALID_TYPES` (array), `AUDIO_TYPES` (Set), `LYRICS_TYPES` (Set) all live in `rounds-methods/scope-helpers.js`. **Sets use `.has()`, not `.includes()`.**
+
+**Degenerate-type cap:** a degenerate type fires at most **once per request**.
+
+## Featured Reservation — Working
+
+`fetchFeaturedSlots(env, artistIds, limit, years, rendition)` — dedicated query, chunked + rendition-aware.
+
+## Reversed Audio Rendition — Worker COMPLETE
+
+**Param:** `rendition` — `'forward'` (default) or `'reverse'`.
+
+**Distinct from `reversed`:** the existing `reversed=no|some|all` URL param is the *answer-scramble* toggle (scrambles text). Two separate params.
+
+**Fallback rule:** scope-level. If any reversed slots exist, use them all; else forward. `meta.requestedRendition` / `meta.usedRendition`.
+
+**`meta.usedRendition` is set by a separate code path from the actual slot query** — never trust it as proof. The only definitive test is checking that `rounds[].clip.r2_key` values end in `-rev.mp3`.
+
+**Client rendition chain — INCOMPLETE:**
+- `useRound.js`, `useRoundMulti.js` — ✅ patched
+- `useRoundMultiplayer.js` — ❌ **NOT patched** (no `rendition` param)
+- `PlayMulti.jsx` — ❌ **does NOT pass `rendition` to `useRoundMultiplayer`**
+- `useRoundSet.js`, `Play.jsx`, `Play2.jsx`, `Play3.jsx` — ⚠️ verify each
+
+**Symptom:** player selects "Reversed audio", starts a game, hears forward clips. Check devtools network — if the request URL lacks `rendition=reverse`, it's the client gap. If it has it and clips are forward, it's a Worker regression.
+
+## Reverse-Batch Feature — Working
+
+**Server:**
+- `server/scripts/reverse-batch.js` — child process. Reads `--ids-file=<path>`. For each slot: fetches track, parses `r2_key`, calls `reverseExistingClip`, PUTs new key.
+- `POST /api/cloudflare/tracks/reverse-batch` — endpoint in `server/routes/cloud-flare-routes/clips.js`. Queries `/tracks?has_forward=1&has_reversed=0&limit=20000`.
+- **Route ordering:** must be **before** `router.post('/tracks/:id/reverse', ...)`.
+
+**Client:**
+- `admin/src/hooks/useReverseBatchJob.js`, `admin/src/routes/PublishedTracks.jsx`, `PipelineJobPanel.jsx`.
+- **CRITICAL:** `useCloudflareTrackMutations.js` returns `startReverseBatch.mutateAsync` (not `.mutate`).
+
+**Verify:** the batch route queries with `has_reversed=0` (not `has_forward=1&limit=1000`).
+
+## Express Proxy
+
+Mirrors every Worker route. `cloudflare.get/post/put/delete(path, body?)`.
+
+## Admin Frontend
+
+See v19.
+
+**`useCloudflareTracks`** — `TRACKS_LIMIT = 20000`, `ARTISTS_LIMIT = 20000`.
+
+## Game App
+
+### Setup Screen
+Scope-only: Genres + StrictGenreToggle + All genres, Quick find, Release years, Artists. All global settings moved into modals.
+
+**SelectionBar** — Multiplayer, Play level 3, Play level 2, Play level 1 (primary).
+
+**Collapsible grids:** `TileGrid` / `YearTileGrid` accept `initialCount`.
+
+### Global Settings Context
+`game/src/context/GameSettingsContext.jsx` — questionTypes, answerMode, roundCount, reversedAnswers, timer, audioRendition.
+
+### Level Modals
+Four modals replace play buttons. Each embeds `<SharedGameSettings>` with a "Reversed audio" section.
+
+**`MultiplayerModal.jsx`** must accept `reversedClipsCount` as a prop.
+
+### Play routes
+`/play` (L1), `/play-two` (L2), `/play-three` (L3), `/play-multi` (1 or 2), `/sudden-death` (new v28).
+
+### Round Response Shapes
+- **Level 1** — singular `question`
+- **Level 2** — plural `questions` array
+- **Level 3** — `sets[]` with `clips[]` + `questions[]`
+
+## Sudden Death Tiebreaker — NEW v28, WORKING
+
+**Purpose:** when a multiplayer game ends in a tie, offer a 5-question sudden-death round with forced text input and pass-and-play.
+
+**Trigger:** `Leaderboard.jsx` shows a "⚔️ Sudden Death — 5 questions" button when scores are tied (top score > 0). Otherwise, button hidden.
+
+**Rules:**
+| Aspect | Value |
+|---|---|
+| Questions per batch | 5 (hardcoded `QUESTIONS_PER_BATCH`) |
+| Server calls | ONE per batch |
+| Scoring | Accumulate across all questions in the batch; start from 0 |
+| Base score | 0 — main game's tied score is discarded |
+| All players answer | Yes, all 5 questions, no elimination |
+| Still tied after 5 | Another batch of 5 — loop |
+| Answer mode | Forced text input, no options rendered |
+| Answer check | `isCorrectForQuestion(question, typed)` — Arabic/English normalization |
+| Eye icon | **Toggle only** — masks/unmasks the current typing. Commit is a separate button. |
+| Pass-and-play | After each answer: handoff card → next player |
+| **Early termination** | **Yes** — as soon as `leader.score - second.score > questionsLeft`, phase → `'finished'` |
+| **Progress bar privacy** | **Answered segments show neutral tier until the batch reveals.** The next player must not learn the previous player's result. |
+
+### URL contract for `/sudden-death`
+
+```
+players=Ali,Sara          — comma-separated player names (doubles as IDs)
+labels=Ali,Sara           — optional; defaults to players value
+genres, artists, years, types, rendition — forwarded to /game/round
+returnTo=/play-multi?level=2&... — where "Play again" navigates
+```
+
+### Files
+
+| File | Purpose |
+|---|---|
+| `game/src/hooks/useSuddenDeath.js` | Flow state machine + scoring + early termination |
+| `game/src/components/domain/SuddenDeath/PassAndPlayInput.jsx` | Input card + handoff card |
+| `game/src/components/domain/SuddenDeath/SuddenDeathReveal.jsx` | Per-question results |
+| `game/src/components/domain/SuddenDeath/SuddenDeathResult.jsx` | Winner card / "still tied" card |
+| `game/src/components/domain/SuddenDeath/SuddenDeathProgress.jsx` | Progress bar — 5 segments per player |
+| `game/src/routes/SuddenDeath.jsx` | Route that composes everything |
+
+### Hook API — `useSuddenDeath({ playerIds, apiParams })`
+
+**Returns:**
+- **State:** `phase` (`loading | answering | handoff | reveal | batch-done | finished | error`), `error`, `questions`, `currentQuestion`, `currentPlayerId`, `playerIndex`, `playerCount`, `qIndex`, `batchIndex`, `scores`, `answers`, `currentQuestionAnswers`, `lastCommitted`, `draft`, `setDraft`
+- **Actions:** `commitAnswer(typed)`, `advanceToNextPlayer()`, `nextQuestion()`, `nextBatch()`, `retry()`
+- **Computed:** `totals: [{ id, score }]`, `isLastPlayer`, `isLastQuestion`
+- **Exported helper:** `isCorrectForQuestion(question, typed)` — handles `name-position` EN↔AR canonicalization
+
+### Progress bar privacy rule
+
+`SuddenDeathProgress` shows `tier: 'correct' | 'wrong' | 'neutral'`. **During answering/handoff, answered segments must show `'neutral'`**, not green/red. Only when `phase === 'reveal'` (or later) should the actual correctness be exposed.
+
+`SuddenDeath.jsx` computes `perQuestion[qIndex][playerId] = 'correct' | 'wrong' | 'answered' | null`:
+- `null` — not answered
+- `'answered'` — answered but result must stay hidden
+- `'correct' | 'wrong'` — publicly revealed
+
+### Early-termination math
+
+`leaderIsUncatchable(snapshot, questionsLeft)`:
+```js
+leader.score - second.score > questionsLeft
+```
+Runs inside `commitAnswer` after the last player answers, and again in `nextQuestion`. If true, `phase = 'finished'` immediately.
+
+### Wiring in `PlayMulti.jsx`
+
+```jsx
+const handleSuddenDeath = () => {
+  const qp = new URLSearchParams();
+  if (params.genres?.length)  qp.set('genres',  params.genres.join(','));
+  if (params.artists?.length) qp.set('artists', params.artists.join(','));
+  if (params.years?.length)   qp.set('years',   params.years.join(','));
+  if (params.types?.length)   qp.set('types',   params.types.join(','));
+  if (params.rendition)       qp.set('rendition', params.rendition);
+  qp.set('players', params.players.join(','));
+  qp.set('labels',  params.players.join(','));
+  qp.set('returnTo', window.location.pathname + window.location.search);
+  navigate(`/sudden-death?${qp.toString()}`);
+};
+
+if (session.phase === 'game-end') {
+  return (
+    <Leaderboard
+      players={params.players}
+      scores={session.scores}
+      onReplay={() => window.location.reload()}
+      onSuddenDeath={handleSuddenDeath}
+    />
+  );
+}
+```
+
+**⚠️ The `game-end` block is mandatory.** Without it, `session.next()` sets `phase = 'game-end'` but no render branch handles it, and the game appears stuck on the last question. This was the exact bug fixed in v28.
+
+### Rules of Hooks — critical for new components
+
+`SuddenDeath.jsx` had a `useMemo` after early returns, which broke React. **Every `useState`, `useEffect`, `useMemo`, `useRef`, `useCallback`, `useNavigate`, `useSearchParams`, and any custom hook call must come BEFORE the first `return`.** Post-early-return code uses plain computations only.
+
+## Environment
+
+- **Windows.** `cmd` for wrangler, PowerShell for scripts.
+- Node 18+. Express uses ESM.
+- `spawn('npx.cmd', ...)` fails with `EINVAL`. Use `spawn(fullCommandString, [], { shell: true })`.
+- **Never pass Arabic inline through `cmd` `curl -d`.**
+- Temp files in `E:\matb3aa-game\server\tmp-preview-test\`.
+- Add `E:\matb3aa-game` to Windows Defender exclusions.
+- **`jq` is not installed.**
+- **After `wrangler deploy`, verification curls may hit a stale edge for ~30s.** Add a random query param.
+- **Deploy the Worker from `music-game-wrangler/`, not `game/`.**
+- **The browser caches API responses.** Use DevTools "Disable cache" or a cache-bust query param.
+- **`curl` in `cmd`:** `&` terminates the command — wrap the URL in double quotes. `$(date +%s)` does not expand — use a literal cache-buster like `&cb=1`.
+
+## Commands
+
+```cmd
+:: Local dev
+cd E:\matb3aa-game && npm run dev
+cd E:\matb3aa-game\game && npm run dev
+
+:: Worker (MUST be from music-game-wrangler/)
+cd E:\matb3aa-game\music-game-wrangler
+npx wrangler deploy
+npx wrangler tail
+
+:: D1
+npx wrangler d1 execute music-game-db --remote --command="SELECT ..."
+
+:: Deploy game to Pages
+cd E:\matb3aa-game\game
+npm run build
+npx wrangler pages deploy dist --project-name=music-game --branch=production
+```
+
+## Recently Completed (v28 session)
+
+### Sudden Death tiebreaker — full feature shipped
+- New route `/sudden-death` with pass-and-play text input, 5-question batches, accumulate scoring, early termination.
+- `Leaderboard.jsx` shows a Sudden Death button when scores are tied.
+- `PlayMulti.jsx` passes `returnTo` so "Play again" restarts the correct multiplayer level.
+- `SuddenDeathProgress.jsx` — custom progress bar (5 segments per player, no `roundsForPlayer` split).
+- `isCorrectForQuestion` handles `name-position` EN↔AR canonicalization (e.g. `start` ↔ `البداية`).
+
+### Bugs fixed during v28
+- **Missing `game-end` block in `PlayMulti.jsx`** — the game appeared stuck on the last question because no render branch handled the `'game-end'` phase.
+- **Hook order violation in `SuddenDeath.jsx`** — a `useMemo` after early returns. Replaced with a plain `for` loop.
+- **Progress bar privacy leak** — Player B could see Player A's result before passing the device. Fixed by gating `correct`/`wrong` tier behind `phase === 'reveal'`.
+- **Tailwind opacity modifiers on token classes** — `border-correct/40` silently produces nothing because tokens are hex strings, not RGB triplets. Use full-opacity `border-correct`.
+- **`bg-brand-500` doesn't exist** — replaced with `bg-accent text-bg`.
+
+### Icons added
+`game/src/lib/icons.jsx` — `IconEye`, `IconEyeOff`.
+
+## Known Open / Broken
+
+### 1. **Client rendition chain incomplete (CRITICAL for feature completeness)**
+- `useRoundMultiplayer.js` — no `rendition` param
+- `PlayMulti.jsx` — doesn't pass `rendition: params.rendition`
+- `useRoundSet.js`, `Play.jsx`, `Play2.jsx`, `Play3.jsx` — verify
+
+### 2. **Reverse-batch may be capped at 1000**
+Verify the batch route queries `/tracks?has_forward=1&has_reversed=0&limit=20000`.
+
+### 3. **Duplicate controller at `src/controllers/admin/tracks.js` (possible)**
+If `/tracks` caps at 1000 despite the root controller's 20000 clamp, this file exists.
+
+### 4. `PlayerBadge.jsx` may be unused — still referenced by `PlayMulti`, keep.
+### 5. Level 3 multiplayer not in the modal
+### 6. Punctuation-only lines in lyric snippets — add `&& /[\p{L}\p{Nd}]/u.test(l)`
+### 7. Albumaty `/n/singer/` vs `/singer/` template mismatch
+### 8. `tracks_count` drift — backfill SQL ready, not run
+### 9. matb3aa `release_date` may be uniform
+### 10. `/published/artists` "has clips" filter may be truncated
+### 11. `FetchLyricsBar` multi-artist mode
+### 12. Upload flow has no `album_name` support
+### 13. `useServerPagination` unused
+### 14. R2 orphan cleanup — partially handled
+### 15. No auth on the Worker
+### 16. Auto-dropped artists don't restore — one-way by design
+### 17. Strict genre mode doesn't send a `strict` param
+### 18. `lyrics-album` disable rule
+### 19. Garbled lyrics rows
+### 20. Page deployment is manual
+
+## Style the User Prefers
+
+- **Complete files, not fragments.**
+- **Minimal fixes** when possible.
+- **Tables** to explain changes.
+- **One clear next step.**
+- **Note what to test** and what to paste back.
+- **Concise.** Experienced with React/Node.
+- **Recommend explicitly** when there are tradeoffs.
+
+## Most Likely Next Tasks
+
+1. **Finish the client rendition chain** — patch `useRoundMultiplayer.js` and `PlayMulti.jsx`; verify `useRoundSet.js` and the three Play routes.
+2. **Verify the reverse-batch `has_reversed=0` fix.**
+3. **Check for duplicate `admin/tracks.js`.**
+4. **Test Sudden Death end-to-end in a real tie** — the feature is built but only tested in isolation. Play a real multiplayer tie, click Sudden Death, play through, click "Play again".
+
+**Recommended next step:** item 4 — the Sudden Death feature was validated with direct URLs, but hasn't been tested from a real multiplayer tie yet. Do that first: it will surface any wiring bugs between `PlayMulti` → `Leaderboard` → `SuddenDeath` → "Play again".
+
+Ask what the user wants to do next.
+
+---
+
+## END OF PROMPT
+
+Save this as `E:\matb3aa-game\handoff-v28.md`. Paste it as the first message of your next session. It's self-contained.
+```
+
+---
+
+## What's new in v28
+
+| Section | Change |
+|---|---|
+| **Styling system** | New top-level section — Tailwind ↔ token mapping, the opacity-modifier gotcha, `bg-brand-500` doesn't exist |
+| **D1 Parameter Limit** | Kept from v27; added audit table |
+| **Sudden Death Tiebreaker** | New full section — rules, URL contract, file list, hook API, privacy rule, early-termination math, wiring, hook rules |
+| **Worker Endpoints → Game** | Added response-shape flattening note + "Worker can return more rounds than requested" |
+| **Recently Completed** | New v28 subsection with every bug fixed this session |
+| **Known Open — item 1** | Client rendition chain still listed |
+| **Most Likely Next Tasks** | Sudden Death end-to-end test is now #1 |
+| **Icons** | Noted `IconEye`/`IconEyeOff` added |
+
+The document is self-contained. A fresh model knows the tiebreaker exists, how it's wired, the styling constraints, the D1 param limit, and where the remaining work is.

@@ -1,0 +1,528 @@
+{
+  "generatedAt": "2026-10-05T03:16:03.000Z",
+  "tracks": [
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 32702,
+      "track_name": "اللي بيني وبينك",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 31623,
+      "track_name": "تتحبي",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 31609,
+      "track_name": "الطعامة",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 29836,
+      "track_name": "والله ابدا",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 29775,
+      "track_name": "قولي إسمي",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 29638,
+      "track_name": "خلص علي قلبي",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 29218,
+      "track_name": "الحفلة",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 29008,
+      "track_name": "ولا علي باله - مع ساند مان",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 28867,
+      "track_name": "بطمن عليك",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 28638,
+      "track_name": "مضحوك علينا",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 28589,
+      "track_name": "ما تيجي نفك",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 27877,
+      "track_name": "من 6 ل 9",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 27619,
+      "track_name": "ناس حلوة",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 27618,
+      "track_name": "وزير السعادة",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 27606,
+      "track_name": "زمن المجاملة",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 27593,
+      "track_name": "باريس",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 27507,
+      "track_name": "اللوك الجديد",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 27279,
+      "track_name": "هتدلع - ريمكس",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 27219,
+      "track_name": "اللي يمشي يمشي",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 27051,
+      "track_name": "هتدلع",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 25546,
+      "track_name": "أهي أهي - ريمكس",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 25503,
+      "track_name": "يا أنا يا لاء - ريمكس",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 25309,
+      "track_name": "احلي ونص",
+      "album_name": "عمرو دياب اتقل 2021",
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 23087,
+      "track_name": "اماكن السهر",
+      "album_name": "عمرو دياب يا أنا يا لا 2021",
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 23042,
+      "track_name": "مالك غيران",
+      "album_name": "عمرو دياب يا أنا يا لا 2021",
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 22944,
+      "track_name": "يا بلدنا يا حلوه",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 20218,
+      "track_name": "يتعلموا - ريمكس",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 20216,
+      "track_name": "يا اجمل عيون - ريمكس",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 19774,
+      "track_name": "انا بعشقك يا مصر",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 18456,
+      "track_name": "مقدرش عالنسيان",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 18170,
+      "track_name": "كترت مواضيعك",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 17246,
+      "track_name": "أكبر طموحه",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 16853,
+      "track_name": "بحبك انا",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 12158,
+      "track_name": "بلاش متقولش هتسبني",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 7177,
+      "track_name": "بلاش تبعد",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 4174,
+      "track_name": "دوام الحال",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 4173,
+      "track_name": "ورضيت",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 4172,
+      "track_name": "في حاجة فيك",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 4168,
+      "track_name": "سلمتلك",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 4167,
+      "track_name": "روح قلبي",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 4166,
+      "track_name": "مصر قالت",
+      "album_name": null,
+      "reason": "album-missing",
+      "existing_albums_in_d1": []
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 23914,
+      "track_name": "عايز اعمل زيك",
+      "album_name": "عمرو دياب يا أنا يا لا 2021",
+      "reason": "album-mismatch",
+      "existing_albums_in_d1": [
+        "البوم يا انا يا لاء"
+      ]
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 23903,
+      "track_name": "شكرا",
+      "album_name": "عمرو دياب يا أنا يا لا 2021",
+      "reason": "album-mismatch",
+      "existing_albums_in_d1": [
+        "البوم يا انا يا لاء"
+      ]
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 23892,
+      "track_name": "من العشم",
+      "album_name": "عمرو دياب يا أنا يا لا 2021",
+      "reason": "album-mismatch",
+      "existing_albums_in_d1": [
+        "البوم يا انا يا لاء"
+      ]
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 23891,
+      "track_name": "طبل",
+      "album_name": "عمرو دياب يا أنا يا لا 2021",
+      "reason": "album-mismatch",
+      "existing_albums_in_d1": [
+        "البوم يا انا يا لاء"
+      ]
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 23890,
+      "track_name": "وانا معاك",
+      "album_name": "عمرو دياب يا أنا يا لا 2021",
+      "reason": "album-mismatch",
+      "existing_albums_in_d1": [
+        "البوم يا انا يا لاء"
+      ]
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 23889,
+      "track_name": "بتهزر",
+      "album_name": "عمرو دياب يا أنا يا لا 2021",
+      "reason": "album-mismatch",
+      "existing_albums_in_d1": [
+        "البوم يا انا يا لاء"
+      ]
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 23888,
+      "track_name": "يادلعوا",
+      "album_name": "عمرو دياب يا أنا يا لا 2021",
+      "reason": "album-mismatch",
+      "existing_albums_in_d1": [
+        "البوم يا انا يا لاء"
+      ]
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 23885,
+      "track_name": "فاكرني يا حب",
+      "album_name": "عمرو دياب يا أنا يا لا 2021",
+      "reason": "album-mismatch",
+      "existing_albums_in_d1": [
+        "البوم يا انا يا لاء"
+      ]
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 23787,
+      "track_name": "ياأنا يالاء",
+      "album_name": "عمرو دياب يا أنا يا لا 2021",
+      "reason": "album-mismatch",
+      "existing_albums_in_d1": [
+        "البوم يا انا يا لاء"
+      ]
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 23671,
+      "track_name": "محسود",
+      "album_name": "عمرو دياب يا أنا يا لا 2021",
+      "reason": "album-mismatch",
+      "existing_albums_in_d1": [
+        "البوم يا انا يا لاء"
+      ]
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 23502,
+      "track_name": "الجو جميل",
+      "album_name": "عمرو دياب يا أنا يا لا 2021",
+      "reason": "album-mismatch",
+      "existing_albums_in_d1": [
+        "البوم يا انا يا لاء"
+      ]
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 19984,
+      "track_name": "أول يوم في البعد",
+      "album_name": "عمرو دياب سهران 2020",
+      "reason": "album-mismatch",
+      "existing_albums_in_d1": [
+        "البوم انا غير"
+      ]
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 19245,
+      "track_name": "بحبه",
+      "album_name": "عمرو دياب سهران 2020",
+      "reason": "album-mismatch",
+      "existing_albums_in_d1": [
+        "البوم انا غير"
+      ]
+    },
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 4017,
+      "track_name": "يا عمرنا",
+      "album_name": "عمرو دياب ذكريات 1994",
+      "reason": "album-mismatch",
+      "existing_albums_in_d1": [
+        "البوم يا عمرنا"
+      ]
+    }
+  ]
+}

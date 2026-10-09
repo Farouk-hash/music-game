@@ -1,0 +1,28 @@
+{
+  "name": "matb3aa-admin",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n server,admin -c blue,magenta \"npm:dev:server\" \"npm:dev:admin\"",
+    "dev:server": "node --watch server/index.js",
+    "dev:admin": "npm --prefix admin run dev",
+    "build": "npm --prefix admin run build",
+    "start": "node server/index.js",
+    "install:all": "npm install && npm --prefix admin install"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "fetch-cookie": "^3.0.1",
+    "ffmpeg-static": "^5.3.0",
+    "ffprobe-static": "^3.1.0",
+    "fluent-ffmpeg": "^2.1.3",
+    "multer": "^2.4.0",
+    "tough-cookie": "^4.1.4",
+    "undici": "^6.19.2"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

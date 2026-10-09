@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "music-game-wrangler",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-26" , 
+
+   "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "music-game-db",
+      "database_id": "9593ff09-cf39-486d-9ca0-381371190378"
+    }
+  ],
+  
+   "r2_buckets": [
+    {
+      "binding": "AUDIO",
+      "bucket_name": "music-game-audio"
+    }
+  ],
+
+  "observability": {
+    "logs": {
+      "enabled": false,
+      "invocation_logs": true
+    }
+  }
+}

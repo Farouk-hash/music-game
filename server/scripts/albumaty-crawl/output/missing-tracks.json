@@ -1,0 +1,26 @@
+{
+  "generatedAt": "2026-10-05T03:16:03.000Z",
+  "tracks": [
+    {
+      "artist_id": 9,
+      "albumaty_id": 123,
+      "song_id": 53608,
+      "song_name": "١٢ بالليل",
+      "album_name": "عمرو دياب حبيتك 2026",
+      "mp3_url": "https://serv2.albumaty.com/2026/Albumaty.Com_amrw_dyab_______ballyl.mp3",
+      "duration_sec": 152.469333,
+      "clips": {
+        "start": {
+          "path": "E:\\matb3aa-game\\server\\scripts\\albumaty-crawl\\output\\clips\\123-53608-start-10s.mp3",
+          "start_sec": 0,
+          "duration": 10
+        },
+        "middle": {
+          "path": "E:\\matb3aa-game\\server\\scripts\\albumaty-crawl\\output\\clips\\123-53608-middle-10s.mp3",
+          "start_sec": 71,
+          "duration": 10
+        }
+      }
+    }
+  ]
+}

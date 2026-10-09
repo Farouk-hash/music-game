@@ -1,0 +1,46 @@
+/* game/src/styles/tokens.css
+   ═══════════════════════════════════════════════════════════════
+   Warm dark theme — near-black canvas with copper/gold accents.
+   The ONE file where colors, radii, and shadows are defined.
+   Change a value here and the whole app follows.
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Backgrounds ─────────────────────────────────────── */
+  --bg:            #0e0b08;   /* page background — warm near-black */
+  --surface:       #171310;   /* cards, panels */
+  --surface-2:     #221c17;   /* inputs, raised elements */
+  --border:        #2e2620;   /* hairline dividers, edges */
+
+  /* ── Text ────────────────────────────────────────────── */
+  --ink:           #f3ece0;   /* primary text — warm cream */
+  --ink-muted:     #b8a894;   /* secondary text */
+  --ink-subtle:    #7a6a58;   /* tertiary text, disabled */
+
+  /* ── Accent (copper / bronze) ────────────────────────── */
+  --accent:        #c98a5a;   /* primary CTA — warm copper */
+  --accent-2:      #a86f42;   /* hover, press — deeper copper */
+  --accent-soft:   rgba(201, 138, 90, 0.14);  /* tinted surfaces */
+
+  /* ── Highlight (gold) ───────────────────────────────── */
+  --highlight:     #d9b16a;   /* eyebrow labels, score, streaks */
+  --highlight-soft: rgba(217, 177, 106, 0.14);
+
+  /* ── Semantic ────────────────────────────────────────── */
+  --correct:        #7f9463;   /* right answer — muted olive */
+  --correct-soft:   rgba(127, 148, 99, 0.14);
+  --wrong:          #b06b52;   /* wrong answer — warm rust */
+  --wrong-soft:     rgba(176, 107, 82, 0.14);
+
+  /* ── Effects ─────────────────────────────────────────── */
+  --shadow-sm:     0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md:     0 4px 14px rgba(0, 0, 0, 0.55);
+  --shadow-lg:     0 14px 40px rgba(0, 0, 0, 0.65);
+
+  --focus-ring:    rgba(201, 138, 90, 0.45);
+
+  /* ── Radii ───────────────────────────────────────────── */
+  --radius-sm:     6px;
+  --radius-md:     10px;
+  --radius-lg:     16px;
+}

@@ -1,0 +1,63 @@
+
+
+
+# matb3aa lyrics pipeline
+
+Two scripts + orchestrator. Fetches lyrics from matb3aa.com.
+No D1 migration, no Worker changes. Writes local JSON only.
+
+## Inputs
+
+| File | Source | Content |
+|---|---|---|
+| `artists.json` | wrangler dump | `[{ artist_id, artist_name }, ...]` |
+| `tracks.json` | wrangler dump | `[{ artist_id, track_name }, ...]` |
+
+## Outputs
+
+| File | Content |
+|---|---|
+| `search-results.json` | Each track: `{ matched, matb3aaId, ... }` |
+| `lyrics-bodies.json` | Each matched track: `{ lyrics, bytes, error }` |
+
+## Step 1 — dump D1
+
+From `E:\matb3aa-game\music-game-wrangler`:
+cd E:\matb3aa-game\music-game-wrangler
+npx wrangler d1 execute music-game-db --remote --json --command="SELECT id AS artist_id, name AS artist_name FROM artists WHERE tracks_count > 0 ORDER BY name" > ..\server\scripts\matb3aa-lyrics\artists.json
+npx wrangler d1 execute music-game-db --remote --json --command="SELECT DISTINCT artist_id, name AS track_name FROM tracks WHERE r2_key IS NOT NULL" > ..\server\scripts\matb3aa-lyrics\tracks.json
+
+
+
+## Flags
+
+| Flag | Effect |
+|---|---|
+| `--artist=65` | Process one artist only |
+| `--fresh` | Ignore existing output files, re-fetch everything |
+
+Both scripts resume by default: re-running skips entries already present
+with a non-error result in the output JSON.
+
+## How matching works
+
+1. Search matb3aa by track name: `GET /api/v1/search?query={name}&loader=searchPage`
+2. Filter results to `result.name === track.name` AND `result.artists[0].id === track.artist_id`
+3. If no exact match on page 1, check up to page 3 (some names are common)
+4. If still nothing → log as `no-exact-match`, no lyrics fetched
+5. For matches: `GET /api/v1/tracks/{id}/lyrics?duration=0`
+
+No fuzzy fallback — a wrong ID means wrong lyrics, which is worse than no lyrics.
+
+## Headers
+
+matb3aa blocks plain requests. Every call sends:
+- `User-Agent: Mozilla/5.0 ...`
+- `Referer: https://www.matb3aa.com/`
+- `Origin: https://www.matb3aa.com`
+
+## Rate limit
+
+- Concurrency: 4
+- Delay: 400ms between requests per worker
+- Retry: 3 attempts with exponential backoff on 429/5xx

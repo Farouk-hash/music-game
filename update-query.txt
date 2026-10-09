@@ -1,0 +1,35 @@
+UPDATE artists SET tracks_count = (
+  SELECT COUNT(DISTINCT t.name) FROM tracks t
+  WHERE t.artist_id = artists.id AND t.r2_key IS NOT NULL
+);
+
+Bookmark this. Every time you want to push changes:
+
+cmd
+cd E:\matb3aa-game\game
+npm run build
+npx wrangler pages deploy dist --project-name=music-game --branch=production
+The --branch=production flag updates the stable URL. Without it, you get a throwaway preview URL.
+
+Every Worker change still goes through:
+
+cmd
+cd E:\matb3aa-game\music-game-wrangler
+npx wrangler deploy
+
+
+
+When you're ready for a real domain:
+
+Buy a domain (odd-track.com, matb3aa-game.com, whatever).
+
+Add it to Cloudflare (free plan).
+
+In the Pages dashboard → music-game project → Custom domains → Add → enter the domain.
+
+Cloudflare auto-configures DNS + SSL. Zero code changes.
+
+The CORS_HEADERS in your Worker already has Access-Control-Allow-Origin: *, so the new domain will work immediately. Same for the _redirects file — SPA routing already handled.
+
+Nothing in the code needs to change when you go from *.pages.dev to a custom domain. That's the whole point of doing it this way.
+
