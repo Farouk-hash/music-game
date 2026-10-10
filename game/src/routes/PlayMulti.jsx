@@ -26,7 +26,6 @@ const POSITION_LABELS = {
 
 export default function PlayMulti() {
   const params = useMultiplayerParams();
-  const navigate = useNavigate();
 
   const { data, isLoading, error } = useRoundMultiplayer({
     genres: params.genres,
@@ -37,6 +36,7 @@ export default function PlayMulti() {
     level: params.level,
     roundsPerPlayer: params.count,
     rendition: params.rendition,
+    instruments:params.instruments
   });
 
   const playerRounds = data?.players ?? [];
@@ -60,23 +60,26 @@ export default function PlayMulti() {
   if (error) return <ErrorBlock error={error} />;
   if (playerRounds.length === 0) return <EmptyBlock />;
 
- const buildSuddenDeathUrl = (mode, winnerNames) => {
-  const qp = new URLSearchParams();
+  const buildSuddenDeathUrl = (mode, winnerNames) => {
+    const qp = new URLSearchParams();
 
-  if (params.genres?.length)  qp.set('genres',  params.genres.join(','));
-  if (params.artists?.length) qp.set('artists', params.artists.join(','));
-  if (params.years?.length)   qp.set('years',   params.years.join(','));
-  if (params.types?.length)   qp.set('types',   params.types.join(','));
-  if (params.rendition)       qp.set('rendition', params.rendition);
+    if (params.genres?.length)  qp.set('genres',  params.genres.join(','));
+    if (params.artists?.length) qp.set('artists', params.artists.join(','));
+    if (params.years?.length)   qp.set('years',   params.years.join(','));
+    if (params.types?.length)   qp.set('types',   params.types.join(','));
+    if (params.rendition)       qp.set('rendition', params.rendition);
+    if (params.instruments && params.instruments !== 'none') {
+      qp.set('instruments', params.instruments);
+    }
 
-  // Sudden death roster = the tied winners only.
-  qp.set('players', winnerNames.join(','));
-  qp.set('labels',  winnerNames.join(','));
-  qp.set('returnTo', window.location.pathname + window.location.search);
-  qp.set('mode', mode);
+    // Sudden death roster = the tied winners only.
+    qp.set('players', winnerNames.join(','));
+    qp.set('labels',  winnerNames.join(','));
+    qp.set('returnTo', window.location.pathname + window.location.search);
+    qp.set('mode', mode);
 
-  return `/sudden-death?${qp.toString()}`;
-};
+    return `/sudden-death?${qp.toString()}`;
+  };
   if (session.phase === 'game-end') {
     return (
       <Leaderboard
@@ -142,7 +145,7 @@ export default function PlayMulti() {
 
         <PromptSource round={session.currentRound} />
 
-        <QuestionCard
+                <QuestionCard
           eyebrow={q.type.replace('name-', '').replace('lyrics-', '')}
           prompt={q.prompt}
           options={q.options}
@@ -155,6 +158,7 @@ export default function PlayMulti() {
           labelFor={labelFor}
           answerMode={params.answerMode}
           questionType={q.type}
+          source={session.currentRound?.source}
           reversal={reversal}
           revealExtra={revealClip ? <AudioPlayer src={revealClip.serveUrl} /> : null}
         />

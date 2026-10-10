@@ -11,7 +11,6 @@ import { SuddenDeathQuestionCard } from '../components/domain/SuddenDeath/Sudden
 import PassAndPlayInput from '../components/domain/SuddenDeath/PassAndPlayInput';
 import SuddenDeathReveal from '../components/domain/SuddenDeath/SuddenDeathReveal';
 import SuddenDeathResult from '../components/domain/SuddenDeath/SuddenDeathResult';
-import { useEffect } from 'react';
 
 const POSITION_LABELS = {
   start: 'البداية',
@@ -244,6 +243,7 @@ export default function SuddenDeath() {
               options={q?.options ?? []}
               correctValue={q?.correctValue}
               questionType={q?.type}
+              source={q?.source}
               picked={currentPlayerRevealed ? sd.lastCommitted?.typed : null}
               revealed={currentPlayerRevealed}
               onPick={(value) => { sd.commitAnswer(value); }}

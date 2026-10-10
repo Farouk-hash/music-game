@@ -1,4 +1,4 @@
-Here's the v38 handoff. Save as `E:\matb3aa-game\handoff-v38.md`.
+Here's the v40 handoff. Save as `E:\matb3aa-game\handoff-v40.md`.
 
 ---
 
@@ -20,7 +20,7 @@ The game does **not** go through Express. It fetches the Worker directly.
 
 **GitHub:** `https://github.com/Farouk-hash/music-game` (private, monorepo)
 **Local repo root:** `E:\matb3aa-game\.git`
-**Last committed state:** v28 (initial commit `c2a9ad3`). Work from v29–v38 is **uncommitted**.
+**Last committed state:** v28 (initial commit `c2a9ad3`). Work from v29–v40 is **uncommitted**.
 
 **`.gitignore`** covers `node_modules/`, `dist/`, `.env`, `.wrangler/`, `.dev.vars`, `*.log`, `venv/`, `__pycache__/`, `*.pyc`, `server/instrumental-output/`, `test-vocals/`.
 
@@ -70,7 +70,7 @@ npx wrangler deploy
 
 ## D1 Schema
 
-Existing: `genres`, `artists` (~hundreds), `tracks` (~17,414 rows), `lyrics`, `album_years`.
+Existing: `genres`, `artists`, `tracks` (~17,414 rows), `lyrics`, `album_years`.
 
 **Sporcle (v30):** `sporcle_rooms`, `sporcle_players`, `sporcle_answers`.
 
@@ -88,55 +88,38 @@ CREATE TABLE IF NOT EXISTS instruments (
   updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(artist_id, track_name, position)
 );
-CREATE INDEX IF NOT EXISTS idx_instruments_artist ON instruments(artist_id);
-CREATE INDEX IF NOT EXISTS idx_instruments_name   ON instruments(track_name);
-CREATE INDEX IF NOT EXISTS idx_instruments_artist_track
-  ON instruments(artist_id, track_name);
+CREATE INDEX idx_instruments_artist ON instruments(artist_id);
+CREATE INDEX idx_instruments_name ON instruments(track_name);
+CREATE INDEX idx_instruments_artist_track ON instruments(artist_id, track_name);
 ```
 
 **Migrations:**
 - `0003_sporcle.sql`
 - `0004_instruments.sql`
-- `0005_drop_source_url.sql` — drops `source_url` (must be applied)
-- `0006_instruments_index.sql` — adds `idx_instruments_artist_track`
+- `0005_drop_source_url.sql`
+- `0006_instruments_index.sql`
 
 ## D1 Parameter Limit — CRITICAL
 
 **D1 hard-caps bound parameters at 100 per statement.** Chunk arrays to ≤90. Helper at `music-game-wrangler/src/utilities/chunkedIn.js`.
 
-## Cloudflare Plan — FREE
-
-SQLite-backed Durable Objects available. Free-tier limits may throttle during heavy use.
-
 ## Worker Endpoints
 
 ### Artists
 ```
-GET  /artists?genre_id=…&search=…&source=…&limit=&offset=
-     → artists + instruments_count (COUNT DISTINCT track_name)
-GET  /artists/:id
-     → artist + instruments_count
+GET  /artists           → artists + instruments_count (COUNT DISTINCT track_name)
+GET  /artists/:id       → artist + instruments_count
 POST /artists
-PUT  /artists/:id
-     → cascades genre changes to instruments
-DELETE /artists/:id
-     → cascades D1 + R2 delete of instruments
+PUT  /artists/:id       → cascades genre changes to instruments
+DELETE /artists/:id     → cascades D1 + R2 delete of instruments
 PATCH /artists/:id/tracks_count
 ```
 
-**`instruments_count`** is a correlated subquery:
-```sql
-(SELECT COUNT(DISTINCT i.track_name)
-   FROM instruments i
-  WHERE i.artist_id = a.id) AS instruments_count
-```
-
-**Genre cascade on PUT**: if `genre_ids` changed, all `instruments` rows for that artist get `genre_ids = JSON.stringify([6, ...newGenreIds])`. Response includes `instruments_updated: N`.
+`instruments_count` = correlated subquery `COUNT(DISTINCT track_name)`. Genre cascade on PUT: if `genre_ids` changed, instruments get `genre_ids = JSON.stringify([6, ...newGenreIds])`. Response includes `instruments_updated: N`.
 
 ### Tracks
 ```
-GET /tracks           list (artist_id, position, search, album_name,
-                      has_forward, has_reversed, has_featured, limit 20000, offset)
+GET /tracks           list
 GET /tracks/:id
 POST /tracks
 PUT /tracks/:id
@@ -153,7 +136,24 @@ GET /game/round-set             L3
 GET /game/round-multiplayer     Multiplayer wrapper
 ```
 
-### Instruments (WORKING)
+All round endpoints accept **`?instruments=none|mixed|all`** (default `none`):
+
+| Value | Behavior |
+|---|---|
+| `none` | Only traditional audio + lyrics. |
+| `mixed` | `Math.round(count / 2)` traditional + remainder instrumental. |
+| `all` | 100% instrumental — traditional pool skipped. |
+
+**Instrument rounds carry `"source": "instrumental"`.** Traditional rounds do not have a `source` field (or it's undefined).
+
+**Rendition:** `instruments` mode ignores `rendition=reverse`. Only the traditional path uses `-rev.mp3` keys.
+
+### Catalog
+```
+GET /game/catalog → counts.instruments (distinct artist_id, track_name)
+```
+
+### Instruments
 ```
 GET    /instruments?artist_id=…&position=…&search=…&limit=&offset=
 POST   /instruments/bulk
@@ -162,30 +162,99 @@ DELETE /instruments/artist/:artistId
 DELETE /instruments/:id
 ```
 
-**No `source_url` field.** `genre_ids` serialized from a JSON string to an array in the response.
-
-### Instrumentals files (WORKING)
+### Instrumentals files
 ```
-PUT /instrumentals/upload?key=instrumentals/<artist_slug>/<track_slug>/<middle|custom>.mp3
+PUT /instrumentals/upload?key=instrumentals/<artist>/<track>/<middle|custom>.mp3
 GET /instrumentals/serve?key=instrumentals/…
 ```
 
-**Upload validation:** key must match `/^instrumentals\/[^/]+\/[^/]+\/(middle|custom)\.mp3$/`.
-**Max size:** 5 MB.
-**Serve:** streams from R2 with `Content-Type: audio/mpeg`.
+## Question Types — 8 traditional + 5 instrumental
 
-## Question Types — 8 total
+**Traditional audio (5):** `name-track`, `name-artist`, `name-album`, `name-featured`, `name-position`
+**Traditional lyrics (3):** `lyrics-track`, `lyrics-artist`, `lyrics-album`
 
-**Audio:** `name-track`, `name-artist`, `name-album`, `name-featured`, `name-position`
-**Lyrics:** `lyrics-track`, `lyrics-artist`, `lyrics-album`
+**Instrumental (5):** `name-track`, `name-artist`, `name-album`, `name-featured`, `lyrics-track`
 
-## Sudden Death Tiebreaker — WORKING
+Instrumental types **reuse the traditional type names**. The round carries `source: 'instrumental'` to distinguish. `name-position` is NOT built for instruments. `lyrics-artist` and `lyrics-album` are NOT built for instruments.
 
-Pass-and-play tiebreaker. Two modes: `options` (20s timer) and `typed`. 5 questions/batch, accumulate scoring, early termination.
+## Instrumental Rounds — v39/v40
+
+### Files (Worker)
+| File | Purpose |
+|---|---|
+| `music-game-wrangler/src/controllers/game/rounds-methods/instruments-slots.js` | Fetches one row per `(artist_id, track_name)` at random from `instruments`. Uses `ROW_NUMBER() OVER (PARTITION BY artist_id, track_name ORDER BY RANDOM())`. Joins `tracks` for `featured_artists`. **v40: round-robin across artists to prevent skew.** |
+| `music-game-wrangler/src/controllers/game/rounds-methods/instruments-lyrics-pool.js` | One bulk lyrics fetch per request. Returns a `Map<"artist_id::track_name", { snippet, normalized }>`. |
+| `music-game-wrangler/src/controllers/game/rounds-methods/buildingInstrumental.js` | Exports **two** builders: `buildInstrumentalRound` (L1/L3 — one question) and `buildInstrumentalRoundMulti` (L2 — up to 5 questions). Stamps `source: 'instrumental'`. Uses `instr:` prefixed keys for degeneracy. |
+| `music-game-wrangler/src/controllers/game/rounds.js` | L1 — split count, instrumental pass (capped), meta additions |
+| `music-game-wrangler/src/controllers/game/round-mutli.js` | L2 — instrumental pass uses `buildInstrumentalRoundMulti` (multi-question per slot) |
+| `music-game-wrangler/src/controllers/game/rounds-methods/degenerate-types.js` | Takes 4th arg `instrumentSlots`, uses `instr:` prefix for split-by-source |
+
+### Degeneracy split by source
+
+| Type key | Source | Rule |
+|---|---|---|
+| `name-artist` / `instr:name-artist` | Both | `scopeArtistIds.length < 2` |
+| `name-featured` / `instr:name-featured` | Shared pool | Union of audio + instrument featured names < 2 |
+| `name-album` | Audio only | Audio albums < 2 |
+| `instr:name-album` | Instruments only | Instrument albums < 2 |
+| `lyrics-track` / `instr:lyrics-track` | Never degenerate | Each track has a unique snippet |
+| `lyrics-artist` / `lyrics-album` | Traditional only | Unchanged |
+
+### Lyrics option shape — v40 (CRITICAL)
+
+**`lyrics-track` options use the snippet text as `value` AND `correctValue` — NOT `opt-N`.**
+
+The v39 `opt-N` convention was abandoned in v40 because:
+- The reveal screen in SuddenDeath printed `opt-2` as raw text.
+- Traditional `lyrics-track` already used snippet text, so two conventions coexisted for the same type name.
+
+**Correct shape:**
+```js
+options: [{ label: snippet, value: snippet }, ...]
+correctValue: own.snippet
+```
+
+Client comparison `picked === correctValue` works. `SuddenDeathReveal` renders the correct snippet naturally.
+
+### Two-Set used-slot tracking
+
+Both round controllers use two Sets:
+- `usedAudioSlotIds` — traditional track slot IDs
+- `usedInstrumentSlotIds` — instrument slot IDs
+
+No collision between IDs from different tables.
+
+### Meta additions on round responses
+
+```js
+meta: {
+  requestedInstruments: 'none' | 'mixed' | 'all',
+  instrumentRounds: N,
+}
+```
+
+### Anti-skew round-robin (v40)
+
+`instruments-slots.js` fetches a generous pool then round-robins per artist. This fixes the case where one artist (e.g. Amr Diab, 576 instrumentals) floods the round list vs a smaller one (Marwan Pablo, 116 instrumentals).
+
+```js
+const POOL_MULTIPLIER = 2;
+const MAX_POOL = 2000;
+
+export async function fetchInstrumentSlots(env, scopeArtistIds, limit, years = []) {
+  // … fetch with LIMIT = min(MAX_POOL, max(limit, limit * artistCount * POOL_MULTIPLIER))
+  return roundRobin(rows, limit);
+}
+
+function roundRobin(rows, limit) {
+  // Group by artist_id, shuffle each bucket, interleave one-per-artist
+  // until limit or all buckets dry, then shuffle the output.
+}
+```
 
 ## Sporcle (Remote Multiplayer) — STAGE 1 BUILT, TESTS PENDING
 
-Backend written and deployed. Nine-step curl test suite **not yet run**.
+Backend written and deployed. Nine-step curl test **not yet run**.
 
 ### Endpoints
 ```
@@ -235,195 +304,84 @@ set BASE=https://music-game-wrangler.abdulrahman-muhammad2090.workers.dev
 - `yt-dlp.exe` at `C:\Tools\yt-dlp.exe`
 - `ffmpeg.exe` + `ffprobe.exe` at `C:\Tools\ffmpeg\bin\`
 
-**Scripts (`server/scripts/youtube/`):** `check-deps.js`, `extract-playlist.js`, `download-one.js`, `download-playlist.js`.
-
-**Endpoint:** `POST /api/youtube/extract-playlist` → `{ ok, count, videos }`.
-
 **Admin page:** `/youtube/import`.
 
 ## Instrumental Pipeline — WORKING END-TO-END
 
-**Purpose:** for selected artists, cut two 10-second instrumental clips (middle + custom) per track, upload to R2 + D1, delete local files.
-
-### Locked decisions
-
-| Aspect | Value |
-|---|---|
-| Source audio | `t.src` from matb3aa artist catalogue |
-| Segment length | **10 seconds** |
-| Placements | **`middle` @ 48%, `custom` @ 52%** |
-| Output format | **MP3, 64 kbps, mono, 44.1 kHz** |
-| Instrument genre ID | **6** (fixed) |
-| `genre_ids` shape | `[6, ...artist_genres]` |
-| R2 folder | `instrumentals/<artist_slug>/<track_slug>/<middle\|custom>.mp3` |
-| Local output root | `E:\matb3aa-game\server\instrumental-output\<artist_id>_<slug>\<track_slug>\` |
-| Job model | One job per batch |
-
-### Two-phase pipeline
+**Two-phase pipeline:**
 
 **Phase 1 — Generate** (`server/scripts/instrumental/batch.js`):
-```
-1. Download full song → source.mp3
-2. ffprobe → duration
-3. For each placement (middle 48%, custom 52%):
-    a. ffmpeg cut 10s raw WAV slice (stereo, 44.1kHz)
-    b. python -m demucs --two-stems=vocals on the 10s slice
-    c. ffmpeg convert no_vocals.wav → mono MP3 (64k)
-4. Write meta.json
-```
-**Time:** ~1 min per track on CPU.
+- Cuts 2 × 10s slices (middle @ 48%, custom @ 52%) from the full song
+- Runs demucs `--two-stems=vocals` on each slice
+- Saves `seg_middle.mp3`, `seg_custom.mp3` (64k mono) + `meta.json`
+- ~1 min per track
 
 **Phase 2 — Upload** (`server/scripts/instrumental/upload.js`):
-```
-1. Read meta.json + MP3 paths
-2. For each segment:
-    a. PUT /instrumentals/upload?key=…  (bytes)
-    b. Collect D1 row: { artist_id, track_name, position, r2_key, album_name, genre_ids }
-       ← NO source_url
-3. POST /instruments/bulk  { items: [...] }
-4. On success: delete local seg_*.mp3 (keep meta.json)
-```
-**Time:** ~1 second per track.
+- PUTs each MP3 to `instrumentals/<artist_slug>/<track_slug>/<middle|custom>.mp3`
+- POSTs `/instruments/bulk` with `{ artist_id, track_name, position, r2_key, album_name, genre_ids }`
+- Deletes local MP3s on success (keeps `meta.json`)
+- ~1 second per track
 
-### Files
+**Admin UI:**
+- `/youtube/import` — YouTube import
+- Published Artists sticky bar: **Clear · 🎼 Generate · ⬆️ Upload · Publish all clips →**
+- **Generate modal** — 3-state track list (`new` / `ready` / `uploaded`)
+- **Upload modal** — scans local, uploads, deletes local
 
-| File | Purpose |
-|---|---|
-| `server/scripts/instrumental/batch.js` | Cut + demucs per segment → local MP3s |
-| `server/scripts/instrumental/upload.js` | Upload to R2 + D1, delete local |
-| `server/scripts/instrumental/paths.js` | Slugify + folder helpers |
-| `server/routes/instrumental-routes.js` | Local Express routes |
-| `server/routes/cloud-flare-routes/instruments_remote.js` | Remote proxy: `/remote/instruments/*` + `/remote/instrumentals/serve` |
-| `admin/src/routes/Youtube/InstrumentalBatchModal.jsx` | Generate modal |
-| `admin/src/components/domain/Instrumental/InstrumentalUploadModal.jsx` | Upload modal |
-| `admin/src/hooks/cloud-flare/Instrumental/useInstrumentalBatch.js` | Hook for batch |
-| `admin/src/hooks/cloud-flare/Instrumental/useInstrumentalUpload.js` | Hook for upload |
-| `admin/src/hooks/cloud-flare/Instrumental/useInstrumentalStatus.js` | Hook for local status scan |
-| `admin/src/hooks/usePipelineJob.js` | Generic job poller |
-
-### Express endpoints
-
-```
-POST /api/instrumental/batch       — cut + demucs (local)
-GET  /api/instrumental/local       — folders with MP3s (ready to upload)
-GET  /api/instrumental/uploaded    — folders with only meta.json (uploaded)
-GET  /api/instrumental/status      — merged scan with uploaded flag
-POST /api/instrumental/upload      — read local, upload, delete local
-```
-
-### Mounts
-
-```js
-app.use('/api', instrumentalRoutes);
-app.use('/api/cloudflare', instrumentalRemoteRoutes);
-```
-
-### InstrumentalBatchModal.jsx — three-state track list
-
-Data sources merged:
-1. **matb3aa artist catalogue** — full track list per artist
-2. **Local status** — `/api/instrumental/status?artist_ids=…`
-
-Per-track states:
-| State | Meaning | Default | Badge |
-|---|---|---|---|
-| `new` | Not generated locally | ✅ checked | blue |
-| `ready` | MP3s on disk, not uploaded | ☐ unchecked | green |
-| `uploaded` | Only meta.json remains | ☐ unchecked | yellow |
-
-Header shows: `N total · M new · K ready · J uploaded · X selected`.
-
-**Do NOT reintroduce the loading-loop bug.** The effect must use `loadedForRef` keyed by sorted artist IDs.
-
-### Progress event protocol
-
-`batch.js` emits:
-```
-{ stage: 'start',         done: 0, total }
-{ stage: 'track-start',   index, total, trackName, artistName }
-{ stage: 'download',      index, bytes, trackName }
-{ stage: 'cut',           index, seg, phase: 'raw' | 'final', start, end }
-{ stage: 'demucs-start',  index, seg }
-{ stage: 'demucs-done',   index, seg, elapsedMs }
-{ stage: 'track-done',    done, total, summary }
-{ stage: 'track-failed',  done, total, summary, error }
-{ stage: 'done',          done, total, status: 'done', summary }
-```
-
-`upload.js` emits:
-```
-{ stage: 'start',         done: 0, total }
-{ stage: 'track-start',   index, total, trackName, artistName }
-{ stage: 'r2-uploaded',   index, seg, r2Key }
-{ stage: 'db-inserted',   index, count }
-{ stage: 'track-done',    done, total, summary }
-{ stage: 'track-failed',  done, total, summary, error }
-{ stage: 'done',          done, total, status: 'done', summary }
-```
-
-`updateFromLine` reads `payload.done` and `payload.total` (top level) for the progress bar.
-
-### Environment
-
-Python 3.14.8 at `C:\Users\Desktop\AppData\Local\Programs\Python\Python314\`
-Virtual environment at `E:\matb3aa-game\venv\` with `demucs` + `stemextract`.
-
-**.env keys used:**
-```
-PYTHON_PATH=E:\matb3aa-game\venv\Scripts\python.exe
-MATB3AA_BASE=https://www.matb3aa.com
-MATB3AA_API=https://www.matb3aa.com/api/v1
-USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 …
-FFMPEG_PATH=C:\Tools\ffmpeg\bin\ffmpeg.exe
-CF_API_BASE=https://music-game-wrangler.abdulrahman-muhammad2090.workers.dev
-```
-
-**No trailing slash on `CF_API_BASE`.**
-
-### Admin — Published Artists page (v38)
-
-The sticky selection bar has **Clear**, **🎼 Generate**, **⬆️ Upload**, **Publish all clips →**.
-
-Header filters:
-- Search by name
-- Genre dropdown
-- **Clip filter:** All artists / Has clips / No clips
-- **Instruments filter (NEW v38):** All instruments / Has instruments / No instruments ← uses `artist.instruments_count`
-- Source dropdown: All sources / matb3aa / albumaty / mp3quran
-
-`ArtistGrid` passes `instrumentCount={artist.instruments_count}` to `ArtistCard`.
-
-**`ArtistCard.jsx` — pending**: needs to render the `instrumentCount` prop. If the card doesn't yet display it, that's the remaining gap. **Check whether the card was updated to show the count next to `clipCount`.**
+**Local output root:** `E:\matb3aa-game\server\instrumental-output\<artist_id>_<slug>\<track_slug>\`
 
 ## Admin Frontend
 
 `PublishedTracks.jsx` — pagination works.
-
 Reverse-batch — working.
+`PublishedArtists.jsx` — 4 filters: search, genre, clips (with/without), **instruments (with/without)**. Source dropdown. Artist cards should render `instruments_count`.
 
-`PublishedArtists.jsx` — has all four filters + sticky bar with Generate + Upload.
+**No `PublishedInstruments.jsx` page yet** — browse UI for uploaded instruments is missing.
 
-**No `PublishedInstruments.jsx` page yet** — the browsing UI for uploaded instruments is missing.
+## Phase 2 — Client Plumbing (DONE)
+
+All complete:
+- `game/src/context/GameSettingsContext.jsx` — has `instruments` setting persisted
+- `game/src/components/domain/Setup/Instruments/InstrumentsPicker.jsx` — 3-button picker
+- `game/src/components/domain/Setup/Modals/SharedGameSettings.jsx` — "Instruments" section with `allowInstruments` prop
+- `game/src/hooks/usePlayParams.js` — parses `instruments`
+- `game/src/hooks/useRoundMulti.js` — forwards `instruments`
+- `game/src/routes/Setup.jsx` — `buildBaseParams()` includes `instruments` when not `none`
+
+## Phase 3 — Instrumental Question Card (DONE)
+
+| File | Change |
+|---|---|
+| `game/src/components/domain/Rounds/QuestionCard.jsx` | Accepts `source` prop. Renders "🎼 Instrumental" badge + `border-accent-2 bg-accent-soft` frame. Forces `effectiveReversal` off for `lyrics-track` (multi-line snippets). |
+| `game/src/routes/Play.jsx` | `normalizeRounds` carries `source`. Passes `source` to `QuestionCard`. |
+| `game/src/routes/Play2.jsx` | Passes `source` to `QuestionCard`. |
+| `game/src/routes/PlayMulti.jsx` | Passes `source` to `QuestionCard`. Also fixed `buildSuddenDeathUrl` to forward `instruments` to Sudden Death. |
+| `game/src/components/domain/SuddenDeath/SuddenDeathQuestionCard.jsx` | Same badge + frame treatment. `effectiveReversal` skip for `lyrics-track`. |
+| `game/src/routes/SuddenDeath.jsx` | Passes `source` to `SuddenDeathQuestionCard`. |
+| `game/src/components/domain/SuddenDeath/SuddenDeathReveal.jsx` | `displayAnswer(question, raw)` resolves `opt-N` → `options[N].label` and `name-position` → Arabic. (Belt-and-braces — server no longer emits `opt-N`.) |
+
+**`Play3.jsx` NOT updated** — L3 modal still sets `allowInstruments={false}`, so L3 never sends `instruments`. When flipping that on, add `source={session.currentRound?.source}` to `Play3.jsx`'s `QuestionCard`.
+
+**`Sudden Death` + `instruments`:** `PlayMulti.jsx`'s `buildSuddenDeathUrl` now forwards `instruments` (and `returnTo` carries the full PlayMulti URL including `instruments`).
 
 ## Express Proxy
 
 `GET /api/cloudflare/tracks` — pass-through.
-
-`/api/cloudflare/remote/instruments/*` — proxies to Worker `/instruments/*`.
-
-`/api/cloudflare/remote/instrumentals/serve?key=…` — streams R2 audio through Express.
+`/api/cloudflare/remote/instruments/*` — proxies to Worker.
+`/api/cloudflare/remote/instrumentals/serve?key=…` — streams R2 audio.
 
 ## Environment
 
-- **Windows.** `cmd` for wrangler, PowerShell for scripts.
+- **Windows.** `cmd` for wrangler.
 - Node 18+. Express uses ESM.
-- Python 3.14.8. Virtual environment at `E:\matb3aa-game\venv\`.
+- Python 3.14.8 at `C:\Users\Desktop\AppData\Local\Programs\Python\Python314\`.
+- Virtual environment at `E:\matb3aa-game\venv\`.
 - **Never pass Arabic inline through `cmd` `curl -d`.**
 - Temp files in `E:\matb3aa-game\server\tmp-preview-test\`.
 - **`jq` is not installed.**
 - **After `wrangler deploy`, verification curls may hit a stale edge for ~30s.**
 - **`curl` in `cmd`:** `&` terminates the command. Wrap URLs in `"…"`. Variables use `%VAR%`.
-- **Arabic filenames** work with `dir` and Node `spawn` but garble in `>` redirects. Prefer writing files from Node.
+- **Arabic filenames** work with `dir` and Node `spawn` but garble in `>` redirects.
 
 ## Commands
 
@@ -440,11 +398,6 @@ npx wrangler tail
 :: D1
 npx wrangler d1 execute music-game-db --remote --command="SELECT …"
 
-:: Migrations
-npx wrangler d1 execute music-game-db --remote --file=./migrations/0004_instruments.sql
-npx wrangler d1 execute music-game-db --remote --file=./migrations/0005_drop_source_url.sql
-npx wrangler d1 execute music-game-db --remote --file=./migrations/0006_instruments_index.sql
-
 :: Deploy game
 cd E:\matb3aa-game\game
 npm run build
@@ -455,35 +408,31 @@ cd E:\matb3aa-game
 git add .
 git commit -m "…"
 git push
-
-:: Python / demucs
-cd E:\matb3aa-game
-venv\Scripts\activate
-python -m demucs --two-stems=vocals -o <out> <input.mp3>
 ```
 
 ## Known Open / Broken
 
-### 1. **ArtistCard.jsx — verify instrument count is rendered**
-`ArtistGrid` passes `instrumentCount={artist.instruments_count}`. Confirm `ArtistCard.jsx` displays it. If not, that's a small fix.
+### 1. **Anti-skew round-robin — pending verification**
+`instruments-slots.js` now round-robins across artists. Deployed but the 5× curl verification has not been reported back. Test: run L1 with `artists=264,9&instruments=all&count=10` five times, count slugs in `clip.r2_key`.
 
-### 2. **Verify v37 changes are applied**
-- `curl "…/instruments?limit=2"` — no `source_url` in the response
-- Generate modal — `ready` tracks unchecked (not just `uploaded`)
+### 2. **Same skew may exist in traditional audio**
+`slots.js` (`pickSlotsVaried`) and `fetchFeaturedSlots` (in both `rounds.js` and `round-mutli.js`) still use `ORDER BY RANDOM() LIMIT N`. Not changed in v40. If traditional audio also skews, apply the same round-robin pattern.
 
-### 3. **No `PublishedInstruments.jsx` admin page**
-No UI reads from `/instruments` yet. Users can't browse, play, or delete uploaded instruments from the admin.
-
-### 4. **Sporcle Stage 1 under testing**
+### 3. **Sporcle Stage 1 under testing**
 Nine-step curl test not yet run.
 
-### 5. **Client rendition chain incomplete**
+### 4. **No `PublishedInstruments.jsx` admin page**
+No UI reads from `/instruments` for browsing/deleting.
+
+### 5. **Verify `ArtistCard.jsx` renders `instruments_count`**
+
+### 6. **Client rendition chain incomplete**
 - `useRoundMultiplayer.js` — no `rendition` param
 - `PlayMulti.jsx` — doesn't pass `rendition: params.rendition`
 
-### 6. **`answer-check.js` on the client missing `canonicalPosition`**
+### 7. **`answer-check.js` on the client missing `canonicalPosition`** (Sporcle)
 
-### 7–20. Carried over:
+### 8–21. Carried over:
 - `COUNTDOWN_MS` unused declaration in Sporcle helpers.js
 - `handoff-*.md` and `prompt*.txt` tracked in repo
 - Duplicate controller at `src/controllers/admin/tracks.js`
@@ -516,34 +465,21 @@ Nine-step curl test not yet run.
 
 ## Most Likely Next Tasks
 
-**Five threads outstanding, in priority order:**
+**Six threads outstanding, in priority order:**
 
-1. **Verify the v38 changes:**
-   - `curl "https://music-game-wrangler.abdulrahman-muhammad2090.workers.dev/artists?limit=2"` → `instruments_count` present
-   - Test a genre change on an artist with instruments:
-     ```cmd
-     curl -X PUT "…/artists/9" -H "Content-Type: application/json" -d "{\"name\":\"عمرو دياب\",\"genre_ids\":[45,99]}"
-     ```
-     Response should include `instruments_updated: N`.
-     Then `curl "…/instruments?artist_id=9&limit=2"` — `genre_ids` should be `[6, 45, 99]`.
-   - Published Artists page → new "Instruments" filter dropdown
-   - Confirm artist cards render the instrument count
+1. **Verify anti-skew round-robin** — run the 5× L1 curl and count artist slugs. If skew persists, add a hard cap per artist.
 
-2. **Build `PublishedInstruments.jsx`** — browse uploaded instruments:
-   - Flat list grouped by track (both segments inline)
-   - Filters: artist, position, search
-   - Playback via `/api/cloudflare/remote/instrumentals/serve?key=…`
-   - Delete single segment, delete whole track
-   - Home tile + route registration
-   - Same shape as `PublishedTracks.jsx`
+2. **Extend round-robin to traditional audio** — if `instruments=none` shows the same skew, apply the same pattern to `slots.js` and `fetchFeaturedSlots`.
 
-3. **Run the Sporcle nine-step curl test**
+3. **Enable L3 instruments** — flip `allowInstruments={true}` on `Level3Modal`, add `source` prop to `Play3.jsx`'s `QuestionCard`, verify `/round-set` honors `instruments`.
 
-4. **Finish the client rendition chain** (`useRoundMultiplayer.js`, `PlayMulti.jsx`)
+4. **Build `PublishedInstruments.jsx`** — browse uploaded instruments.
 
-5. **Commit the v29–v38 work** to git
+5. **Run the Sporcle nine-step curl test.**
 
-**Recommended next step:** item 2 — build `PublishedInstruments.jsx`. Every other operation works; only browsing/deleting uploaded instruments is missing from the admin.
+6. **Finish the client rendition chain** (`useRoundMultiplayer.js`, `PlayMulti.jsx`).
+
+**Recommended next step:** item 1 — verify the anti-skew fix. Then item 3 (L3 instruments) or item 4 (PublishedInstruments) depending on whether you want game-side or admin-side progress first.
 
 Ask what the user wants to work on next.
 
@@ -551,28 +487,26 @@ Ask what the user wants to work on next.
 
 ## END OF PROMPT
 
-Save this as `E:\matb3aa-game\handoff-v38.md`. Paste it as the first message of your next session. It's self-contained.
+Save this as `E:\matb3aa-game\handoff-v40.md`. Paste it as the first message of your next session.
 ```
 
 ---
 
-## What's new in v38
+## What's new in v40
 
 | Section | Change |
 |---|---|
-| **Artists endpoints** | Documented `instruments_count` and the genre cascade |
-| **Instruments schema** | Added the third index `idx_instruments_artist_track` |
-| **Migrations** | Added `0006_instruments_index.sql` |
-| **Instrumental pipeline** | Mentioned `instruments_count` source and the v38 filter |
-| **Published Artists page** | Documented the new Instruments filter |
-| **Admin Frontend** | Noted `ArtistCard.jsx` may need the count rendering (uncertain) |
-| **Known Open #1** | Verify `ArtistCard.jsx` renders the count |
-| **Most Likely Next Tasks** | Reordered — verify v38, then build `PublishedInstruments.jsx` |
+| **Lyrics option shape** | Documented the `opt-N` → snippet text migration (v40) with rationale |
+| **Anti-skew round-robin** | New section — documents the fix in `instruments-slots.js` |
+| **Phase 2** | Marked **DONE** with full file list |
+| **Phase 3** | Marked **DONE** with full file list, including `SuddenDeathReveal` belt-and-braces fix |
+| **PlayMulti `buildSuddenDeathUrl`** | Documented the `instruments` forwarding fix |
+| **Known Open** | Reordered — anti-skew verification is now #1 |
+| **Most Likely Next Tasks** | Rewritten — 6 threads in priority order |
 
 The document is self-contained. A fresh model knows:
-- `instruments_count` exists on every artist response
-- Genre changes cascade to instruments
-- The Published Artists page now has an instruments filter
-- The next big piece is the Instruments browse page
-
-**One uncertainty flagged for the next session:** whether `ArtistCard.jsx` actually renders the `instrumentCount` prop. The change was described but the file wasn't pasted back for confirmation.
+- Instrumental rounds work end-to-end at all levels except L3
+- Phase 2 + 3 are complete
+- The anti-skew fix is deployed but unverified
+- The `opt-N` convention is dead
+- Exactly what remains: verify skew, extend round-robin, enable L3, build `PublishedInstruments`, run Sporcle tests, finish rendition chain

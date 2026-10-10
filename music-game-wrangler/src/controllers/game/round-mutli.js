@@ -6,6 +6,9 @@ import { tryBuild } from './rounds-methods/buildingRounds.js';
 import { buildLyricsRound } from './rounds-methods/buildingLyrics.js';
 import { pickSlotsVaried } from './rounds-methods/slots.js';
 import { computeDegenerateTypes } from './rounds-methods/degenerate-types.js';
+import { fetchInstrumentSlots } from './rounds-methods/instruments-slots.js';
+import { buildInstrumentalRoundMulti } from './rounds-methods/buildingInstrumental.js';
+import { fetchLyricsPool } from './rounds-methods/instruments-lyrics-pool.js';
 
 import {
   VALID_TYPES,
@@ -29,17 +32,8 @@ const MULTI_ORDER = [
 
 const QUESTIONS_PER_ROUND_CAP = 5;
 
-// Matches the clamp in rounds.js. Raised from 20 to 500 so multiplayer
-// requests can ask for large batches.
 const MAX_COUNT = 500;
 
-/**
- * How many featured rounds to reserve in the initial pass.
- *
- * - If `name-featured` is the only requested audio type, we want
- *   every round to be featured — return `count`.
- * - Otherwise, reserve up to 40% of the total, with no hard cap.
- */
 function featuredQuota(count, activeAudioOrder) {
   const onlyFeatured =
     activeAudioOrder.length === 1 && activeAudioOrder[0] === 'name-featured';
@@ -62,18 +56,18 @@ export async function getRoundMulti(request, env) {
     ? true
     : requestedTypes.some(t => LYRICS_TYPES.has(t));
 
-  if (!wantsAudio && !wantsLyrics) {
-    return error(
-      `types must include at least one of: ${VALID_TYPES.join(', ')}`,
-      400
-    );
-  }
-
   const count     = clamp(Number(url.searchParams.get('count') ?? 5), 1, MAX_COUNT);
   const artistIds = parseIdList(url.searchParams.get('artists'));
   const genreIds  = parseIdList(url.searchParams.get('genres'));
   const years     = parseIdList(url.searchParams.get('years'));
   const rendition = url.searchParams.get('rendition') === 'reverse' ? 'reverse' : 'forward';
+
+  /* ── instruments mode ──────────────────────────────────── */
+  const instrumentsParam = url.searchParams.get('instruments');
+  const instrumentsMode =
+    instrumentsParam === 'all'   ? 'all'   :
+    instrumentsParam === 'mixed' ? 'mixed' :
+                                   'none';
 
   const { ids: scopeArtistIds, tier: scopeTier } = await resolveScope(env, {
     artistIds, genreIds, years,
@@ -83,51 +77,81 @@ export async function getRoundMulti(request, env) {
     return error('No clips match the selected scope', 404);
   }
 
+  /* ── Split count by mode ─────────────────────────────── */
+  let traditionalCount = count;
+  let instrumentalCount = 0;
+  if (instrumentsMode === 'all') {
+    traditionalCount = 0;
+    instrumentalCount = count;
+  } else if (instrumentsMode === 'mixed') {
+    traditionalCount = Math.round(count / 2);
+    instrumentalCount = count - traditionalCount;
+  }
+
+  /* ── Traditional pool ─────────────────────────────────── */
   let usedRendition = rendition;
   let audioSlots = [];
-  if (wantsAudio) {
-    audioSlots = await pickSlotsVaried(env, scopeArtistIds, count * 5, years, rendition);
+  if (traditionalCount > 0 && wantsAudio) {
+    audioSlots = await pickSlotsVaried(
+      env, scopeArtistIds, traditionalCount * 5, years, rendition
+    );
     if (rendition === 'reverse' && audioSlots.length === 0) {
       usedRendition = 'forward';
-      audioSlots = await pickSlotsVaried(env, scopeArtistIds, count * 5, years, 'forward');
+      audioSlots = await pickSlotsVaried(
+        env, scopeArtistIds, traditionalCount * 5, years, 'forward'
+      );
     }
   }
-  const lyricsRowsAll = wantsLyrics
+  const lyricsRowsAll = (traditionalCount > 0 && wantsLyrics)
     ? await resolveLyricsPool(env, { scopeArtistIds, genreIds, years })
     : [];
-  const lyricsRows = wantsLyrics ? pickLyricsVaried(lyricsRowsAll, count * 5) : [];
+  const lyricsRows = (traditionalCount > 0 && wantsLyrics)
+    ? pickLyricsVaried(lyricsRowsAll, traditionalCount * 5)
+    : [];
 
-  if (audioSlots.length === 0 && lyricsRows.length === 0) {
+  /* ── Instrumental pool ────────────────────────────────── */
+  let instrumentSlots = [];
+  let lyricsByKey = null;
+  if (instrumentalCount > 0) {
+    instrumentSlots = await fetchInstrumentSlots(
+      env, scopeArtistIds, instrumentalCount * 5, years
+    );
+    if (instrumentSlots.length > 0) {
+      lyricsByKey = await fetchLyricsPool(env, scopeArtistIds);
+    }
+  }
+
+  if (
+    audioSlots.length === 0 &&
+    lyricsRows.length === 0 &&
+    instrumentSlots.length === 0
+  ) {
     return error('No playable clips in the selected scope', 404);
   }
 
   const origin = new URL(request.url).origin;
 
-  const degenerate = computeDegenerateTypes(audioSlots, lyricsRows, scopeArtistIds);
+  const degenerate = computeDegenerateTypes(
+    audioSlots, lyricsRows, scopeArtistIds, instrumentSlots
+  );
   const fired = new Set();
   const degenerateState = { degenerate, fired };
 
   const rounds = [];
-  const usedAudioSlotIds = new Set();
+  const usedAudioSlotIds = new Set();        // traditional tracks
+  const usedInstrumentSlotIds = new Set();   // instruments
   const usedLyricIds = new Set();
   const typeTally = emptyTally();
 
-  // ── Featured reservation (audio only) ──
-  // Fetch a dedicated pool of featured slots instead of filtering the
-  // already-sampled audioSlots array. The sampled pool is biased by
-  // the random pick from pickSlotsVaried, which rarely includes enough
-  // featured tracks when only ~5% of the catalogue carries featured
-  // data. A direct query guarantees coverage.
+  /* ── Featured reservation (traditional audio only) ────── */
   const wantsFeatured = activeAudioOrder.includes('name-featured');
   let featuredPool = [];
-  if (wantsFeatured) {
+  if (wantsFeatured && traditionalCount > 0) {
     featuredPool = await fetchFeaturedSlots(
       env, scopeArtistIds, count * 3, years, usedRendition
     );
   }
-  
 
-  // ── Pass A: featured reservation ──
   if (wantsFeatured && featuredPool.length > 0) {
     const featuredLimit = Math.min(
       featuredQuota(count, activeAudioOrder),
@@ -150,7 +174,33 @@ export async function getRoundMulti(request, env) {
     }
   }
 
-  // ── Pass B: mixed fill ──
+  /* ── Instrumental pass (capped at instrumentalCount) ──── */
+  if (instrumentalCount > 0 && instrumentSlots.length > 0) {
+    let builtInstrumental = 0;
+    for (let i = 0; i < instrumentSlots.length; i++) {
+      if (builtInstrumental >= instrumentalCount) break;
+      const slot = instrumentSlots[i];
+      if (usedInstrumentSlotIds.has(slot.id)) continue;
+
+      const round = await buildInstrumentalRoundMulti(
+        env, request, slot, requestedTypes, scopeArtistIds,
+        i, typeTally, degenerateState, lyricsByKey
+      );
+
+      if (round && round.questions.length > 0) {
+        rounds.push(round);
+        usedInstrumentSlotIds.add(slot.id);
+        builtInstrumental += 1;
+
+        for (const q of round.questions) {
+          typeTally[q.type] = (typeTally[q.type] ?? 0) + 1;
+          if (degenerate.has(`instr:${q.type}`)) fired.add(`instr:${q.type}`);
+        }
+      }
+    }
+  }
+
+  /* ── Pass B: mixed fill (traditional audio + lyrics) ──── */
   const maxIter = Math.max(audioSlots.length, lyricsRows.length);
   let ai = 0, li = 0;
 
@@ -189,7 +239,7 @@ export async function getRoundMulti(request, env) {
     }
   }
 
-  // ── Fallback pass: audio ──
+  /* ── Fallback pass: audio ─────────────────────────────── */
   if (rounds.length < count) {
     for (const slot of audioSlots) {
       if (rounds.length >= count) break;
@@ -208,7 +258,7 @@ export async function getRoundMulti(request, env) {
     }
   }
 
-  // ── Fallback pass: lyrics ──
+  /* ── Fallback pass: lyrics ────────────────────────────── */
   if (rounds.length < count) {
     for (const row of lyricsRows) {
       if (rounds.length >= count) break;
@@ -257,9 +307,11 @@ export async function getRoundMulti(request, env) {
       typeTally,
       degenerateTypes: [...degenerate],
       lyricsPoolSize: lyricsRows.length,
+      requestedRendition: rendition,
+      usedRendition,
+      requestedInstruments: instrumentsMode,
+      instrumentRounds: rounds.filter(r => r.source === 'instrumental').length,
       generatedAt: new Date().toISOString(),
-      requestedRendition: rendition, 
-      usedRendition
     },
   });
 }
@@ -310,21 +362,10 @@ async function buildRoundMulti(
   };
 }
 
-/**
- * Direct DB query for featured slots — bypasses the sampling bias of
- * pickSlotsVaried, which returns a random subset of the artist's tracks
- * that rarely contains enough featured ones (~5% of catalogue).
- *
- * - Chunks `artistIds` into batches of 90 to stay under D1's 100-bound-
- *   parameter hard cap (query also binds `years` + `limit`).
- * - When `rendition === 'reverse'`, only slots with `r2_reversed_key`
- *   are eligible, and the selected column is aliased to `r2_key` so
- *   downstream code is unchanged.
- *
- * NOTE: Unlike `pickSlotsVaried`, this function does NOT do scope-level
- * fallback. Callers must decide whether to invoke it with 'reverse' or
- * 'forward' based on `usedRendition`.
- */
+/* ═══════════════════════════════════════════════════════════
+   fetchFeaturedSlots — chunked + rendition-aware.
+   ═══════════════════════════════════════════════════════════ */
+
 async function fetchFeaturedSlots(env, artistIds, limit, years = [], rendition = 'forward') {
   if (!artistIds.length) return [];
 

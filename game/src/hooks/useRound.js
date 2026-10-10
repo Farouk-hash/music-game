@@ -5,13 +5,9 @@ import { api } from '../lib/api.js';
 /**
  * Fetches a batch of rounds from the Worker.
  *
- *   const { data, isLoading, error } = useRound({
- *     genres, artists, years, types, count
- *   });
- *   // data: { rounds: [...], meta: {...} }
- *
  * `types` is an array of question type strings. Empty array = all types.
  * `years` is an array of integers. Empty array = no year filter.
+ * `instruments` is 'none' | 'mixed' | 'all' — default 'none'.
  *
  * Note: artists and genres are mutually exclusive in the query string
  * (artists replace genres when both are set). `years` composes with
@@ -24,6 +20,7 @@ export function useRound({
   types = [],
   count = 5,
   rendition = 'forward',
+  instruments = 'none',
   enabled = true,
 } = {}) {
   const params = new URLSearchParams();
@@ -32,6 +29,9 @@ export function useRound({
   if (years.length > 0)        params.set('years', years.join(','));
   if (types.length > 0)        params.set('types', types.join(','));
   if (rendition === 'reverse') params.set('rendition', 'reverse');
+  if (instruments && instruments !== 'none') {
+    params.set('instruments', instruments);
+  }
   params.set('count', String(count));
 
   const qs = params.toString();

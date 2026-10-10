@@ -6,32 +6,9 @@ import { OptionsGrid } from '../Rounds/OptionsGrid.jsx';
 /**
  * Options-mode question card for sudden death.
  *
- * Flow per question, per player:
- *   1. Show prompt + timer + options (unmarked).
- *   2. Player clicks an option → onPick(value) → parent marks revealed.
- *   3. Reveal: picked option highlighted, correct answer green,
- *      timer paused, "Pass to next player →" button appears.
- *   4. Parent advances to next player. This card receives `picked=null`
- *      and `revealed=false` again — options reset for the new player.
+ * `source` — 'instrumental' triggers the badge + accent frame.
  *
- * The timer is owned by the parent (see useQuestionTimer). This card
- * only renders the bar and reflects `timeLeft`.
- *
- * @param {object}   props
- * @param {string}   props.eyebrow         — "TRACK" / "ARTIST" / etc.
- * @param {string}   props.prompt
- * @param {Array}    props.options         — [{ label, value }]
- * @param {string}   props.correctValue
- * @param {string}   props.questionType
- * @param {*}        props.picked          — current player's pick (or null)
- * @param {boolean}  props.revealed        — true once current player has picked
- * @param {(value) => void} props.onPick
- * @param {() => void} props.onNext        — "Pass to next player"
- * @param {number}   props.timeLeft
- * @param {number}   props.totalSeconds
- * @param {boolean}  props.timedOut
- * @param {Function} props.labelFor
- * @param {object}   [props.reversal]
+ * Reversed answers are skipped for `lyrics-track` (multi-line snippets).
  */
 export function SuddenDeathQuestionCard({
   eyebrow,
@@ -39,6 +16,7 @@ export function SuddenDeathQuestionCard({
   options,
   correctValue,
   questionType,
+  source,
   picked,
   revealed,
   onPick,
@@ -49,8 +27,28 @@ export function SuddenDeathQuestionCard({
   labelFor = (o) => o.label,
   reversal,
 }) {
+  const isInstrumental = source === 'instrumental';
+  const effectiveReversal =
+    questionType === 'lyrics-track'
+      ? { reversed: false, style: null }
+      : reversal;
+
   return (
-    <div className="space-y-6">
+    <div
+      className={[
+        'space-y-6',
+        isInstrumental
+          ? 'rounded-md border border-accent-2 bg-accent-soft p-4'
+          : '',
+      ].join(' ')}
+    >
+      {isInstrumental && (
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-accent-2 bg-surface-2 px-2.5 py-0.5 text-[10px] font-semibold text-accent-2 uppercase tracking-[0.15em]">
+          <span aria-hidden>🎼</span>
+          Instrumental
+        </span>
+      )}
+
       {eyebrow && (
         <p className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">
           {eyebrow}
@@ -80,7 +78,7 @@ export function SuddenDeathQuestionCard({
         revealed={revealed}
         onPick={onPick}
         labelFor={labelFor}
-        reversal={reversal}
+        reversal={effectiveReversal}
       />
 
       {revealed && (

@@ -4,6 +4,7 @@ import { AnswerModePicker } from '../AnswerModePicker/AnswerModePicker.jsx';
 import { RoundCountPicker } from '../RoundCountPicker/RoundCountPicker.jsx';
 import { ReversedAnswersPicker } from '../ReversedAnswersPicker/ReversedAnswersPicker.jsx';
 import { TimerPicker } from '../Timer/TimerPicker.jsx';
+import { InstrumentsPicker } from '../Instruments/InstrumentsPicker.jsx';
 import { useGameSettings } from '../../../../context/GameSettingsContext.jsx';
 
 /**
@@ -16,11 +17,15 @@ import { useGameSettings } from '../../../../context/GameSettingsContext.jsx';
  *
  * `hideRoundCount` — pass true in multiplayer, which has its own
  * rounds-per-player control.
+ *
+ * `allowInstruments` — pass false in levels that don't support
+ * instrumental rounds (currently L3). The picker renders disabled.
  */
 export function SharedGameSettings({
   disabledTypes = new Set(),
   hideRoundCount = false,
   reversedClipsCount = 0,
+  allowInstruments = true,
 }) {
   const {
     questionTypes, setQuestionTypes,
@@ -29,6 +34,7 @@ export function SharedGameSettings({
     reversedAnswers, setReversedAnswers,
     timer, setTimer,
     audioRendition, setAudioRendition,
+    instruments, setInstruments,
   } = useGameSettings();
   const reversedAudioAvailable = reversedClipsCount > 0;
 
@@ -126,7 +132,32 @@ export function SharedGameSettings({
           </button>
         </div>
       </section>
-      
+
+      {/* Instruments — NEW */}
+      <section className="space-y-3">
+        <h3 className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">
+          Instruments
+        </h3>
+        <p className="text-xs text-ink-muted">
+          Play instrumental renditions (no vocals) instead of the original audio.
+          {!allowInstruments && (
+            <> Not available for this level.</>
+          )}
+        </p>
+
+        <InstrumentsPicker
+          value={allowInstruments ? instruments : 'none'}
+          onChange={setInstruments}
+          disabled={!allowInstruments}
+        />
+
+        <ul className="text-xs text-ink-subtle space-y-0.5 pt-1">
+          <li><span className="text-ink-muted">None</span> — hear the original audio (vocals included).</li>
+          <li><span className="text-ink-muted">Mixed</span> — half the rounds use instruments (no vocals).</li>
+          <li><span className="text-ink-muted">All</span> — every round uses instruments.</li>
+        </ul>
+      </section>
+
       {/* Timer */}
       <section className="space-y-3">
         <h3 className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">

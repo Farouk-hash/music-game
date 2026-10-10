@@ -22,6 +22,7 @@ const VALID_TYPES = new Set([
 ]);
 
 const VALID_REVERSED = new Set(['no', 'some', 'all']);
+const VALID_INSTRUMENTS = new Set(['none', 'mixed', 'all']);
 
 function parseTypes(searchParams) {
   const typesCsv = searchParams.get('types');
@@ -58,6 +59,10 @@ export function usePlayParams() {
     const reversedRaw = searchParams.get('reversed');
     const reversed = VALID_REVERSED.has(reversedRaw) ? reversedRaw : 'no';
 
+    // NEW: instruments mode
+    const instrumentsRaw = searchParams.get('instruments');
+    const instruments = VALID_INSTRUMENTS.has(instrumentsRaw) ? instrumentsRaw : 'none';
+
     const timerSeconds = timer === 'on'
       ? (answerMode === 'type' ? TIMER_SECONDS.type : TIMER_SECONDS.choose)
       : TIMER_SECONDS.off;
@@ -65,6 +70,7 @@ export function usePlayParams() {
     return {
       genres, artists, years, types, rendition,
       answerMode, timer, timerSeconds, count, reversed,
+      instruments,
     };
   }, [searchParams]);
 }

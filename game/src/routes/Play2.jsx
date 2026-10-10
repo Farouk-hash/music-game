@@ -56,9 +56,6 @@ export default function Play2() {
       ? POSITION_LABELS[opt.value] ?? opt.label
       : opt.label;
 
-  // Only offer the reveal-audio when the round is a lyrics round AND
-  // the current question is the last one in that round — otherwise
-  // the audio would replay for each question about the same lyric.
   const isLyricsRound = !!session.currentRound?.lyrics;
   const isLastQuestionInRound =
     session.questionIndex + 1 >= session.currentRound.questions.length;
@@ -119,6 +116,7 @@ export default function Play2() {
           labelFor={labelFor}
           answerMode={params.answerMode}
           questionType={q.type}
+          source={session.currentRound?.source}
           reversal={reversal}
           revealExtra={revealClip ? <AudioPlayer src={revealClip.serveUrl} /> : null}
         />

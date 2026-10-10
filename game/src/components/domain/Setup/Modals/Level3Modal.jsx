@@ -8,6 +8,7 @@ export function Level3Modal({
   onClose,
   onPlay,
   disabledTypes = new Set(),
+  reversedClipsCount = 0,
   genreMode,
   effectiveSelectedArtistsCount,
 }) {
@@ -48,7 +49,11 @@ export function Level3Modal({
           </p>
         )}
 
-        <SharedGameSettings disabledTypes={disabledTypes} />
+        <SharedGameSettings
+          disabledTypes={disabledTypes}
+          reversedClipsCount={reversedClipsCount}
+          allowInstruments={false}
+        />
 
         <div className="flex justify-end gap-2 pt-2 border-t border-border">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>

@@ -9,6 +9,8 @@ import { createContext, useContext, useState, useEffect } from 'react';
  *   roundCount       — integer, single-player rounds
  *   reversedAnswers  — 'no' | 'some' | 'all'
  *   timer            — 'off' | 'on'
+ *   audioRendition   — 'forward' | 'reverse'
+ *   instruments      — 'none' | 'mixed' | 'all'
  *
  * Persisted to localStorage (except roundCount and questionTypes,
  * which reset per session by design).
@@ -44,12 +46,18 @@ export function GameSettingsProvider({ children }) {
     localStorage.getItem('game.audioRendition') || 'forward'
   );
 
+  const [instruments, setInstruments] = useState(() => {
+    const saved = localStorage.getItem('game.instruments');
+    return ['none', 'mixed', 'all'].includes(saved) ? saved : 'none';
+  });
+
   useEffect(() => {
     localStorage.setItem('game.answerMode', answerMode);
     localStorage.setItem('game.reversedAnswers', reversedAnswers);
     localStorage.setItem('game.timer', timer);
     localStorage.setItem('game.audioRendition', audioRendition);
-  }, [answerMode, reversedAnswers, timer, audioRendition]);
+    localStorage.setItem('game.instruments', instruments);
+  }, [answerMode, reversedAnswers, timer, audioRendition, instruments]);
 
   const value = {
     ALL_TYPES,
@@ -59,6 +67,7 @@ export function GameSettingsProvider({ children }) {
     reversedAnswers, setReversedAnswers,
     timer, setTimer,
     audioRendition, setAudioRendition,
+    instruments, setInstruments,
   };
 
   return (

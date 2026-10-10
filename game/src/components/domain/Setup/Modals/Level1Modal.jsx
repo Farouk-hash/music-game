@@ -26,7 +26,11 @@ export function Level1Modal({ open, onClose, onPlay, disabledTypes = new Set() ,
           </button>
         </div>
 
-        <SharedGameSettings disabledTypes={disabledTypes} reversedClipsCount={reversedClipsCount}/>
+        <SharedGameSettings
+          disabledTypes={disabledTypes}
+          reversedClipsCount={reversedClipsCount}
+          allowInstruments={true}
+        />
 
         <div className="flex justify-end gap-2 pt-2 border-t border-border">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>

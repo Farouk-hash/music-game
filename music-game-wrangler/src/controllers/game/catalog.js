@@ -13,9 +13,10 @@ import { json } from '../../lib/response.js';
  *   artists — artists with tracks_count > 0 (i.e. actually playable)
  *   tracks  — distinct (artist_id, name) — one per song, regardless of positions
  *   clips   — every rendition (forward + reversed) across all slots
- *   albums  — distinct (artist_id, album_name) in tracks with a non-null album_name
+  albums  — distinct (artist_id, album_name) in tracks with a non-null album_name
  *   lyrics  — every row in lyrics
- *
+ *   instruments — distinct (artist_id, track_name) in the instruments table
+ *                 (a track with both 'middle' and 'custom' counts once)
  * Years shape (S3 — nested by year):
  *   years: [{ year: 1998, artist_ids: [1, 5, 9] }, ...]
  *   Built from all album_years rows. The year picker in Setup filters
@@ -24,7 +25,7 @@ import { json } from '../../lib/response.js';
 export async function getCatalog(request, env) {
   const [genresRes, artistsRes, countsRow, yearsRes] = await Promise.all([
     env.DB.prepare(
-      'SELECT id, name, display_name, image FROM genres ORDER BY display_name ASC'
+      'SELECT id, name, display_name, image FROM genres WHERE id != 6 ORDER BY display_name ASC'
     ).all(),
     env.DB.prepare(
       `
@@ -49,9 +50,11 @@ export async function getCatalog(request, env) {
            FROM tracks
            WHERE album_name IS NOT NULL AND TRIM(album_name) <> ''
          ))                           AS albums,
-        (SELECT COUNT(1) FROM lyrics)  AS lyrics , 
-        (SELECT COUNT(1) FROM tracks WHERE r2_reversed_key IS NOT NULL) AS reversedClips
-
+        (SELECT COUNT(1) FROM lyrics)  AS lyrics,
+        (SELECT COUNT(1) FROM tracks WHERE r2_reversed_key IS NOT NULL) AS reversedClips,
+        (SELECT COUNT(1) FROM (
+           SELECT DISTINCT artist_id, track_name FROM instruments
+         ))                           AS instruments
     `).first(),
     env.DB.prepare(`
       SELECT released_year, artist_id
@@ -111,7 +114,7 @@ export async function getCatalog(request, env) {
         albums:  countsRow?.albums  ?? 0,
         lyrics:  countsRow?.lyrics  ?? 0,
         reversedClips: countsRow?.reversedClips ?? 0,
-
+        instruments:   countsRow?.instruments   ?? 0,
       },
       version,
     },

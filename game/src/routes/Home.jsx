@@ -6,9 +6,8 @@ import { StatGrid } from '../components/layout/StatGrid.jsx';
 import { Button } from '../components/ui/Button.jsx';
 import {
   IconGenres, IconArtists, IconTracks, IconClips,
-  IconAlbums, IconLyrics, IconReversed,
+  IconAlbums, IconLyrics, IconReversed, IconInstruments,
 } from '../lib/icons.jsx';
-
 export default function Home() {
   const { data, isLoading, error } = useCatalog();
 
@@ -54,6 +53,12 @@ export default function Home() {
       value: data?.counts?.lyrics,
       description: 'Songs with lyrics.',
       icon: <IconLyrics />,
+    },
+    {
+      label: 'Instruments',
+      value: data?.counts?.instruments,
+      description: 'Non-Vocals Instruments Only.',
+      icon: <IconInstruments />,
     },
   ];
 

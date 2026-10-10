@@ -9,6 +9,31 @@ const POSITION_LABELS = {
   custom: 'مقطع مخصص',
 };
 
+/**
+ * Resolve a stored value to its display text.
+ *
+ * - `name-position`: map 'start'/'middle'/'end'/'custom' → Arabic.
+ * - `opt-N`: look up `options[N]?.label` (some question types — notably
+ *   older instrumental lyrics-track rounds — emit `opt-N` values).
+ * - Anything else: return as-is.
+ */
+function displayAnswer(question, raw) {
+  if (raw == null || raw === '') return '—';
+  const s = String(raw);
+
+  if (question?.type === 'name-position') {
+    return POSITION_LABELS[s] ?? s;
+  }
+
+  if (s.startsWith('opt-')) {
+    const idx = Number(s.slice(4));
+    const opt = question?.options?.[idx];
+    if (opt?.label) return opt.label;
+  }
+
+  return s;
+}
+
 export default function SuddenDeathReveal({
   question,
   answers,
@@ -22,10 +47,7 @@ export default function SuddenDeathReveal({
 
   const label = id => playerLabels[id] ?? id ?? '';
 
-  const correctDisplay =
-    question.type === 'name-position'
-      ? POSITION_LABELS[question.correctValue] ?? question.correctValue
-      : question.correctValue;
+  const correctDisplay = displayAnswer(question, question.correctValue);
 
   return (
     <div className="space-y-6">
@@ -39,14 +61,13 @@ export default function SuddenDeathReveal({
         </p>
       </div>
 
-      {/* Per-player rows — full-opacity borders (opacity modifiers don't
-          work on Tailwind classes that map to var(...) without an RGB
-          triplet). */}
+      {/* Per-player rows */}
       <ul className="space-y-2">
         {playerIds.map(id => {
           const typed = answers?.[id] ?? '';
           const ok = isCorrectForQuestion(question, typed);
           const score = totals.find(t => t.id === id)?.score ?? 0;
+          const typedDisplay = displayAnswer(question, typed);
           return (
             <li
               key={id}
@@ -67,7 +88,7 @@ export default function SuddenDeathReveal({
                 ].join(' ')}
                 dir="auto"
               >
-                {typed || '—'}
+                {typedDisplay}
               </span>
               <span className="text-xs text-ink-subtle tabular-nums shrink-0">
                 total {score}

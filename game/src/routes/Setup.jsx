@@ -276,8 +276,13 @@ export default function Setup() {
       params.set('types', effectiveQuestionTypes.join(','));
     }
     // Only send rendition when reverse — forward is the default.
+        // Only send rendition when reverse — forward is the default.
     if (settings.audioRendition === 'reverse' && reversedClipsCount > 0) {
       params.set('rendition', 'reverse');
+    }
+    // Only send instruments when not the default.
+    if (settings.instruments && settings.instruments !== 'none') {
+      params.set('instruments', settings.instruments);
     }
     params.set('answerMode', settings.answerMode);
     params.set('timer', settings.timer);

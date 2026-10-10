@@ -8,10 +8,11 @@ import { api } from '../lib/api.js';
  *   const { data, isLoading, error } = useRoundMultiplayer({
  *     genres, artists, years, types,
  *     players,          // string[]
- *     level,            // 1 | 2
+ *     level,            // 1 | 2 | 3
  *     roundsPerPlayer,  // integer
+ *     rendition,        // 'forward' | 'reverse'
+ *     instruments,      // 'none' | 'mixed' | 'all'
  *   });
- *   // data: { players: [{ index, rounds: [...] }, ...], meta: {...} }
  */
 export function useRoundMultiplayer({
   genres = [],
@@ -21,7 +22,8 @@ export function useRoundMultiplayer({
   players = [],
   level = 1,
   roundsPerPlayer = 5,
-  rendition = 'forward',   
+  rendition = 'forward',
+  instruments = 'none',
   enabled = true,
 } = {}) {
   const playerCount = players.length;
@@ -32,8 +34,10 @@ export function useRoundMultiplayer({
   else if (genres.length > 0)  params.set('genres', genres.join(','));
   if (years.length > 0)        params.set('years', years.join(','));
   if (types.length > 0)        params.set('types', types.join(','));
-  if (rendition === 'reverse') params.set('rendition', 'reverse'); 
-  
+  if (rendition === 'reverse') params.set('rendition', 'reverse');
+  if (instruments && instruments !== 'none') {
+    params.set('instruments', instruments);
+  }
   params.set('players', String(playerCount));
   params.set('level', String(level));
   params.set('count', String(roundsPerPlayer));

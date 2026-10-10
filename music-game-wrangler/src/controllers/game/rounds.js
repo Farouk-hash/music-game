@@ -18,6 +18,12 @@ import {
 } from './rounds-methods/scope-helpers.js';
 import { chunkedIn, D1_CHUNK_SIZE } from '../../utilities/chunkedIn.js';
 
+
+import { fetchInstrumentSlots } from './rounds-methods/instruments-slots.js';
+import { buildInstrumentalRound } from './rounds-methods/buildingInstrumental.js';
+import { fetchLyricsPool } from './rounds-methods/instruments-lyrics-pool.js';
+
+
 export { VALID_TYPES };
 
 const MAX_COUNT = 500;
@@ -98,9 +104,9 @@ async function fetchFeaturedSlots(env, artistIds, limit, years = [], rendition =
 
   return rows.slice(0, limit);
 }
+
 export async function getRound(request, env) {
   const url = new URL(request.url);
-
   const requestedTypes = parseRequestedTypes(url);
 
   const count     = clamp(Number(url.searchParams.get('count') ?? 5), 1, MAX_COUNT);
@@ -108,6 +114,12 @@ export async function getRound(request, env) {
   const genreIds  = parseIdList(url.searchParams.get('genres'));
   const years     = parseIdList(url.searchParams.get('years'));
   const rendition = url.searchParams.get('rendition') === 'reverse' ? 'reverse' : 'forward';
+
+  const instrumentsParam = url.searchParams.get('instruments');
+  const instrumentsMode =
+    instrumentsParam === 'all'   ? 'all'   :
+    instrumentsParam === 'mixed' ? 'mixed' :
+                                   'none';
 
   const { ids: scopeArtistIds, tier: scopeTier } = await resolveScope(env, {
     artistIds, genreIds, years,
@@ -117,81 +129,127 @@ export async function getRound(request, env) {
     return error('No clips match the selected scope', 404);
   }
 
-  // ── Slot pool with scope-level rendition fallback ──
-  // If `rendition === 'reverse'`, first try the reversed pool.
-  // If it's empty for this scope, fall back to forward.
-  let usedRendition = rendition;
-  let audioSlots = await pickSlotsVaried(env, scopeArtistIds, count * 5, years, rendition);
-  if (rendition === 'reverse' && audioSlots.length === 0) {
-    usedRendition = 'forward';
-    audioSlots = await pickSlotsVaried(env, scopeArtistIds, count * 5, years, 'forward');
+  // Split count by mode
+  let traditionalCount = count;
+  let instrumentalCount = 0;
+  if (instrumentsMode === 'all') {
+    traditionalCount = 0;
+    instrumentalCount = count;
+  } else if (instrumentsMode === 'mixed') {
+    traditionalCount = Math.round(count / 2);
+    instrumentalCount = count - traditionalCount;
   }
-  const lyricsRowsAll = await resolveLyricsPool(env, { scopeArtistIds, genreIds, years });
-  const lyricsRows = pickLyricsVaried(lyricsRowsAll, count * 5);
 
-  if (audioSlots.length === 0 && lyricsRows.length === 0) {
+  /* ── Traditional pool ─────────────────────────────────── */
+  let usedRendition = rendition;
+  let audioSlots = [];
+  if (traditionalCount > 0) {
+    audioSlots = await pickSlotsVaried(
+      env, scopeArtistIds, traditionalCount * 5, years, rendition
+    );
+    if (rendition === 'reverse' && audioSlots.length === 0) {
+      usedRendition = 'forward';
+      audioSlots = await pickSlotsVaried(
+        env, scopeArtistIds, traditionalCount * 5, years, 'forward'
+      );
+    }
+  }
+  const lyricsRowsAll = traditionalCount > 0
+    ? await resolveLyricsPool(env, { scopeArtistIds, genreIds, years })
+    : [];
+  const lyricsRows = traditionalCount > 0
+    ? pickLyricsVaried(lyricsRowsAll, traditionalCount * 5)
+    : [];
+
+  /* ── Instrumental pool ────────────────────────────────── */
+  let instrumentSlots = [];
+  let lyricsByKey = null;
+  if (instrumentalCount > 0) {
+    instrumentSlots = await fetchInstrumentSlots(
+      env, scopeArtistIds, instrumentalCount * 5, years
+    );
+    if (instrumentSlots.length > 0) {
+      lyricsByKey = await fetchLyricsPool(env, scopeArtistIds);
+    }
+  }
+
+  if (
+    audioSlots.length === 0 &&
+    lyricsRows.length === 0 &&
+    instrumentSlots.length === 0
+  ) {
     return error('No playable clips in the selected scope', 404);
   }
 
-  const degenerate = computeDegenerateTypes(audioSlots, lyricsRows, scopeArtistIds);
+  const degenerate = computeDegenerateTypes(
+    audioSlots, lyricsRows, scopeArtistIds, instrumentSlots
+  );
   const fired = new Set();
   const degenerateState = { degenerate, fired };
 
   const rounds = [];
-  const usedAudioSlotIds = new Set();
+  const usedAudioSlotIds = new Set();        // track slots
+  const usedInstrumentSlotIds = new Set();   // instrument slots
   const usedLyricIds = new Set();
   const typeTally = emptyTally();
 
-  // ── Featured reservation (runs before Phase A) ──
-  // Fetches a dedicated pool of featured slots instead of relying on
-  // the randomly-sampled audioSlots array. Fixes the case where
-  // types=name-featured produces only 1-3 rounds.
+  /* ── Featured reservation (audio) ─────────────────────── */
   const wantsFeatured = requestedTypes.length === 0
     || requestedTypes.includes('name-featured');
 
-    if (wantsFeatured) {
-      // Use the same rendition that the audio pool settled on. If the
-      // reverse pool was empty and pickSlotsVaried fell back to forward,
-      // usedRendition is already 'forward' here.
-      const featuredPool = await fetchFeaturedSlots(
-        env, scopeArtistIds, count * 3, years, usedRendition
+  if (traditionalCount > 0 && wantsFeatured) {
+    const featuredPool = await fetchFeaturedSlots(
+      env, scopeArtistIds, count * 3, years, usedRendition
+    );
+
+    const featuredDegenerate = new Set(degenerate);
+    featuredDegenerate.delete('name-featured');
+    const featuredState = { degenerate: featuredDegenerate, fired: new Set() };
+
+    const featuredLimit = Math.min(
+      featuredQuota(count, requestedTypes),
+      featuredPool.length
+    );
+
+    for (const slot of featuredPool) {
+      if (rounds.length >= featuredLimit) break;
+      if (usedAudioSlotIds.has(slot.id)) continue;
+      const round = await buildRound(
+        env, request, slot, requestedTypes, scopeArtistIds,
+        rounds.length, typeTally, featuredState
       );
-
-      // The featured pool is guaranteed to have featured data, so
-      // `name-featured` is NOT degenerate within it. Build a fresh
-      // state that removes name-featured from the degenerate set
-      // (but keeps every other degenerate type enforced).
-      const featuredDegenerate = new Set(degenerate);
-      featuredDegenerate.delete('name-featured');
-      const featuredState = {
-        degenerate: featuredDegenerate,
-        fired: new Set(),        // fresh — the featured pass gets its own counter
-      };
-
-      const featuredLimit = Math.min(
-        featuredQuota(count, requestedTypes),
-        featuredPool.length
-      );
-
-      for (const slot of featuredPool) {
-        if (rounds.length >= featuredLimit) break;
-        if (usedAudioSlotIds.has(slot.id)) continue;
-        const round = await buildRound(
-          env, request, slot, requestedTypes, scopeArtistIds,
-          rounds.length, typeTally, featuredState
-        );
-        if (round) {
-          rounds.push(round);
-          usedAudioSlotIds.add(slot.id);
-          typeTally[round.type] = (typeTally[round.type] ?? 0) + 1;
-          // Do NOT propagate to the main `fired` set for name-featured —
-          // the featured pass owns its own counting.
-        }
+      if (round) {
+        rounds.push(round);
+        usedAudioSlotIds.add(slot.id);
+        typeTally[round.type] = (typeTally[round.type] ?? 0) + 1;
       }
     }
+  }
 
-  // ── Phase A: explicit types (fill the remainder) ──
-  if (requestedTypes.length > 0) {
+  /* ── Instrumental pass ────────────────────────────────── */
+  if (instrumentalCount > 0 && instrumentSlots.length > 0) {
+    let builtInstrumental = 0;
+    for (let i = 0; i < instrumentSlots.length; i++) {
+      if (builtInstrumental >= instrumentalCount) break;
+      const slot = instrumentSlots[i];
+      if (usedInstrumentSlotIds.has(slot.id)) continue;
+
+      const round = await buildInstrumentalRound(
+        env, request, slot, requestedTypes, scopeArtistIds,
+        i, typeTally, degenerateState, lyricsByKey
+      );
+      if (round) {
+        rounds.push(round);
+        usedInstrumentSlotIds.add(slot.id);
+        builtInstrumental += 1;
+        typeTally[round.type] = (typeTally[round.type] ?? 0) + 1;
+        if (degenerate.has(`instr:${round.type}`)) fired.add(`instr:${round.type}`);
+      }
+    }
+  }
+
+  /* ── Phase A: explicit types (traditional) ────────────── */
+  if (traditionalCount > 0 && requestedTypes.length > 0) {
     const wantAudio  = requestedTypes.some(t => AUDIO_TYPES.has(t));
     const wantLyrics = requestedTypes.some(t => LYRICS_TYPES.has(t));
 
@@ -230,8 +288,12 @@ export async function getRound(request, env) {
     }
   }
 
-  // ── Phase B: mixed fill (only when no explicit types) ──
-  if (requestedTypes.length === 0 && rounds.length < count) {
+  /* ── Phase B: mixed fill (traditional, no types specified) ── */
+  if (
+    traditionalCount > 0 &&
+    requestedTypes.length === 0 &&
+    rounds.length < count
+  ) {
     const maxIter = Math.max(audioSlots.length, lyricsRows.length);
     let ai = 0, li = 0;
     for (let i = 0; i < maxIter * 2 && rounds.length < count; i++) {
@@ -292,6 +354,8 @@ export async function getRound(request, env) {
       lyricsPoolSize: lyricsRows.length,
       requestedRendition: rendition,
       usedRendition,
+      requestedInstruments: instrumentsMode,
+      instrumentRounds: rounds.filter(r => r.source === 'instrumental').length,
       generatedAt: new Date().toISOString(),
     },
   });

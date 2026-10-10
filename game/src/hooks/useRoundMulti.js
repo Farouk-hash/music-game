@@ -6,7 +6,7 @@ import { api } from '../lib/api.js';
  * Fetches multi-question rounds from the Worker.
  *
  * `years` composes with artists or genres, whichever wins the
- * artist/genre exclusivity check.
+ * artist/genre exclusivity check. `instruments` is 'none' | 'mixed' | 'all'.
  */
 export function useRoundMulti({
   genres = [],
@@ -15,6 +15,7 @@ export function useRoundMulti({
   types = [],
   count = 5,
   rendition = 'forward',
+  instruments = 'none',
   enabled = true,
 } = {}) {
   const params = new URLSearchParams();
@@ -23,7 +24,9 @@ export function useRoundMulti({
   if (years.length > 0)        params.set('years', years.join(','));
   if (types.length > 0)        params.set('types', types.join(','));
   if (rendition === 'reverse') params.set('rendition', 'reverse');
-
+  if (instruments && instruments !== 'none') {
+    params.set('instruments', instruments);
+  }
   params.set('count', String(count));
 
   const qs = params.toString();

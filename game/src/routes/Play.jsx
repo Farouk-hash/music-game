@@ -27,6 +27,7 @@ function normalizeRounds(rounds) {
     clip: r.clip,
     lyrics: r.lyrics,
     revealClip: r.revealClip,
+    source: r.source,          // NEW — 'instrumental' | undefined
     questions: [{
       type: r.type,
       prompt: r.question.prompt,
@@ -112,6 +113,7 @@ export default function Play() {
           labelFor={labelFor}
           answerMode={params.answerMode}
           questionType={q.type}
+          source={session.currentRound?.source}
           reversal={reversal}
           revealExtra={revealClip ? <AudioPlayer src={revealClip.serveUrl} /> : null}
         />
