@@ -439,6 +439,7 @@ router.post('/tracks/publish-clips', async (req, res) => {
 });
 
 
+
 // ═══════════════════════════════════════════════════════════
 // POST /api/cloudflare/tracks/reverse-batch
 // Batch-reverse every slot that has a forward clip but no reversed clip.
@@ -451,17 +452,28 @@ router.post('/tracks/reverse-batch', async (req, res) => {
     : null;
 
   // Query the Worker for slots with a forward clip and no reversed clip.
-  let allTracks;
+  // `has_reversed=0` is essential — without it, the Worker returns every
+  // forward slot and we'd have to filter locally (and would break past
+  // 20,000 rows). We still page through with `offset` as a safety net in
+  // case the result set ever exceeds a single batch.
+  const PAGE_SIZE = 20000;
+  let missing = [];
   try {
-    const data = await cloudflare.get('/tracks?has_forward=1&limit=20000');
-    allTracks = data?.tracks ?? [];
+    let offset = 0;
+    while (true) {
+      const data = await cloudflare.get(
+        `/tracks?has_forward=1&has_reversed=0&limit=${PAGE_SIZE}&offset=${offset}`
+      );
+      const batch = data?.tracks ?? [];
+      for (const t of batch) missing.push(t.id);
+      if (batch.length < PAGE_SIZE) break;
+      offset += PAGE_SIZE;
+      // Hard stop: never page beyond MAX_REVERSE_BATCH rows in one run.
+      if (missing.length >= MAX_REVERSE_BATCH) break;
+    }
   } catch (e) {
     return res.status(502).json({ error: `Failed to list tracks: ${e.message}` });
   }
-
-  const missing = allTracks
-    .filter(t => t.r2_key && !t.r2_reversed_key)
-    .map(t => t.id);
 
   if (missing.length === 0) {
     return res.status(200).json({ ok: true, count: 0, message: 'Nothing to reverse.' });
@@ -526,7 +538,6 @@ router.post('/tracks/reverse-batch', async (req, res) => {
 
   return res.status(201).json({ job: publicJob(job), count: ids.length });
 });
-
 // ─────────────────────────────────────────────────────────────
 // POST /api/cloudflare/tracks/:id/reverse
 // Reverses an existing forward clip and attaches it as the
@@ -627,17 +638,23 @@ router.post('/tracks/:id/reverse', async (req, res) => {
 router.get('/tracks', async (req, res) => {
   try {
     const params = new URLSearchParams();
-    if (req.query.artist_id)   params.set('artist_id', req.query.artist_id);
-    if (req.query.position)    params.set('position', req.query.position);
-    if (req.query.search)      params.set('search', req.query.search);
-    if (req.query.has_forward) params.set('has_forward', req.query.has_forward);
-    if (req.query.has_reversed) params.set('has_reversed', req.query.has_reversed);
-    if (req.query.album_name)  params.set('album_name', req.query.album_name);  
-    if (req.query.limit) params.set('limit', req.query.limit);
+    // Forward every supported filter + pagination param.
+    for (const key of [
+      'artist_id', 'position', 'search', 'album_name',
+      'has_forward', 'has_reversed',
+      'limit', 'offset',
+    ]) {
+      if (req.query[key] != null && req.query[key] !== '') {
+        params.set(key, req.query[key]);
+      }
+    }
 
     const qs = params.toString();
     const data = await cloudflare.get('/tracks' + (qs ? `?${qs}` : ''));
-    res.json({ tracks: data?.tracks ?? [], count: data?.count ?? 0 });
+    // Pass the Worker's full response through — tracks, count, total,
+    // limit, offset. Anything added to the Worker later is carried
+    // automatically.
+    res.json(data);
   } catch (e) {
     console.error('[cloudflare/tracks]', e);
     res.status(502).json({ error: e.message });

@@ -45,14 +45,27 @@ server/tmp-preview-test/
 tmp/
 *.tmp
 
+# ── Instrumental pipeline output ─────────────────────────
+server/instrumental-output/
+test-vocals/
+
 # ── Local audio / large binaries ─────────────────────────
-# Adjust these if you keep local audio under a specific folder.
 *.mp3
 *.wav
 *.m4a
 *.flac
 *.ogg
-!game/public/**/*.mp3   # keep any bundled UI sounds, if any
+
+# ── Python ───────────────────────────────────────────────
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+*.egg-info/
+dist-python/
+build-python/
 
 # ── Test / coverage ──────────────────────────────────────
 coverage/

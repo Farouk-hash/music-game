@@ -9,11 +9,7 @@ export function ArtistGrid({
   onEdit,
   detailPath = '/artists',
   publishable = true,
-  // NEW: a function that returns a per-artist detail href.
-  // When provided, called for each artist to compute the link.
   detailHrefFor,
-
-  // NEW — bulk selection passthrough
   selectable = false,
   selectedIds,
   onToggleSelect,
@@ -33,6 +29,7 @@ export function ArtistGrid({
           detailHref={detailHrefFor ? detailHrefFor(artist) : undefined}
           publishable={publishable}
           clipCount={artist.tracks_count}
+          instrumentCount={artist.instruments_count}   
           selectable={selectable}
           selected={selectedIds?.has(artist.id) ?? false}
           onToggleSelect={onToggleSelect}

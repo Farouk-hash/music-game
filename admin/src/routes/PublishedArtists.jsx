@@ -17,6 +17,8 @@ import { Badge } from '../components/ui/Badge';
 import { ModalForm } from '../components/Modal/ModalForm';
 import { BackLink } from '../components/layout/BackLink';
 import { artistDetailPath } from '../lib/quran';
+import { InstrumentalBatchModal } from '../components/domain/Instrumental/InstrumentalBatchModal';
+import { InstrumentalUploadModal } from '../components/domain/Instrumental/InstrumentalUploadModal.jsx';
 
 const PER_PAGE = 60;
 
@@ -25,9 +27,14 @@ export default function PublishedArtists() {
   const [genreFilter, setGenreFilter] = useState('');
   const [clipFilter, setClipFilter] = useState('all');
   const [sourceFilter, setSourceFilter] = useState('all');
+  const [instrumentsFilter, setInstrumentsFilter] = useState('all');
 
   const [selectedArtistIds, setSelectedArtistIds] = useState(() => new Set());
   const [bulkFlowOpen, setBulkFlowOpen] = useState(false);
+
+  const [instrOpen, setInstrOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
+
 
   const { genres: cloudflareGenres } = useCloudflareGenres();
   const { artists, loading, error, count } = useCloudflareArtists({
@@ -41,17 +48,25 @@ export default function PublishedArtists() {
     const q = search.trim().toLowerCase();
     return artists.filter(a => {
       if (q && !a.name.toLowerCase().includes(q)) return false;
+
       if (clipFilter !== 'all') {
         const hasClips = (a.tracks_count ?? 0) > 0;
         if (clipFilter === 'with' && !hasClips) return false;
         if (clipFilter === 'without' && hasClips) return false;
       }
+
+      if (instrumentsFilter !== 'all') {
+        const hasInstruments = (a.instruments_count ?? 0) > 0;
+        if (instrumentsFilter === 'with' && !hasInstruments) return false;
+        if (instrumentsFilter === 'without' && hasInstruments) return false;
+      }
+
       return true;
     });
-  }, [artists, search, clipFilter]);
+  }, [artists, search, clipFilter, instrumentsFilter]);
 
   // Pagination
-  const filterKey = `${search}|${genreFilter}|${sourceFilter}|${clipFilter}`;
+  const filterKey = `${search}|${genreFilter}|${sourceFilter}|${clipFilter}|${instrumentsFilter}`;
   const pg = usePagination(filtered, {
     perPage: PER_PAGE,
     resetKey: filterKey,
@@ -122,7 +137,9 @@ export default function PublishedArtists() {
             <Button variant="primary" size="sm" onClick={admin.openCustom}>
               + Add Custom Artist
             </Button>
+            
           </div>
+          
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -157,7 +174,17 @@ export default function PublishedArtists() {
             <option value="with">Has clips</option>
             <option value="without">No clips</option>
           </select>
-
+          
+          <select
+            value={instrumentsFilter}
+            onChange={e => setInstrumentsFilter(e.target.value)}
+            className="h-10 px-3 rounded-lg bg-surface-subtle text-ink text-sm border border-surface-border focus:outline-none focus:ring-2 focus:ring-brand-500"
+          >
+            <option value="all">All instruments</option>
+            <option value="with">Has instruments</option>
+            <option value="without">No instruments</option>
+          </select>
+          
           <select
             value={sourceFilter}
             onChange={e => setSourceFilter(e.target.value)}
@@ -175,6 +202,8 @@ export default function PublishedArtists() {
         count={selectedArtistIds.size}
         onClear={clearArtistSelection}
         onPublish={handleOpenBulkFlow}
+        onGenerateInstruments={() => setInstrOpen(true)}
+        onUploadInstruments={() => setUploadOpen(true)}
       />
 
       {loading && !artists.length ? (
@@ -244,6 +273,28 @@ export default function PublishedArtists() {
           onClose={handleCloseBulkFlow}
           artists={selectedArtists}
           autoStart
+        />
+      )}
+
+      {instrOpen && (
+        <InstrumentalBatchModal
+          open
+          onClose={() => {
+            setInstrOpen(false);
+            clearArtistSelection();
+          }}
+          artists={selectedArtists}
+        />
+      )}
+
+      {uploadOpen && (
+        <InstrumentalUploadModal
+          open
+          onClose={() => {
+            setUploadOpen(false);
+            clearArtistSelection();
+          }}
+          artists={selectedArtists}
         />
       )}
     </div>

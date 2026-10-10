@@ -30,6 +30,8 @@ export function Header({ actions = null }) {
               <NavLink to="/published/genres"  className={linkClass}>Published Genres</NavLink>
               <NavLink to="/published/artists" className={linkClass}>Published Artists</NavLink>
               <NavLink to="/published/tracks" className={linkClass}>Published Tracks</NavLink>
+              <NavLink to="/published/instruments" className={linkClass}>Published Instruments</NavLink>
+
               <NavLink to="/published/lyrics" className={linkClass}>Lyrics</NavLink>
               <NavLink to="/published/albumaty" className={linkClass}>Albumaty</NavLink>
               <NavLink to="/published/album-years" className={linkClass}>Released-Years</NavLink>

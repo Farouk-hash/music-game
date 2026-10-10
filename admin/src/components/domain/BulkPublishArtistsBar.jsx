@@ -5,6 +5,8 @@ export function BulkPublishArtistsBar({
   count,
   onClear,
   onPublish,
+  onGenerateInstruments,
+  onUploadInstruments,
   disabled = false,
 }) {
   if (count === 0) return null;
@@ -15,10 +17,32 @@ export function BulkPublishArtistsBar({
         <span className="font-medium">{count}</span>{' '}
         {count === 1 ? 'artist' : 'artists'} selected
       </p>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <Button variant="ghost" size="sm" onClick={onClear}>
           Clear
         </Button>
+        {onGenerateInstruments && (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={onGenerateInstruments}
+            disabled={disabled}
+            title="Cut + remove vocals → local MP3s"
+          >
+            🎼 Generate
+          </Button>
+        )}
+        {onUploadInstruments && (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={onUploadInstruments}
+            disabled={disabled}
+            title="Upload local MP3s to R2 + D1"
+          >
+            ⬆️ Upload
+          </Button>
+        )}
         <Button
           variant="primary"
           size="sm"

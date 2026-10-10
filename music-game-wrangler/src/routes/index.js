@@ -6,18 +6,20 @@ import { lyricsRoutes } from './admin/lyrics.js';
 import { trackRoutes } from './admin/tracks.js';
 import { catalogRoutes } from './game/catalog.js';
 import { roundRoutes } from './game/rounds.js';
+import { instrumentRoutes } from './admin/instruments.js';
 const allRoutes = [
   // GAME ROUTES ;
   ...catalogRoutes,
   ...roundRoutes,
-  
+
   // ADMIN PANEL ROUTES ;
   ...genreRoutes,
   ...artistRoutes,
   ...trackRoutes,
   ...clipRoutes,
-  ...lyricsRoutes ,
-  ...albumYearRoutes
+  ...lyricsRoutes,
+  ...albumYearRoutes,
+  ...instrumentRoutes,                                      
 ];
 
 

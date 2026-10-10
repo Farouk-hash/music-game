@@ -39,6 +39,14 @@ const tiles = [
     description: 'Artists currently live in Cloudflare.',
     group: 'published',
   },
+
+  {
+    to: '/published/instruments',
+    icon: '🎼',
+    title: 'Published Instruments',
+    description: 'Instrumental clips (vocals removed) live in Cloudflare.',
+    group: 'published',
+  },
    {
     to: '/published/upload',
     icon: '🤳',
@@ -53,6 +61,13 @@ const tiles = [
     description: 'Browse reciters and publish surah clips from mp3quran.net.',
     group: 'quran',
   },
+  {
+    to: '/youtube/import',
+    icon: '▶️',
+    title: 'Import from YouTube',
+    description: 'Crawl a playlist, pick videos, and (later) publish clips.',
+    group: 'youtube',
+  }
 ];
 
 export default function Home() {
@@ -97,6 +112,18 @@ export default function Home() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {tiles.filter(t => t.group === 'quran').map(tile => (
             <TileLink key={tile.to} tile={tile} variant="quran" />
+          ))}
+        </div>
+      </section>
+
+      {/* Youtube */}
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-subtle">
+          Youtube
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {tiles.filter(t => t.group === 'youtube').map(tile => (
+            <TileLink key={tile.to} tile={tile} />
           ))}
         </div>
       </section>

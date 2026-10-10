@@ -17,6 +17,9 @@ import cloudflareLyricsRouter from './routes/cloud-flare-routes/lyrics.js';
 import pipelineRouter from './routes/pipeline-routes.js';
 import albumatyRouter from './routes/albumaty-routes.js';
 import cloudflareAlbumYearsRouter from './routes/cloud-flare-routes/album-years.js';
+import youtubeRoutes from './routes/youtube-routes.js';
+import instrumentalRoutes from './routes/instrumental-routes.js';
+import instrumentalRemoteRoutes from './routes/cloud-flare-routes/instruments_remote.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -59,6 +62,9 @@ app.use('/api/cloudflare', cloudflareLyricsRouter);
 app.use('/api/pipeline', pipelineRouter);
 app.use('/api/albumaty', albumatyRouter);
 app.use('/api/cloudflare', cloudflareAlbumYearsRouter);
+app.use('/api/cloudflare', instrumentalRemoteRoutes);   
+app.use('/api', youtubeRoutes);
+app.use('/api', instrumentalRoutes);
 
 // Global error handler
 app.use((err, req, res, next) => {
@@ -66,13 +72,6 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: err.message });
 });
 
-// ─────────────────────────────────────────────────────────────
-// Start — listen FIRST, then warm up in the background.
-// Warmup failure is non-fatal: the server still binds and the
-// admin UI still works against Cloudflare routes. Routes that
-// actually need the matb3aa session will fail individually, which
-// is the correct behaviour when upstream is unreachable.
-// ─────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`\n🎵 Server ready on http://localhost:${PORT}`);
   console.log(`   GET http://localhost:${PORT}/api/genres`);

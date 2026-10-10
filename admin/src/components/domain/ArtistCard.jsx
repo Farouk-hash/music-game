@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Card } from '../ui/Card';
 import { Checkbox } from '../ui/Checkbox';
 import { Spinner } from '../ui/Spinner';
-import { mediaUrl, formatNumber } from '../../lib/format';
+import { mediaUrl } from '../../lib/format';
 
 /** Compute the destination for the "View" action based on the artist's source. */
 function viewHrefFor(artist, fallbackHref) {
@@ -24,7 +24,7 @@ export function ArtistCard({
   detailHref: detailHrefProp,
   publishable = true,
   clipCount = null,
-
+  instrumentCount,
   // Bulk selection
   selectable = false,
   selected = false,
@@ -84,12 +84,18 @@ export function ArtistCard({
         </p>
 
         <div className="mt-1 flex items-center justify-center gap-1 flex-wrap">
-          {clipCount != null && clipCount > 0 && (
-            <span className="text-xs text-ink-muted">
-              {formatNumber(clipCount)}🎶
-            </span>
-          )}
-
+          <div className="flex items-center gap-2 text-xs text-ink-muted">
+              <span className="tabular-nums">{clipCount ?? 0} tracks</span>
+              {instrumentCount != null && instrumentCount > 0 && (
+                <>
+                  <span className="text-ink-subtle">·</span>
+                  <span className="tabular-nums text-highlight">
+                    {instrumentCount} instruments
+                  </span>
+                </>
+              )}
+            </div>
+            
           {artist.source && (
             <span
               className={`

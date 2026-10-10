@@ -2,8 +2,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Button } from '../ui/Button';
 
-/* Stage labels — both pipelines included. Unknown stages fall through
-   to the raw stage string, so new stages are still visible in the UI. */
 const STAGE_LABELS = {
   // lyrics pipeline
   dump: 'Dumping D1',
@@ -19,12 +17,24 @@ const STAGE_LABELS = {
   'albumaty-index': 'Indexing albumaty',
   resolve: 'Resolving album years',
 
+  // reverse-batch pipeline
+  reverse: 'Reversing clips',
+
+  // instrumental-batch pipeline (v33 — cut-then-separate)
+  start: 'Starting',
+  download: 'Downloading audio',
+  cut: 'Cutting segment',
+  'demucs-start': 'Removing vocals (this segment takes ~1 min)',
+  'demucs-done': 'Vocals removed',
+  'track-start': 'Preparing track',
+  'track-done': 'Track done',
+  'track-failed': 'Track failed',
+
   // terminal
   done: 'Done',
   failed: 'Failed',
-
-  reverse: 'Reversing clips',
-
+  'r2-uploaded': 'Uploaded to R2',
+  'db-inserted': 'Saved to D1',
 };
 
 function useElapsedSeconds(startedAt, active) {
@@ -45,16 +55,10 @@ function useElapsedSeconds(startedAt, active) {
   return elapsed;
 }
 
-/* ═══════════════════════════════════════════════════════════
-   Live-scrolling log. Auto-follows the tail while active;
-   user scroll-up pauses following so they can inspect history.
-   ═══════════════════════════════════════════════════════════ */
-
 function JobLog({ lines, active }) {
   const ref = useRef(null);
   const [follow, setFollow] = useState(true);
 
-  // Auto-scroll to bottom when new lines arrive and follow is on.
   useEffect(() => {
     if (!follow) return;
     const el = ref.current;
@@ -176,13 +180,13 @@ export function PipelineJobPanel({ job, onCancel, cancelling }) {
 
       {job.summary && (
         <div className="text-xs text-ink-muted grid grid-cols-2 gap-x-4 gap-y-1">
-          {/* Lyrics pipeline summary */}
+          {/* Lyrics pipeline */}
           {job.summary.tracksTotal     != null && (<><span>Tracks total</span><span className="text-ink tabular-nums">{job.summary.tracksTotal}</span></>)}
           {job.summary.matb3aaMatched  != null && (<><span>matb3aa matched</span><span className="text-ink tabular-nums">{job.summary.matb3aaMatched}</span></>)}
           {job.summary.lyricsNuMatched != null && (<><span>lyrics.nu matched</span><span className="text-ink tabular-nums">{job.summary.lyricsNuMatched}</span></>)}
           {job.summary.withLyrics      != null && (<><span>With lyrics</span><span className="text-ink tabular-nums">{job.summary.withLyrics}</span></>)}
 
-          {/* Album-years pipeline summary */}
+          {/* Album-years pipeline */}
           {job.summary.artists     != null && (<><span>Artists</span><span className="text-ink tabular-nums">{job.summary.artists}</span></>)}
           {job.summary.pairsTotal  != null && (<><span>Album pairs</span><span className="text-ink tabular-nums">{job.summary.pairsTotal}</span></>)}
           {job.summary.resolved    != null && (<><span>Resolved</span><span className="text-emerald-400 tabular-nums">{job.summary.resolved}</span></>)}
@@ -194,12 +198,11 @@ export function PipelineJobPanel({ job, onCancel, cancelling }) {
           {job.summary.skipped  != null && (<><span>Skipped</span><span className="text-ink tabular-nums">{job.summary.skipped}</span></>)}
           {job.summary.errors   != null && (<><span>Errors</span><span className={job.summary.errors > 0 ? 'text-danger tabular-nums' : 'text-ink tabular-nums'}>{job.summary.errors}</span></>)}
 
-
-          {/* Reverse-batch summary */}
-          {job.summary.total    != null && (<><span>Total</span><span className="text-ink tabular-nums">{job.summary.total}</span></>)}
-          {job.summary.reversed != null && (<><span>Reversed</span><span className="text-emerald-400 tabular-nums">{job.summary.reversed}</span></>)}
-          {job.summary.skipped  != null && (<><span>Skipped</span><span className="text-ink tabular-nums">{job.summary.skipped}</span></>)}
-                  
+          {/* Reverse-batch / instrumental summary */}
+          {job.summary.total     != null && (<><span>Total</span><span className="text-ink tabular-nums">{job.summary.total}</span></>)}
+          {job.summary.reversed  != null && (<><span>Reversed</span><span className="text-emerald-400 tabular-nums">{job.summary.reversed}</span></>)}
+          {job.summary.succeeded != null && (<><span>Succeeded</span><span className="text-emerald-400 tabular-nums">{job.summary.succeeded}</span></>)}
+          {job.summary.failed    != null && (<><span>Failed</span><span className={job.summary.failed > 0 ? 'text-danger tabular-nums' : 'text-ink tabular-nums'}>{job.summary.failed}</span></>)}
         </div>
       )}
 

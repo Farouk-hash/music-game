@@ -6,8 +6,37 @@ import {
   sanitizeSource,
   serializeGenreIds,
   validateArtist,
-  parseGenreIds, 
+  parseGenreIds,
 } from '../../lib/validateArtist.js';
+
+/* ═══════════════════════════════════════════════════════════
+   Shared field list + serializer
+
+   `instruments_count` = number of DISTINCT track_name in the
+   instruments table for that artist.
+   ═══════════════════════════════════════════════════════════ */
+
+const ARTIST_FIELDS = `
+  a.id, a.name, a.genre_ids, a.image, a.tracks_count,
+  a.is_customized, a.source,
+  (SELECT COUNT(DISTINCT i.track_name)
+     FROM instruments i
+    WHERE i.artist_id = a.id) AS instruments_count
+`;
+
+function serializeArtist(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    genre_ids: parseGenreIds(row.genre_ids),
+    image: row.image ?? null,
+    tracks_count: row.tracks_count ?? 0,
+    is_customized: row.is_customized ?? 0,
+    source: row.source ?? null,
+    instruments_count: row.instruments_count ?? 0,
+  };
+}
 
 /* ═══════════════════════════════════════════════════════════
    GET /artists
@@ -19,7 +48,7 @@ export async function listArtists(request, env) {
   const genreId = url.searchParams.get('genre_id');
   const search  = (url.searchParams.get('search') ?? '').trim();
   const source  = url.searchParams.get('source');
-const limit = clamp(Number(url.searchParams.get('limit') ?? 100), 1, 1000);
+  const limit   = clamp(Number(url.searchParams.get('limit') ?? 100), 1, 1000);
   const offset  = Math.max(0, Number(url.searchParams.get('offset') ?? 0));
 
   const where = [];
@@ -27,39 +56,35 @@ const limit = clamp(Number(url.searchParams.get('limit') ?? 100), 1, 1000);
 
   if (genreId) {
     where.push(
-      'EXISTS (SELECT 1 FROM json_each(artists.genre_ids) g WHERE CAST(g.value AS INTEGER) = ?)'
+      'EXISTS (SELECT 1 FROM json_each(a.genre_ids) g WHERE CAST(g.value AS INTEGER) = ?)'
     );
     binds.push(Number(genreId));
   }
   if (search) {
-    where.push('name LIKE ?');
+    where.push('a.name LIKE ?');
     binds.push(`%${search}%`);
   }
   if (source && VALID_SOURCES.includes(source)) {
-    where.push('source = ?');
+    where.push('a.source = ?');
     binds.push(source);
   }
 
   const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
 
   const { results } = await env.DB.prepare(
-    `SELECT id, name, genre_ids, image, tracks_count, is_customized,
-            source
-     FROM artists
-     ${whereSql}
-     ORDER BY name ASC
-     LIMIT ? OFFSET ?`
+    `SELECT ${ARTIST_FIELDS}
+       FROM artists a
+       ${whereSql}
+       ORDER BY a.name ASC
+       LIMIT ? OFFSET ?`
   ).bind(...binds, limit, offset).all();
 
   const countRow = await env.DB.prepare(
-    `SELECT COUNT(*) AS n FROM artists ${whereSql}`
+    `SELECT COUNT(*) AS n FROM artists a ${whereSql}`
   ).bind(...binds).first();
 
   return json({
-    artists: (results ?? []).map(row => ({
-      ...row,
-      genre_ids: parseGenreIds(row.genre_ids),
-    })),
+    artists: (results ?? []).map(serializeArtist),
     count: results?.length ?? 0,
     total: countRow?.n ?? 0,
   });
@@ -71,15 +96,11 @@ const limit = clamp(Number(url.searchParams.get('limit') ?? 100), 1, 1000);
 
 export async function getArtist(request, env, id) {
   const row = await env.DB.prepare(
-    `SELECT id, name, genre_ids, image, tracks_count, is_customized,
-            source
-     FROM artists WHERE id = ?`
+    `SELECT ${ARTIST_FIELDS} FROM artists a WHERE a.id = ?`
   ).bind(Number(id)).first();
 
   if (!row) return error('Artist not found', 404);
-  return json({
-    artist: { ...row, genre_ids: parseGenreIds(row.genre_ids) },
-  });
+  return json({ artist: serializeArtist(row) });
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -124,19 +145,21 @@ export async function createArtist(request, env) {
   ).run();
 
   const row = await env.DB.prepare(
-    `SELECT id, name, genre_ids, image, tracks_count, is_customized,
-            source
-     FROM artists WHERE id = ?`
+    `SELECT ${ARTIST_FIELDS} FROM artists a WHERE a.id = ?`
   ).bind(id).first();
 
-  return json({
-    artist: { ...row, genre_ids: parseGenreIds(row.genre_ids) },
-  }, 201);
+  return json({ artist: serializeArtist(row) }, 201);
 }
 
 /* ═══════════════════════════════════════════════════════════
    PUT /artists/:id
+
+   If `genre_ids` changes, cascade the new genre list into every
+   instrument row for this artist. Each instrument's `genre_ids`
+   becomes [6, ...newArtistGenres] (6 = the "Instrumental" genre).
    ═══════════════════════════════════════════════════════════ */
+
+const INSTRUMENT_GENRE_ID = 6;
 
 export async function updateArtist(request, env, id) {
   const artistId = Number(id);
@@ -144,7 +167,7 @@ export async function updateArtist(request, env, id) {
   try { body = await request.json(); } catch { return error('Invalid JSON body', 400); }
 
   const existing = await env.DB.prepare(
-    `SELECT id, source FROM artists WHERE id = ?`
+    `SELECT id, source, genre_ids FROM artists WHERE id = ?`
   ).bind(artistId).first();
   if (!existing) return error('Artist not found', 404);
 
@@ -161,10 +184,17 @@ export async function updateArtist(request, env, id) {
     ? body.source
     : existing.source;
 
+  // ── Compare genre sets to decide whether to cascade ──
+  const oldGenres = parseGenreIds(existing.genre_ids);
+  const newGenres = Array.isArray(genreIds) ? genreIds : [];
+  const genresChanged =
+    JSON.stringify([...oldGenres].sort((a, b) => a - b)) !==
+    JSON.stringify([...newGenres].sort((a, b) => a - b));
+
   await env.DB.prepare(
     `UPDATE artists
-     SET name = ?, genre_ids = ?, image = ?, source = ?
-     WHERE id = ?`
+        SET name = ?, genre_ids = ?, image = ?, source = ?
+      WHERE id = ?`
   ).bind(
     name,
     serializeGenreIds(genreIds),
@@ -173,14 +203,26 @@ export async function updateArtist(request, env, id) {
     artistId
   ).run();
 
+  // ── Cascade to instruments when genres actually changed ──
+  let instrumentsUpdated = 0;
+  if (genresChanged) {
+    const instrumentGenres = JSON.stringify([INSTRUMENT_GENRE_ID, ...newGenres]);
+    const res = await env.DB.prepare(
+      `UPDATE instruments
+          SET genre_ids = ?,
+              updated_at = datetime('now')
+        WHERE artist_id = ?`
+    ).bind(instrumentGenres, artistId).run();
+    instrumentsUpdated = res.meta?.changes ?? 0;
+  }
+
   const row = await env.DB.prepare(
-    `SELECT id, name, genre_ids, image, tracks_count, is_customized,
-            source
-     FROM artists WHERE id = ?`
+    `SELECT ${ARTIST_FIELDS} FROM artists a WHERE a.id = ?`
   ).bind(artistId).first();
 
   return json({
-    artist: { ...row, genre_ids: parseGenreIds(row.genre_ids) },
+    artist: serializeArtist(row),
+    instruments_updated: instrumentsUpdated,
   });
 }
 
@@ -190,12 +232,42 @@ export async function updateArtist(request, env, id) {
 
 export async function deleteArtist(request, env, id) {
   const artistId = Number(id);
-  const res = await env.DB.prepare(
-    `DELETE FROM artists WHERE id = ?`
-  ).bind(artistId).run();
 
-  if ((res.meta?.changes ?? 0) === 0) return error('Artist not found', 404);
-  return json({ ok: true, id: artistId });
+  const existing = await env.DB.prepare(
+    `SELECT id FROM artists WHERE id = ?`
+  ).bind(artistId).first();
+  if (!existing) return error('Artist not found', 404);
+
+  // ── Cascade: R2 objects for this artist's instruments ──
+  const { results: instrRows } = await env.DB.prepare(
+    `SELECT id, r2_key FROM instruments WHERE artist_id = ?`
+  ).bind(artistId).all();
+
+  let r2Deleted = 0;
+  for (const r of instrRows ?? []) {
+    if (!r.r2_key) continue;
+    try {
+      await env.AUDIO.delete(r.r2_key);
+      r2Deleted += 1;
+    } catch (e) {
+      console.warn('[deleteArtist] R2 delete failed:', r.r2_key, e.message);
+    }
+  }
+
+  // ── Cascade: D1 rows ──
+  await env.DB.prepare('DELETE FROM instruments WHERE artist_id = ?')
+    .bind(artistId).run();
+
+  // ── Finally, delete the artist ──
+  await env.DB.prepare('DELETE FROM artists WHERE id = ?')
+    .bind(artistId).run();
+
+  return json({
+    ok: true,
+    id: artistId,
+    instruments_deleted: instrRows?.length ?? 0,
+    r2_deleted: r2Deleted,
+  });
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -217,25 +289,20 @@ export async function patchTracksCount(request, env, id) {
 
   await env.DB.prepare(
     `UPDATE artists
-     SET tracks_count = MAX(0, tracks_count + ?)
-     WHERE id = ?`
+        SET tracks_count = MAX(0, tracks_count + ?)
+      WHERE id = ?`
   ).bind(delta, artistId).run();
 
   const row = await env.DB.prepare(
-    `SELECT id, name, genre_ids, image, tracks_count, is_customized,
-            source
-     FROM artists WHERE id = ?`
+    `SELECT ${ARTIST_FIELDS} FROM artists a WHERE a.id = ?`
   ).bind(artistId).first();
 
-  return json({
-    artist: { ...row, genre_ids: parseGenreIds(row.genre_ids) },
-  });
+  return json({ artist: serializeArtist(row) });
 }
 
 /**
  * PATCH /artists/:id/tracks_count
  * Body: { delta: 1 } or { delta: -1 }
- * Clamps to 0 — the count never goes negative.
  */
 export async function adjustArtistTracksCount(request, env, { id }) {
   const body = await request.json().catch(() => null);
@@ -254,23 +321,22 @@ export async function adjustArtistTracksCount(request, env, { id }) {
   await env.DB
     .prepare(
       `UPDATE artists
-       SET tracks_count = MAX(0, tracks_count + ?)
-       WHERE id = ?`
+          SET tracks_count = MAX(0, tracks_count + ?)
+        WHERE id = ?`
     )
     .bind(delta, id)
     .run();
 
   const row = await env.DB
-    .prepare(`SELECT ${FIELDS} FROM artists WHERE id = ?`)
+    .prepare(`SELECT ${ARTIST_FIELDS} FROM artists a WHERE a.id = ?`)
     .bind(id)
     .first();
 
-  return json({ artist: serialize(row) });
+  return json({ artist: serializeArtist(row) });
 }
 
 /**
  * PATCH /artists/:id/tracks_count/set
- * Set the count to an explicit value (used for full resyncs).
  * Body: { count: 12 }
  */
 export async function setArtistTracksCount(request, env, { id }) {
@@ -290,16 +356,16 @@ export async function setArtistTracksCount(request, env, { id }) {
   await env.DB
     .prepare(
       `UPDATE artists
-       SET tracks_count = ?
-       WHERE id = ?`
+          SET tracks_count = ?
+        WHERE id = ?`
     )
     .bind(count, id)
     .run();
 
   const row = await env.DB
-    .prepare(`SELECT ${FIELDS} FROM artists WHERE id = ?`)
+    .prepare(`SELECT ${ARTIST_FIELDS} FROM artists a WHERE id = ?`)
     .bind(id)
     .first();
 
-  return json({ artist: serialize(row) });
+  return json({ artist: serializeArtist(row) });
 }

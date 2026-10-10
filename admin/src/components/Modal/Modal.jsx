@@ -58,6 +58,8 @@ export function Modal({
     md: 'max-w-md',
     lg: 'max-w-lg',
     xl: 'max-w-2xl',
+    '2xl': 'max-w-4xl',   
+    '3xl': 'max-w-6xl',   
   };
 
   return createPortal(
@@ -108,9 +110,9 @@ export function Modal({
         )}
 
         {/* Body */}
-        <div className="px-5 py-4 overflow-y-auto flex-1">
-          {children}
-        </div>
+       <div className="px-5 py-4 overflow-y-auto overflow-x-hidden flex-1 min-w-0">
+        {children}
+      </div>
 
         {/* Footer */}
         {footer && (
