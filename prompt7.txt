@@ -1,4 +1,4 @@
-Here's the v49 handoff. Save as `E:\matb3aa-game\handoff-v49.md`.
+Here's the v50 handoff. Save as `E:\matb3aa-game\handoff-v50.md`.
 
 ---
 
@@ -21,7 +21,7 @@ The game does **not** go through Express. It fetches `music-game-wrangler` direc
 
 **GitHub:** `https://github.com/Farouk-hash/music-game` (private, monorepo)
 **Local repo root:** `E:\matb3aa-game\.git`
-**Last committed state:** v28 (initial commit `c2a9ad3`). Work from v29–v49 is **uncommitted**.
+**Last committed state:** v28 (initial commit `c2a9ad3`). Work from v29–v50 is **uncommitted**.
 
 **`.gitignore`** covers `node_modules/`, `dist/`, `.env`, `.env.local`, `.env.*.local`, `.env.development`, `.env.development.local`, `.env.production.local`, `.wrangler/`, `.dev.vars`, `*.log`, `venv/`, `__pycache__/`, `*.pyc`, `server/instrumental-output/`, `test-vocals/`.
 
@@ -110,6 +110,8 @@ Start Terminal 1 BEFORE Terminal 2.
 **`bg-brand-500` DOES NOT EXIST in game tokens** — use `bg-accent text-bg`.
 
 **Opacity modifiers (`/40`, `/10`) DO NOT WORK** on token-mapped classes.
+
+**Ring tokens:** `ring-border`, `ring-accent`, `ring-correct`, `ring-wrong` are valid (Tailwind maps `ring-*` to the same variables).
 
 ## D1 Schema (music-game-wrangler)
 
@@ -203,7 +205,7 @@ room (
   id                    INTEGER PRIMARY KEY CHECK (id = 1),
   phase                 TEXT,   -- 'lobby' | 'loading' | 'countdown' | 'question' | 'reveal' | 'finished'
   mode                  TEXT,   -- 'speed' | 'collect'
-  config                TEXT,   -- JSON scope params for /game/round
+  config                TEXT,   -- JSON scope params + avatarStyle
   auto_advance_seconds  INTEGER,
   version               INTEGER,
   q_index               INTEGER,
@@ -224,7 +226,7 @@ answers (player_id TEXT, q_idx INTEGER, correct INTEGER, typed TEXT, answered_at
          PRIMARY KEY (player_id, q_idx))
 ```
 
-**Note:** `players.rowid` (implicit SQLite column) reflects join order. `#promoteNextHost()` uses `rowid ASC` to pick the earliest-joined active player.
+**Note:** `players.rowid` reflects join order. `#promoteNextHost()` uses `rowid ASC` to pick the earliest-joined active player.
 
 ## host-sporcle-wrangler — API
 
@@ -244,9 +246,9 @@ GET  /host-sporcle/:code/debug                (LOCAL-ONLY)
 |---|---|---|---|
 | `ready` | Non-host, lobby | `{ ready: bool }` | Toggle ready |
 | `start` | Host, lobby | — | Sets `phase='loading'`, kicks off fetch in background |
-| `answer` | Any active player | `{ typed }` | Records answer for `room.q_index`; rejected if a row already exists |
+| `answer` | Any active player | `{ typed }` | Records answer for `room.q_index`; rejected if a row exists |
 | `advance` | Host, reveal | — | `reveal` → next `question`, or → `finished` |
-| `leave` | Any | — | See leave behaviour below |
+| `leave` | Any | — | See leave behaviour |
 | `reset` | Host, finished/lobby | — | Clear, → `lobby` |
 | `rejoin` | Any marked `left` | — | Flips `left=0`; conditionally resets `locked` |
 
@@ -258,13 +260,11 @@ async #leave(player, room) {
 
   if (room.phase === 'lobby') {
     sql.exec('DELETE FROM players WHERE id = ?', player.id);
-
     const remaining = sql.exec('SELECT COUNT(*) AS n FROM players').one().n;
     if (remaining === 0) {
       await this.ctx.storage.deleteAll();
       return { ok: true, version: 0 };
     }
-
     if (player.is_host) this.#promoteNextHost();
   } else {
     // In-game: mark as left. `locked` is NOT touched.
@@ -278,7 +278,6 @@ async #leave(player, room) {
   this.#touchExpiry();
   const version = this.#bumpVersion();
 
-  // Mode 2: if all remaining active players have answered, end the question.
   if (room.phase === 'question') {
     const total = sql.exec('SELECT COUNT(*) AS n FROM players WHERE left = 0').one().n;
     const answered = sql.exec(
@@ -304,7 +303,7 @@ async #leave(player, room) {
 | Host leaves mid-game | Earliest-joined active player becomes host, game continues |
 | Guest joins a destroyed code | 404 `Room not found` |
 | Player refreshes mid-game | Beacon fires → `left=1` → client auto-rejoins (`rejoin`) on mount |
-| `#getRoom` when table is gone | Returns `null` via try/catch → `getState` responds with `{ ok: false, error: 'Room not found' }` (HTTP 404) |
+| `#getRoom` when table is gone | Returns `null` via try/catch → `getState` responds 404 |
 
 ### `#rejoin`
 
@@ -336,10 +335,7 @@ async #rejoin(player, room) {
     shouldClearHostFlag ? 'is_host = 0' : null,
   ].filter(Boolean).join(', ');
 
-  this.ctx.storage.sql.exec(
-    `UPDATE players SET ${setClauses} WHERE id = ?`,
-    player.id
-  );
+  this.ctx.storage.sql.exec(`UPDATE players SET ${setClauses} WHERE id = ?`, player.id);
 
   this.#touchExpiry();
   const version = this.#bumpVersion();
@@ -370,29 +366,8 @@ async #answer(player, room, action) {
 ### `handleAction` gate
 
 ```js
-async handleAction(playerId, action) {
-  const room = this.#getRoom();
-  if (!room) return { ok: false, error: 'Room not found' };
-
-  const player = this.#getPlayer(playerId);
-  if (!player) return { ok: false, error: 'Player not in this room' };
-
-  const type = action?.type;
-
-  // `rejoin` is allowed even when the player is marked left.
-  if (type !== 'rejoin' && player.left) {
-    return { ok: false, error: 'Player has left' };
-  }
-
-  if (type === 'ready')   return this.#ready(player, room, action);
-  if (type === 'start')   return this.#start(player, room);
-  if (type === 'answer')  return this.#answer(player, room, action);
-  if (type === 'advance') return this.#advance(player, room);
-  if (type === 'leave')   return this.#leave(player, room);
-  if (type === 'reset')   return this.#reset(player, room);
-  if (type === 'rejoin')  return this.#rejoin(player, room);
-
-  return { ok: false, error: `Unknown action: ${type}` };
+if (type !== 'rejoin' && player.left) {
+  return { ok: false, error: 'Player has left' };
 }
 ```
 
@@ -401,21 +376,15 @@ async handleAction(playerId, action) {
 ```js
 #promoteNextHost() {
   const sql = this.ctx.storage.sql;
-
   const alreadyHost = sql
     .exec('SELECT id FROM players WHERE is_host = 1 AND left = 0 LIMIT 1')
     .toArray();
   if (alreadyHost.length > 0) return;
-
-  // Clear stale is_host flags before assigning the new host.
   sql.exec('UPDATE players SET is_host = 0 WHERE is_host = 1');
-
   const next = sql
     .exec('SELECT id FROM players WHERE left = 0 ORDER BY rowid ASC LIMIT 1')
     .toArray();
-  if (next[0]) {
-    sql.exec('UPDATE players SET is_host = 1 WHERE id = ?', next[0].id);
-  }
+  if (next[0]) sql.exec('UPDATE players SET is_host = 1 WHERE id = ?', next[0].id);
 }
 ```
 
@@ -444,6 +413,35 @@ const AUTO_ADVANCE_MS_LYRICS = 10000;
 const ROOM_EXPIRY_MS = 2 * 60 * 60 * 1000;
 ```
 
+### `#buildState`
+
+Currently returns:
+```js
+{
+  ok, version, phase, mode, qIndex, deadline, countdownEndsAt,
+  autoAdvanceSeconds, reversed, rendition, lastError, players[], totalQuestions,
+  question?, reveal?, finished?
+}
+```
+
+**To add in v50:** `avatarStyle: config.avatarStyle ?? null`.
+
+### `response.js` — status handling
+
+`json()` accepts a bare number as the second argument:
+
+```js
+export function json(data, init = {}) {
+  const normalized = typeof init === 'number' ? { status: init } : init;
+  return Response.json(data, {
+    ...normalized,
+    headers: { ...CORS_HEADERS, ...(normalized.headers || {}) },
+  });
+}
+```
+
+**Why:** earlier, calls like `json(result, result.ok ? 200 : 404)` passed a bare number. `Response.json` ignored it (defaulted to 200). Now the number is normalized to `{ status }`.
+
 ## host-sporcle-wrangler — Service Binding
 
 ```jsonc
@@ -461,33 +459,6 @@ const ROOM_EXPIRY_MS = 2 * 60 * 60 * 1000;
 }
 ```
 
-## host-sporcle-wrangler — response.js (status handling)
-
-**Important:** `json()` accepts a bare number as the second argument.
-
-```js
-export function json(data, init = {}) {
-  const normalized = typeof init === 'number' ? { status: init } : init;
-  return Response.json(data, {
-    ...normalized,
-    headers: { ...CORS_HEADERS, ...(normalized.headers || {}) },
-  });
-}
-```
-
-**Why:** earlier, calls like `json(result, result.ok ? 200 : 404)` passed a bare number. `Response.json` ignored it (defaulted to 200). Now the number is normalized to `{ status }`.
-
-Also — the client-side `sporcleApi.request` throws on `{ ok: false }` even with a 2xx status, as a defense in depth:
-
-```js
-if (body && typeof body === 'object' && body.ok === false) {
-  const err = new Error(body.error ?? 'Request failed');
-  err.status = res.status;
-  err.body = body;
-  throw err;
-}
-```
-
 ## question-fetcher.js
 
 Builds the query string from `room.config` and calls `env.MUSIC_GAME.fetch(...)`. Uses the deployed public origin so `clip.serveUrl` is browser-reachable.
@@ -497,7 +468,7 @@ Builds the query string from `room.config` and calls `env.MUSIC_GAME.fetch(...)`
 { idx, clip, lyrics, revealClip, source, type, prompt, options, correctValue }
 ```
 
-## Sporcle Client — Files (v49)
+## Sporcle Client — Files (v50)
 
 ```
 game/src/
@@ -507,26 +478,61 @@ game/src/
 │   ├── useHostSporcle.js          # long-poll state; refresh() aborts in-flight
 │   ├── useHostSporcleIdentity.js  # localStorage identity per room code
 │   └── useHostSporcleActions.js   # ready/start/answer/advance/leave/reset/rejoin
-├── components/domain/Sporcle/
-│   ├── RoomPanel.jsx              # modal's room panel; renders by phase
-│   ├── RoomCodeBadge.jsx
-│   ├── PlayerRoster.jsx           # shows locked/ready; dims + strikes left players
-│   ├── SporcleProgress.jsx        # correctness history; dims + strikes left players
-│   ├── SporcleTimer.jsx
-│   ├── QuestionPanel.jsx          # accepts `isLocked` prop
-│   ├── CountdownOverlay.jsx       # inline-capable
-│   └── LoadingOverlay.jsx         # inline-capable
+├── components/
+│   ├── Avatar/                    # NEW in v50 — general-purpose avatar primitive
+│   │   ├── PlayerAvatar.jsx
+│   │   ├── avatarProvider.js
+│   │   └── index.js
+│   └── domain/Sporcle/
+│       ├── RoomPanel.jsx
+│       ├── RoomCodeBadge.jsx
+│       ├── PlayerRoster.jsx       # renders <PlayerAvatar>
+│       ├── SporcleProgress.jsx    # renders <PlayerAvatar>
+│       ├── SporcleTimer.jsx
+│       ├── QuestionPanel.jsx      # accepts `isLocked` prop
+│       ├── CountdownOverlay.jsx   # inline-capable
+│       └── LoadingOverlay.jsx     # inline-capable
 ├── components/domain/Setup/Modals/
 │   ├── SharedGameSettings.jsx     # accepts variant="sporcle"
 │   └── SporcleModal.jsx           # 3 panels: host / join / room
 └── routes/Sporcle/
-    ├── Play.jsx                   # single route; owns polling
-    └── Result.jsx                 # /sporcle/result/:code
+    ├── Play.jsx
+    └── Result.jsx                 # not yet updated with avatars
 ```
+
+## Avatar system (v50 — in progress)
+
+**Design:** Each room gets ONE random avatar style. All players in the room use the same style, seeded by their own name. A new room → a new random style.
+
+**Provider:** DiceBear HTTP API v10 (`https://api.dicebear.com/10.x/<style>/svg?seed=<encoded-name>`).
+
+**Curated style list** (`AVATAR_STYLES` in `avatarProvider.js`):
+```
+adventurer-neutral, adventurer, big-smile, fun-emoji, micah, miniavs,
+personas, open-peeps, lorelei, notionists, big-ears, bottts,
+pixel-art, croodles
+```
+
+**Components:**
+
+- `game/src/components/Avatar/PlayerAvatar.jsx` — the wrapper. Props: `seed`, `style`, `size`, `ring`, `alt`.
+- `game/src/components/Avatar/avatarProvider.js` — URL builder, curated styles, `pickRoomAvatarStyle()`.
+- `game/src/components/Avatar/index.js` — barrel.
+
+**Room-scoped flow (partially wired):**
+
+1. **`SporcleModal.handleCreate`** must call `pickRoomAvatarStyle()` and set `config.avatarStyle`.
+2. **DO `#buildState`** must expose `avatarStyle: config.avatarStyle ?? null`.
+3. **`Play.jsx`** must pass `state.avatarStyle` into `PlayerRoster` and `SporcleProgress`.
+4. **`RoomPanel.jsx`** must pass `state.avatarStyle` into `PlayerRoster`.
+5. **`PlayerRoster.jsx`** and **`SporcleProgress.jsx`** must accept `avatarStyle` prop and render `<PlayerAvatar seed={p.name} style={avatarStyle} size={32 | 28} ring={…} />` **before** the host crown in each row.
+
+**Not yet done:** steps 1–5 above, plus `Result.jsx` standings avatars.
+
+**Fallback behaviour:** if `avatarStyle` is `undefined`, `PlayerAvatar` uses `DEFAULT_AVATAR_STYLE = 'adventurer-neutral'`. Safe for old rooms.
 
 ## Sporcle Client — Routing
 
-**Only two Sporcle routes:**
 ```
 /sporcle/play/:code     → Play.jsx
 /sporcle/result/:code   → Result.jsx
@@ -536,49 +542,33 @@ game/src/
 
 ## Sporcle Client — Flow
 
-**Host:**
-1. `/setup` → pick genres/artists/years → click **Sporcle**.
-2. Modal opens at `panel='host'`. Fill name + `SharedGameSettings variant="sporcle"`.
-3. **Create room** → POST `/create` → localStorage → **`navigate('/sporcle/play/<CODE>')`**.
-4. Setup unmounts. Play mounts. `identity` present. `useHostSporcle` starts polling.
-5. `phase === 'lobby'` → `modalOpen=true`, `modalMode='room'`.
-6. Play renders `<SporcleModal state={state} actions={actions} myId={myId}>`.
-7. `RoomPanel` shows room code + copy buttons + roster + Start.
+**Host:** `/setup` → pick genres/artists/years → click **Sporcle** → modal at `panel='host'` → fill name + settings → **Create room** → POST `/create` → localStorage → `navigate('/sporcle/play/<CODE>')` → Play mounts, polls state → `phase='lobby'` → modal renders at `'room'` → `RoomPanel` shows code + roster + Start.
 
-**Guest:** same flow via the Join tab.
+**Guest:** same via Join tab.
 
-**Shared link:** a player opens `/sporcle/play/<CODE>` directly. `identity` is null, `state.phase === 'lobby'` → `modalOpen=true`, `modalMode='join'`.
+**Shared link:** `/sporcle/play/<CODE>` directly. `identity` null, `phase='lobby'` → `modalOpen=true`, `modalMode='join'`.
 
-**Game start:** Host clicks Start → DO sets `loading` → Play's effect keeps modal open at `'room'` → `RoomPanel` renders `<LoadingOverlay inline />` → DO flips to `countdown` → `<CountdownOverlay inline />` → DO flips to `question` → Play's effect: `preGame=false` → `modalOpen=false` → Q1 renders.
+**Game start:** Start → DO sets `loading` → modal stays open → `RoomPanel` renders `<LoadingOverlay inline />` → DO flips to `countdown` → `<CountdownOverlay inline />` → DO flips to `question` → Play's effect: `preGame=false` → `modalOpen=false` → Q1.
 
-**Game end:** `phase === 'finished'` → Play navigates to `/sporcle/result/<CODE>`.
+**Game end:** `phase='finished'` → Play navigates to `/sporcle/result/<CODE>`.
 
 ## Sporcle Client — Key Design Decisions
 
-**Long-poll driven.** `useHostSporcle` loops `GET /state?since=N`. The DO holds the request ~3s when version is unchanged.
+**Long-poll driven.** `useHostSporcle` loops `GET /state?since=N`. DO holds ~3s when version unchanged.
 
-**Overlays driven by server timestamps.** `CountdownOverlay` takes `endsAt` and computes `remaining = endsAt - Date.now()` on every 100ms tick.
+**Overlays driven by server timestamps.** `CountdownOverlay` takes `endsAt` and computes `remaining = endsAt - Date.now()` every 100ms.
 
-**`refresh()` aborts in-flight polls.** After any action, `useHostSporcleActions` calls `onVersion` → `refresh()`.
+**`refresh()` aborts in-flight polls** after any action.
 
-**State hoisting — single polling loop.** `SporcleModal` does NOT call `useHostSporcle`. Play owns the polling loop and passes `state`, `actions`, `myId` down.
+**State hoisting — single polling loop.** `SporcleModal` does NOT poll. Play owns the polling loop and passes `state`, `actions`, `myId` down as props.
 
-**`RoomPanel` is presentational.** Renders by phase: lobby (roster + ready/start), loading (spinner), countdown (countdown card).
+**Mid-game rejoin — the `isLocked` guard.** `Play.jsx` computes `isLocked = !!me?.locked`. `handlePick` refuses when `isLocked`. `QuestionPanel` accepts `isLocked` prop that feeds `hasAnswered`. DO side: `#rejoin` conditionally resets `locked`; `#answer` checks the `answers` table.
 
-**`SporcleProgress`** shows per-player correctness history. Fed by `answersByQ`, accumulated on Play from each `state.reveal` payload.
+**Auto-rejoin on refresh.** Ref-guarded effect calls `actions.rejoin(myId)` if the local player is `left: true`.
 
-**Play.jsx board split:**
-- `question` phase → `PlayerRoster` (locked state — who's answered)
-- `reveal` phase → `SporcleProgress` (correctness history)
-- **Both** dim and strike-through players marked `left: true`.
+**Leave beacon on tab close.** `beforeunload` → `sendBeacon`. Unreliable on mobile.
 
-**Mid-game rejoin — the `isLocked` guard.**
-Play.jsx computes `isLocked = !!me?.locked`. `handlePick` refuses when `isLocked`. `QuestionPanel` accepts an `isLocked` prop that feeds `hasAnswered`, so the "Locked in" hint shows.
-DO side: `#rejoin` sets `locked` based on whether the player already answered the current question. `#answer` also checks the `answers` table as a safety net.
-
-**Auto-rejoin on refresh.** Play.jsx has a ref-guarded effect that calls `actions.rejoin(myId)` if the local player is `left: true`. Prevents refresh-kicks-you-out.
-
-**Leave beacon on tab close.** `beforeunload` → `sporcleApi.leaveBeacon(code, myId)`. **Unreliable on mobile Safari** — the mobile case leaves the player marked as active until the room expires.
+**`response.js` bare-number status.** `json(data, 404)` now works. Also `sporcleApi.request` throws on `{ ok: false }` even with 2xx.
 
 ## Game Client — Phase 2 & 3 Complete
 
@@ -655,25 +645,34 @@ git push
 
 ## Known Open / Broken
 
-### 1. **Sporcle end-to-end run not yet fully verified on deployed**
-The v46–v49 changes work in local tests. A full 2-player game on the deployed client (Setup → modal → lobby → loading → countdown → Q1 → reveal → … → result → play-again) still needs one clean run.
+### 1. **Avatar system half-wired (v50 in progress)**
+The `Avatar/` folder exists with `PlayerAvatar`, `avatarProvider`, `index.js`. Not yet wired:
+- `SporcleModal.handleCreate` doesn't call `pickRoomAvatarStyle()`.
+- DO `#buildState` doesn't expose `avatarStyle`.
+- `Play.jsx` and `RoomPanel.jsx` don't pass `state.avatarStyle`.
+- `PlayerRoster.jsx` and `SporcleProgress.jsx` don't accept/render the avatar.
+- `Result.jsx` doesn't render avatars.
+**Until these are wired, every room uses the default `adventurer-neutral`.** Not broken — just not randomized.
 
-### 2. **Mobile tab-close doesn't reliably mark players as `left`**
-`beforeunload`/`sendBeacon` is unreliable on mobile Safari. A player who closes the tab on mobile stays `left: 0` in the DO until the room expires or they refresh. A heartbeat + staleness sweep would fix this. Deferred.
+### 2. **Sporcle end-to-end run not yet fully verified on deployed**
+The v46–v49 changes work in local tests. A full 2-player game on the deployed client still needs one clean run.
 
-### 3. **Enable L3 instruments**
+### 3. **Mobile tab-close doesn't reliably mark players as `left`**
+`beforeunload`/`sendBeacon` unreliable on mobile Safari. Deferred — needs a heartbeat + staleness sweep.
+
+### 4. **Enable L3 instruments**
 `Level3Modal` sets `allowInstruments={false}`. `Play3.jsx` lacks `source` prop.
 
-### 4. **Anti-skew round-robin — traditional audio not fixed**
+### 5. **Anti-skew round-robin — traditional audio not fixed**
 `slots.js` (`pickSlotsVaried`) and `fetchFeaturedSlots` still use naive `ORDER BY RANDOM() LIMIT N`.
 
-### 5. **No `PublishedInstruments.jsx` admin page**
+### 6. **No `PublishedInstruments.jsx` admin page**
 
-### 6. **Client rendition chain incomplete**
+### 7. **Client rendition chain incomplete**
 - `useRoundMultiplayer.js` — no `rendition` param
 - `PlayMulti.jsx` — doesn't pass `rendition: params.rendition`
 
-### 7–20. Carried over:
+### 8–21. Carried over:
 - `handoff-*.md` and `prompt*.txt` tracked in repo
 - Duplicate controller at `music-game-wrangler/src/controllers/admin/tracks.js`
 - Punctuation-only lines in lyric snippets
@@ -707,19 +706,27 @@ The v46–v49 changes work in local tests. A full 2-player game on the deployed 
 
 **In priority order:**
 
-1. **Full 2-player Sporcle run on deployed** — Setup → Create → navigate → roster → Ready → Start → loading → countdown → Q1 → answer → reveal (`SporcleProgress`) → next question → … → result → play-again. Report any issues.
+1. **Finish wiring the Avatar system (v50)** — five coordinated edits:
+   - `SporcleModal.handleCreate` → `config.avatarStyle = pickRoomAvatarStyle()`.
+   - DO `#buildState` → `avatarStyle: config.avatarStyle ?? null`.
+   - `Play.jsx` → pass `state.avatarStyle` to `PlayerRoster` and `SporcleProgress`.
+   - `RoomPanel.jsx` → pass `state.avatarStyle` to `PlayerRoster`.
+   - `PlayerRoster.jsx` + `SporcleProgress.jsx` → accept `avatarStyle` prop, render `<PlayerAvatar seed={p.name} style={avatarStyle} size={32|28} ring={…} />`.
+   - Optionally `Result.jsx` → standings avatars + winner banner avatar.
 
-2. **Build a heartbeat / staleness sweep** — to fix the mobile tab-close gap. `POST /ping?playerId=…` updates `last_seen`; a periodic alarm sweeps players whose `last_seen` is older than ~60s.
+2. **Full 2-player Sporcle run on deployed** — Setup → Create → navigate → roster → Ready → Start → loading → countdown → Q1 → answer → reveal → next → … → result → play-again.
 
-3. **Enable L3 instruments.**
+3. **Build a heartbeat / staleness sweep** — for the mobile tab-close gap.
 
-4. **Build `PublishedInstruments.jsx`.**
+4. **Enable L3 instruments.**
 
-5. **Extend anti-skew round-robin to traditional audio.**
+5. **Build `PublishedInstruments.jsx`.**
 
-6. **Finish the client rendition chain.**
+6. **Extend anti-skew round-robin to traditional audio.**
 
-**Recommended next step:** item 1 — run the full flow on the deployed client and report back.
+7. **Finish the client rendition chain.**
+
+**Recommended next step:** item 1 — finish the Avatar wiring. Five small edits, then a single visual verification.
 
 Ask what the user wants to work on next.
 
@@ -727,28 +734,25 @@ Ask what the user wants to work on next.
 
 ## END OF PROMPT
 
-Save this as `E:\matb3aa-game\handoff-v49.md`. Paste it as the first message of your next session.
+Save this as `E:\matb3aa-game\handoff-v50.md`. Paste it as the first message of your next session.
 ```
 
 ---
 
-## What's new in v49
+## What's new in v50
 
 | Section | Change |
 |---|---|
-| **Leave behaviour** | `#leave` no longer sets `locked=1` in-game |
-| **`#rejoin`** | Documented conditional `locked` reset |
-| **`#answer`** | Documented existing-answer guard |
-| **`#promoteNextHost`** | Documented stale `is_host` clearing |
-| **response.js** | Documented the bare-number `init` normalization |
-| **`QuestionPanel`** | Documented `isLocked` prop |
-| **Mid-game rejoin** | Documented the `isLocked` guard on both sides |
-| **Known Open** | #1 still "end-to-end not verified on deployed"; #2 heartbeat |
-| **Most Likely Next Tasks** | Unchanged — full deployed run is #1 |
+| **Styling — ring tokens** | Documented that `ring-border`, `ring-accent`, `ring-correct`, `ring-wrong` are valid |
+| **Sporcle Client Files** | Added `components/Avatar/` folder with three files |
+| **Avatar system** | New full section — provider, curated list, room-scoped flow, fallback behaviour |
+| **`#buildState`** | Noted `avatarStyle` must be added |
+| **Known Open #1** | Avatar system half-wired — five edits remaining |
+| **Most Likely Next Tasks** | Avatar wiring is #1 |
 
 The document is self-contained. A fresh model knows:
-- The v49 Sporcle architecture
-- Why mid-game rejoin works (three coordinated DO methods + client `isLocked`)
-- The `response.js` bare-number fix
-- The mobile tab-close limitation
-- Everything about the rest of the project
+- The v50 Sporcle architecture
+- The Avatar system design (one style per room, seeded by name)
+- Which five edits are needed to finish the wiring
+- Why the fallback (`adventurer-neutral`) makes partial wiring safe
+- Everything else about the project

@@ -1,6 +1,6 @@
 // game/src/hooks/useCatalog.js
 import { useQuery } from '@tanstack/react-query';
-import { api } from '../lib/api.js';
+import { api } from '../../lib/api.js';
 
 /**
  * Fetches the game catalog: genres, artists, years, and aggregate counts.

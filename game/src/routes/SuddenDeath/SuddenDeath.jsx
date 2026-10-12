@@ -1,16 +1,16 @@
 // game/src/routes/SuddenDeath.jsx
 import { useCallback, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useSuddenDeath, isCorrectForQuestion } from '../hooks/sudden-death/useSuddenDeath';
-import { useQuestionTimer } from '../hooks/sudden-death/useQuestionTimer';
-import { BorderContainer } from '../components/layout/BorderContainer.jsx';
-import { PromptSource } from '../components/domain/Rounds/PromptSource.jsx';
-import { PlayerBadge } from '../components/domain/Multiplayer/PlayerBadge.jsx';
-import { SuddenDeathProgress } from '../components/domain/SuddenDeath/SuddenDeathProgress.jsx';
-import { SuddenDeathQuestionCard } from '../components/domain/SuddenDeath/SuddenDeathQuestionCard.jsx';
-import PassAndPlayInput from '../components/domain/SuddenDeath/PassAndPlayInput';
-import SuddenDeathReveal from '../components/domain/SuddenDeath/SuddenDeathReveal';
-import SuddenDeathResult from '../components/domain/SuddenDeath/SuddenDeathResult';
+import { useSuddenDeath, isCorrectForQuestion } from '../../hooks/sudden-death/useSuddenDeath.js';
+import { useQuestionTimer } from '../../hooks/sudden-death/useQuestionTimer.js';
+import { BorderContainer } from '../../components/layout/BorderContainer.jsx';
+import { PromptSource } from '../../components/domain/Rounds/PromptSource.jsx';
+import { PlayerBadge } from '../../components/domain/Multiplayer/PlayerBadge.jsx';
+import { SuddenDeathProgress } from '../../components/domain/SuddenDeath/SuddenDeathProgress.jsx';
+import { SuddenDeathQuestionCard } from '../../components/domain/SuddenDeath/SuddenDeathQuestionCard.jsx';
+import PassAndPlayInput from '../../components/domain/SuddenDeath/PassAndPlayInput.jsx';
+import SuddenDeathReveal from '../../components/domain/SuddenDeath/SuddenDeathReveal.jsx';
+import SuddenDeathResult from '../../components/domain/SuddenDeath/SuddenDeathResult.jsx';
 
 const POSITION_LABELS = {
   start: 'البداية',

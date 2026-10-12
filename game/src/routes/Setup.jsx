@@ -1,7 +1,7 @@
 // game/src/routes/Setup.jsx
 import { useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useCatalog } from '../hooks/useCatalog.js';
+import { useCatalog } from '../hooks/setup/useCatalog.js';
 import { useGameSettings } from '../context/GameSettingsContext.jsx';
 import { GenreTileGrid } from '../components/domain/Setup/Genres/GenreTileGrid.jsx';
 import { StrictGenreToggle } from '../components/domain/Setup/Genres/StrictGenreToggle.jsx';

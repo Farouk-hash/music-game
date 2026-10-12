@@ -1,6 +1,6 @@
 // game/src/hooks/useRoundReversal.js
 import { useMemo } from 'react';
-import { randomStyle } from '../lib/reverseText.js';
+import { randomStyle } from '../../lib/reverseText.js';
 
 /**
  * Given a tier ('no' | 'some' | 'all') and the current round index,

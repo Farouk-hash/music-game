@@ -1,4 +1,4 @@
-import { TIMER_SECONDS } from '../../../../hooks/usePlayParams.js';
+import { TIMER_SECONDS } from "../../../../hooks/rounds/usePlayParams";
 
 export function TimerPicker({ value, onChange, answerMode }) {
   const perQuestion = answerMode === 'type'

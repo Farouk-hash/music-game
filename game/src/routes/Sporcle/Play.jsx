@@ -13,7 +13,7 @@ import { SporcleModal } from '../../components/domain/Setup/Modals/SporcleModal.
 import { useHostSporcle } from '../../hooks/sporcle/useHostSporcle.js';
 import { useHostSporcleIdentity } from '../../hooks/sporcle/useHostSporcleIdentity.js';
 import { useHostSporcleActions } from '../../hooks/sporcle/useHostSporcleActions.js';
-import { useRoundReversal } from '../../hooks/useRoundReversal.js';
+import { useRoundReversal } from '../../hooks/rounds/useRoundReversal.js';
 import { sporcleApi } from '../../lib/sporcleApi.js';
 
 /**

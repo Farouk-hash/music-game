@@ -1,6 +1,6 @@
 // game/src/routes/Home.jsx
 import { Link } from 'react-router-dom';
-import { useCatalog } from '../hooks/useCatalog.js';
+import { useCatalog } from '../hooks/setup/useCatalog.js';
 import { Hero } from '../components/layout/Hero.jsx';
 import { StatGrid } from '../components/layout/StatGrid.jsx';
 import { Button } from '../components/ui/Button.jsx';

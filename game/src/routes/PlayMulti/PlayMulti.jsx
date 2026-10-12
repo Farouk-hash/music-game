@@ -1,21 +1,20 @@
 // game/src/routes/PlayMulti.jsx
-import { useNavigate } from 'react-router-dom';
-import { useMultiplayerParams } from '../hooks/useMultiplayerParams.js';
-import { useMultiplayerSession } from '../hooks/useMultiplayerSession.js';
-import { Loader } from '../components/ui/Loader.jsx';
-import { BorderContainer } from '../components/layout/BorderContainer.jsx';
-import { PromptSource } from '../components/domain/Rounds/PromptSource.jsx';
-import { AudioPlayer } from '../components/domain/Rounds/AudioPlayer.jsx';
-import { QuestionCard } from '../components/domain/Rounds/QuestionCard.jsx';
-import { ErrorBlock } from '../components/domain/Rounds/ErrorBlock.jsx';
-import { EmptyBlock } from '../components/domain/Rounds/EmptyBlock.jsx';
-import { TimerBar } from '../components/domain/Setup/Timer/Timerbar.jsx';
-import { useRoundReversal } from '../hooks/useRoundReversal.js';
-import { TurnBanner } from '../components/domain/Multiplayer/TurnBanner.jsx';
-import { PlayerBadge } from '../components/domain/Multiplayer/PlayerBadge.jsx';
-import { useRoundMultiplayer } from '../hooks/useRoundMultiPlayer.js';
-import { Leaderboard } from '../components/domain/Multiplayer/LeaderBoard.jsx';
-import { MultiplayerProgress } from '../components/domain/Multiplayer/MultiplayerProgress.jsx';
+import { useMultiplayerParams } from '../../hooks/rounds/useMultiplayerParams.js';
+import { useMultiplayerSession } from '../../hooks/rounds/useMultiplayerSession.js';
+import { Loader } from '../../components/ui/Loader.jsx';
+import { BorderContainer } from '../../components/layout/BorderContainer.jsx';
+import { PromptSource } from '../../components/domain/Rounds/PromptSource.jsx';
+import { AudioPlayer } from '../../components/domain/Rounds/AudioPlayer.jsx';
+import { QuestionCard } from '../../components/domain/Rounds/QuestionCard.jsx';
+import { ErrorBlock } from '../../components/domain/Rounds/ErrorBlock.jsx';
+import { EmptyBlock } from '../../components/domain/Rounds/EmptyBlock.jsx';
+import { TimerBar } from '../../components/domain/Setup/Timer/Timerbar.jsx';
+import { useRoundReversal } from '../../hooks/rounds/useRoundReversal.js';
+import { TurnBanner } from '../../components/domain/Multiplayer/TurnBanner.jsx';
+import { PlayerBadge } from '../../components/domain/Multiplayer/PlayerBadge.jsx';
+import { useRoundMultiplayer } from '../../hooks/rounds/useRoundMultiPlayer.js';
+import { Leaderboard } from '../../components/domain/Multiplayer/LeaderBoard.jsx';
+import { MultiplayerProgress } from '../../components/domain/Multiplayer/MultiplayerProgress.jsx';
 
 const POSITION_LABELS = {
   start: 'البداية',

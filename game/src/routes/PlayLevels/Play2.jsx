@@ -1,19 +1,19 @@
 // game/src/routes/Play2.jsx
-import { usePlayParams } from '../hooks/usePlayParams.js';
-import { usePlaySession } from '../hooks/usePlaySession.js';
-import { Loader } from '../components/ui/Loader.jsx';
-import { BorderContainer } from '../components/layout/BorderContainer.jsx';
-import { PromptSource } from '../components/domain/Rounds/PromptSource.jsx';
-import { AudioPlayer } from '../components/domain/Rounds/AudioPlayer.jsx';
-import { QuestionCard } from '../components/domain/Rounds/QuestionCard.jsx';
-import { RoundHeader } from '../components/domain/Rounds/RoundHeader.jsx';
-import { ProgressBar } from '../components/domain/Rounds/ProgressBar.jsx';
-import { EndScreen } from '../components/domain/Rounds/EndScreen.jsx';
-import { EmptyBlock } from '../components/domain/Rounds/EmptyBlock.jsx';
-import { ErrorBlock } from '../components/domain/Rounds/ErrorBlock.jsx';
-import { useRoundMulti } from '../hooks/useRoundMulti.js';
-import { TimerBar } from '../components/domain/Setup/Timer/Timerbar.jsx';
-import { useRoundReversal } from '../hooks/useRoundReversal.js';
+import { usePlayParams } from '../../hooks/rounds/usePlayParams.js';
+import { usePlaySession } from '../../hooks/rounds/usePlaySession.js';
+import { Loader } from '../../components/ui/Loader.jsx';
+import { BorderContainer } from '../../components/layout/BorderContainer.jsx';
+import { PromptSource } from '../../components/domain/Rounds/PromptSource.jsx';
+import { AudioPlayer } from '../../components/domain/Rounds/AudioPlayer.jsx';
+import { QuestionCard } from '../../components/domain/Rounds/QuestionCard.jsx';
+import { RoundHeader } from '../../components/domain/Rounds/RoundHeader.jsx';
+import { ProgressBar } from '../../components/domain/Rounds/ProgressBar.jsx';
+import { EndScreen } from '../../components/domain/Rounds/EndScreen.jsx';
+import { EmptyBlock } from '../../components/domain/Rounds/EmptyBlock.jsx';
+import { ErrorBlock } from '../../components/domain/Rounds/ErrorBlock.jsx';
+import { useRoundMulti } from '../../hooks/rounds/useRoundMulti.js';
+import { TimerBar } from '../../components/domain/Setup/Timer/Timerbar.jsx';
+import { useRoundReversal } from '../../hooks/rounds/useRoundReversal.js';
 
 const POSITION_LABELS = {
   start: 'البداية',

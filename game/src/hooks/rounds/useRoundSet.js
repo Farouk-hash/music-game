@@ -1,6 +1,6 @@
 // game/src/hooks/useRoundSet.js
 import { useQuery } from '@tanstack/react-query';
-import { api } from '../lib/api.js';
+import { api } from '../../lib/api.js';
 
 /**
  * Fetches sets for level 3. Each set contains 1–4 clips and 2–4 questions.

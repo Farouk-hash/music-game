@@ -1,19 +1,19 @@
 // game/src/routes/Play3.jsx
 import { useState, useRef } from 'react';
-import { usePlayParams } from '../hooks/usePlayParams.js';
-import { useRoundSet } from '../hooks/useRoundSet.js';
-import { isAnswerCorrect } from '../hooks/answerCheck.js';
-import { storage } from '../lib/storage.js';
-import { Button } from '../components/ui/Button.jsx';
-import { Loader } from '../components/ui/Loader.jsx';
-import { BorderContainer } from '../components/layout/BorderContainer.jsx';
-import { MultiClipPlayer } from '../components/domain/MultiTracks/MutliClipPlay.jsx';
-import { OptionsGrid } from '../components/domain/Rounds/OptionsGrid.jsx';
-import { TextAnswerInput } from '../components/domain/TextAnswerInput/TextAnswerInput.jsx';
-import { EndScreen } from '../components/domain/Rounds/EndScreen.jsx';
-import { EmptyBlock } from '../components/domain/Rounds/EmptyBlock.jsx';
-import { ErrorBlock } from '../components/domain/Rounds/ErrorBlock.jsx';
-import { RevealedTracks } from '../components/domain/MultiTracks/RevealedTracks.jsx';
+import { usePlayParams } from '../../hooks/rounds/usePlayParams.js';
+import { useRoundSet } from '../../hooks/rounds/useRoundSet.js';
+import { isAnswerCorrect } from '../../hooks/rounds/answerCheck.js';
+import { storage } from '../../lib/storage.js';
+import { Button } from '../../components/ui/Button.jsx';
+import { Loader } from '../../components/ui/Loader.jsx';
+import { BorderContainer } from '../../components/layout/BorderContainer.jsx';
+import { MultiClipPlayer } from '../../components/domain/MultiTracks/MutliClipPlay.jsx';
+import { OptionsGrid } from '../../components/domain/Rounds/OptionsGrid.jsx';
+import { TextAnswerInput } from '../../components/domain/TextAnswerInput/TextAnswerInput.jsx';
+import { EndScreen } from '../../components/domain/Rounds/EndScreen.jsx';
+import { EmptyBlock } from '../../components/domain/Rounds/EmptyBlock.jsx';
+import { ErrorBlock } from '../../components/domain/Rounds/ErrorBlock.jsx';
+import { RevealedTracks } from '../../components/domain/MultiTracks/RevealedTracks.jsx';
 
 // Question types that always render as buttons, regardless of answer mode.
 // These have small fixed option sets — typing them is silly.

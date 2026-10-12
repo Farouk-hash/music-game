@@ -1,6 +1,6 @@
 // game/src/hooks/useRoundMultiplayer.js
 import { useQuery } from '@tanstack/react-query';
-import { api } from '../lib/api.js';
+import { api } from '../../lib/api.js';
 
 /**
  * Fetches multiplayer rounds from the Worker.

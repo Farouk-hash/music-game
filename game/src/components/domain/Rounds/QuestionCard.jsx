@@ -2,7 +2,7 @@
 import { Button } from '../../ui/Button.jsx';
 import { OptionsGrid } from './OptionsGrid.jsx';
 import { TextAnswerInput } from '../TextAnswerInput/TextAnswerInput.jsx';
-import { isAnswerCorrect } from '../../../hooks/answerCheck.js';
+import { isAnswerCorrect } from '../../../hooks/rounds/answerCheck.js';
 import { applyReversal } from '../../../lib/reverseText.js';
 
 /**

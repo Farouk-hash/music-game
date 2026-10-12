@@ -1,14 +1,19 @@
-// game/src/hooks/useRoundMulti.js
+// game/src/hooks/useRound.js
 import { useQuery } from '@tanstack/react-query';
-import { api } from '../lib/api.js';
+import { api } from '../../lib/api.js';
 
 /**
- * Fetches multi-question rounds from the Worker.
+ * Fetches a batch of rounds from the Worker.
  *
- * `years` composes with artists or genres, whichever wins the
- * artist/genre exclusivity check. `instruments` is 'none' | 'mixed' | 'all'.
+ * `types` is an array of question type strings. Empty array = all types.
+ * `years` is an array of integers. Empty array = no year filter.
+ * `instruments` is 'none' | 'mixed' | 'all' — default 'none'.
+ *
+ * Note: artists and genres are mutually exclusive in the query string
+ * (artists replace genres when both are set). `years` composes with
+ * whichever won.
  */
-export function useRoundMulti({
+export function useRound({
   genres = [],
   artists = [],
   years = [],
@@ -32,8 +37,8 @@ export function useRoundMulti({
   const qs = params.toString();
 
   return useQuery({
-    queryKey: ['game-round-multi', qs],
-    queryFn: () => api.get(`/round-multi?${qs}`),
+    queryKey: ['game-round', qs],
+    queryFn: () => api.get(`/round?${qs}`),
     staleTime: 0,
     refetchOnWindowFocus: false,
     enabled,

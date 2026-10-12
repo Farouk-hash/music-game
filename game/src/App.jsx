@@ -4,11 +4,11 @@ import { Shell } from './components/layout/Shell.jsx';
 import Home from './routes/Home.jsx';
 import NotFound from './routes/NotFound.jsx';
 import Setup from './routes/Setup.jsx';
-import Play from './routes/Play.jsx';
-import Play2 from './routes/Play2.jsx';
-import Play3 from './routes/Play3.jsx';
-import PlayMulti from './routes/PlayMulti.jsx';
-import SuddenDeath from './routes/SuddenDeath.jsx';
+import Play from './routes/PlayLevels/Play.jsx';
+import Play2 from './routes/PlayLevels/Play2.jsx';
+import Play3 from './routes/PlayLevels/Play3.jsx';
+import PlayMulti from './routes/PlayMulti/PlayMulti.jsx';
+import SuddenDeath from './routes/SuddenDeath/SuddenDeath.jsx';
 
 import SporclePlay from './routes/Sporcle/Play.jsx';
 import SporcleResult from './routes/Sporcle/Result.jsx';

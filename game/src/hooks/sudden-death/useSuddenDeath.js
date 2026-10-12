@@ -1,7 +1,7 @@
 // game/src/hooks/useSuddenDeath.js
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../lib/api';
-import { isAnswerCorrect } from '../answerCheck';
+import { isAnswerCorrect } from '../rounds/answerCheck';
 
 const QUESTIONS_PER_BATCH = 5;
 

@@ -1,5 +1,5 @@
 // game/src/components/ui/Image.jsx
-import { useImageLoader } from '../../hooks/useImageLoader.js';
+import { useImageLoader } from '../../hooks/common/useImageLoader.js';
 import { Skeleton } from './Skeleton.jsx';
 
 /**
