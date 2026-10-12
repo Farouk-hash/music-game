@@ -19,6 +19,8 @@ import { Level1Modal } from '../components/domain/Setup/Modals/Level1Modal.jsx';
 import { Level2Modal } from '../components/domain/Setup/Modals/Level2Modal.jsx';
 import { Level3Modal } from '../components/domain/Setup/Modals/Level3Modal.jsx';
 import { MultiplayerModal } from '../components/domain/Multiplayer/MultiplayerModal.jsx';
+import { SporcleModal } from '../components/domain/Setup/Modals/SporcleModal.jsx';
+
 
 function matchesGenres(artist, selectedGenresSet, strictGenre) {
   const ids = Array.isArray(artist.genre_ids) ? artist.genre_ids : [];
@@ -68,6 +70,7 @@ export default function Setup() {
   const [level2Open, setLevel2Open] = useState(false);
   const [level3Open, setLevel3Open] = useState(false);
   const [multiOpen,  setMultiOpen]  = useState(false);
+  const [sporcleOpen, setSporcleOpen] = useState(false);
 
   const genres  = data?.genres  ?? [];
   const artists = data?.artists ?? [];
@@ -275,12 +278,9 @@ export default function Setup() {
     if (effectiveQuestionTypes.length > 0) {
       params.set('types', effectiveQuestionTypes.join(','));
     }
-    // Only send rendition when reverse — forward is the default.
-        // Only send rendition when reverse — forward is the default.
     if (settings.audioRendition === 'reverse' && reversedClipsCount > 0) {
       params.set('rendition', 'reverse');
     }
-    // Only send instruments when not the default.
     if (settings.instruments && settings.instruments !== 'none') {
       params.set('instruments', settings.instruments);
     }
@@ -311,6 +311,14 @@ export default function Setup() {
     params.set('level', String(level));
     params.set('count', String(roundsPerPlayer));
     navigate(`/play-multi?${params.toString()}`);
+  }
+
+  function buildScope() {
+    const out = {};
+    if (genreMode === 'some' && selectedGenres.size > 0) out.genres = [...selectedGenres];
+    if (effectiveSelectedArtists.size > 0) out.artists = [...effectiveSelectedArtists];
+    if (effectiveSelectedYears.size > 0) out.years = [...effectiveSelectedYears];
+    return out;
   }
 
   return (
@@ -538,6 +546,13 @@ export default function Setup() {
         }
         actions={[
           {
+            key: 'sporcle',
+            label: 'Sporcle',
+            variant: 'secondary',
+            onClick: () => setSporcleOpen(true),
+            disabled: false,
+          },
+          {
             key: 'multiplayer',
             label: 'Multiplayer',
             variant: 'secondary',
@@ -597,6 +612,15 @@ export default function Setup() {
         onClose={() => setMultiOpen(false)}
         onStart={handleMultiplayerStart}
         starting={false}
+        disabledTypes={disabledTypes}
+        reversedClipsCount={reversedClipsCount}
+      />
+      <SporcleModal
+        open={sporcleOpen}
+        onClose={() => setSporcleOpen(false)}
+        initialMode="host"
+        scope={buildScope()}
+        canHost={canStart}
         disabledTypes={disabledTypes}
         reversedClipsCount={reversedClipsCount}
       />

@@ -1,0 +1,754 @@
+Here's the v49 handoff. Save as `E:\matb3aa-game\handoff-v49.md`.
+
+---
+
+```
+You are continuing a working project. **Do not re-derive the setup or re-verify anything below.** Everything here is confirmed working unless explicitly marked broken. Read it in full before proposing anything.
+
+## The Project
+
+Five pieces, plus a data pipeline:
+
+1. **`admin/`** — build tool for curating audio clips, lyrics, artists, album years. Port 5173.
+2. **`game/`** — the player-facing quiz app. Port 5174 locally; deployed to Cloudflare Pages.
+3. **`server/`** — local Express + orchestration. Port 3001.
+4. **`music-game-wrangler/`** — Cloudflare Worker holding D1 + R2.
+5. **`host-sporcle-wrangler/`** — Durable Object service for Sporcle multiplayer.
+
+The game does **not** go through Express. It fetches `music-game-wrangler` directly for solo/co-op, and `host-sporcle-wrangler` for Sporcle. The Sporcle Worker calls `music-game-wrangler` via a Service Binding.
+
+## Repository
+
+**GitHub:** `https://github.com/Farouk-hash/music-game` (private, monorepo)
+**Local repo root:** `E:\matb3aa-game\.git`
+**Last committed state:** v28 (initial commit `c2a9ad3`). Work from v29–v49 is **uncommitted**.
+
+**`.gitignore`** covers `node_modules/`, `dist/`, `.env`, `.env.local`, `.env.*.local`, `.env.development`, `.env.development.local`, `.env.production.local`, `.wrangler/`, `.dev.vars`, `*.log`, `venv/`, `__pycache__/`, `*.pyc`, `server/instrumental-output/`, `test-vocals/`.
+
+**`.env.production` is TRACKED** and contains:
+```
+VITE_API_BASE=https://music-game-wrangler.abdulrahman-muhammad2090.workers.dev/game
+VITE_SPORCLE_BASE=https://host-sporcle-wrangler.abdulrahman-muhammad2090.workers.dev
+```
+
+**No `.env.local` should exist** (it would leak into the production build).
+
+## Architecture
+
+| Piece | Location | Local port | URL |
+|---|---|---|---|
+| Express server | `server/` | 3001 | `http://localhost:3001` |
+| Admin app | `admin/` | 5173 | `http://localhost:5173` |
+| Game (local) | `game/` | 5174 | `http://localhost:5174` |
+| Game (deployed) | Pages | — | `https://music-game-9vn.pages.dev` |
+| Worker (music) | `music-game-wrangler/` | 8787 | `https://music-game-wrangler.abdulrahman-muhammad2090.workers.dev` |
+| Worker (Sporcle) | `host-sporcle-wrangler/` | 8788 | `https://host-sporcle-wrangler.abdulrahman-muhammad2090.workers.dev` |
+
+## Deployment
+
+**Pages (game):**
+```cmd
+cd E:\matb3aa-game\game
+npm run build
+npx wrangler pages deploy dist --project-name=music-game --branch=production
+```
+
+**Worker (music-game-wrangler):**
+```cmd
+cd E:\matb3aa-game\music-game-wrangler
+npx wrangler deploy
+```
+
+**Worker (host-sporcle-wrangler):**
+```cmd
+cd E:\matb3aa-game\host-sporcle-wrangler
+npx wrangler deploy
+```
+
+**Deploy order for first production deploy:** `music-game-wrangler` FIRST, then `host-sporcle-wrangler`.
+
+**CRITICAL:** After editing any DO class, **Ctrl+C and restart `wrangler dev`**. DO module code is NOT hot-reloaded. If the schema changed (new columns), also `rmdir /S /Q .wrangler` before restarting.
+
+**Windows env gotchas:**
+- `npm`/`npx` have occasionally failed with "The system cannot execute the specified program" or OOM.
+- Mitigations: clear `NODE_OPTIONS` (`set NODE_OPTIONS=`), use `node --max-old-space-size=4096 "...wrangler.js" ...`.
+- **Express does not hot-reload.** Every `server/` code change needs a Ctrl+C restart of `npm run dev`.
+
+## Local Dev — Two Workers, Two Terminals
+
+**Terminal 1 — music-game-wrangler with remote D1/R2:**
+```cmd
+cd E:\matb3aa-game\music-game-wrangler
+npx wrangler dev --port 8787
+```
+`wrangler.jsonc` has `"remote": true` on the D1 and R2 bindings. Do NOT use `--remote` on the whole command.
+
+**Terminal 2 — host-sporcle-wrangler:**
+```cmd
+cd E:\matb3aa-game\host-sporcle-wrangler
+npx wrangler dev --port 8788
+```
+
+**Binding resolution:** Terminal 2's banner must show:
+```
+env.HOST_SPORCLE (HostSporcle)     Durable Object      local
+env.MUSIC_GAME (music-game-wrangler) Worker            local [connected]
+```
+Start Terminal 1 BEFORE Terminal 2.
+
+**Client test calls go to `http://localhost:8788/host-sporcle/...`.**
+
+**Mobile testing:** use the deployed client (`https://music-game-9vn.pages.dev`) — `localhost` doesn't resolve to your PC from a phone.
+
+## Styling System
+
+- `game/src/styles/tokens.css` — the ONE file with hex values.
+- `game/tailwind.config.js` — maps utility classes to CSS variables.
+
+**Valid (game):** `bg-bg`, `bg-surface`, `bg-surface-2`, `border-border`, `text-ink`, `text-ink-muted`, `text-ink-subtle`, `bg-accent`, `text-accent`, `border-accent`, `border-accent-2`, `bg-accent-soft`, `text-correct`, `bg-correct-soft`, `border-correct`, `text-wrong`, `bg-wrong-soft`, `border-wrong`, `text-highlight`.
+
+**`bg-brand-500` DOES NOT EXIST in game tokens** — use `bg-accent text-bg`.
+
+**Opacity modifiers (`/40`, `/10`) DO NOT WORK** on token-mapped classes.
+
+## D1 Schema (music-game-wrangler)
+
+Existing: `genres`, `artists`, `tracks` (~17,414 rows), `lyrics`, `album_years`.
+
+**Instruments:** `instruments` table with `(artist_id, track_name, position)` UNIQUE.
+
+**Migrations:** `0003_sporcle.sql`, `0004_instruments.sql`, `0005_drop_source_url.sql`, `0006_instruments_index.sql`.
+
+**Legacy:** `sporcle_rooms`, `sporcle_players`, `sporcle_answers` (D1-based Sporcle, superseded). Leave in place.
+
+## D1 Parameter Limit — CRITICAL
+
+**D1 hard-caps bound parameters at 100 per statement.** Chunk arrays to ≤90. Helper at `music-game-wrangler/src/utilities/chunkedIn.js`.
+
+## Question Types
+
+**Audio (5):** `name-track`, `name-artist`, `name-album`, `name-featured`, `name-position`
+**Lyrics (3):** `lyrics-track`, `lyrics-artist`, `lyrics-album`
+
+Sets in `music-game-wrangler/src/controllers/game/rounds-methods/scope-helpers.js`:
+```js
+export const AUDIO_TYPES = new Set(['name-track','name-artist','name-album','name-featured','name-position']);
+export const LYRICS_TYPES = new Set(['lyrics-track','lyrics-artist','lyrics-album']);
+export const VALID_TYPES = [...AUDIO_TYPES, ...LYRICS_TYPES];
+```
+
+### Round shapes (music-game-wrangler)
+
+**L1 audio round:**
+```js
+{ slotId, type, clip: { r2_key, serveUrl, position }, question: { prompt, options, correctValue } }
+```
+
+**L1 lyrics round:**
+```js
+{ slotId, type, lyrics, revealClip: { r2_key, serveUrl } | null, question: { prompt, options, correctValue } }
+```
+**No top-level `clip`.** The audio evidence lives in `revealClip`.
+
+**L1 instrumental round:**
+```js
+{ slotId, type, source: 'instrumental', clip: { r2_key, serveUrl, position }, question: {…} }
+```
+
+**L2 rounds** (all builders): wrap question(s) into `questions[]`.
+
+## Instrumental Rounds
+
+- `buildingInstrumental.js` exports two builders: `buildInstrumentalRound` (L1/L3) and `buildInstrumentalRoundMulti` (L2).
+- **`lyrics-track` options use snippet text as `value` AND `correctValue`** — not `opt-N`.
+- Anti-skew round-robin in `instruments-slots.js`.
+- **Same skew may still exist in traditional audio** (`slots.js`, `fetchFeaturedSlots`). Not changed.
+
+## host-sporcle-wrangler — Folder Structure
+
+```
+host-sporcle-wrangler/
+├── wrangler.jsonc
+├── package.json
+├── test-speed.ps1
+├── test-collect.ps1
+├── test-leave-reset.ps1
+├── test-leave-midgame.ps1
+├── test-host-promotion.ps1
+└── src/
+    ├── index.js
+    ├── router.js
+    ├── routes/
+    │   ├── create.js
+    │   ├── join.js
+    │   ├── state.js
+    │   ├── action.js
+    │   └── debug.js
+    ├── controllers/
+    │   └── host-sporcle.js         # Durable Object class
+    ├── lib/
+    │   ├── response.js
+    │   ├── cors.js
+    │   ├── codes.js
+    │   └── stub.js
+    └── question-fetcher.js
+```
+
+## host-sporcle-wrangler — Durable Object Schema
+
+Per-room SQLite. One DO instance per room code.
+
+```sql
+room (
+  id                    INTEGER PRIMARY KEY CHECK (id = 1),
+  phase                 TEXT,   -- 'lobby' | 'loading' | 'countdown' | 'question' | 'reveal' | 'finished'
+  mode                  TEXT,   -- 'speed' | 'collect'
+  config                TEXT,   -- JSON scope params for /game/round
+  auto_advance_seconds  INTEGER,
+  version               INTEGER,
+  q_index               INTEGER,
+  q_deadline            INTEGER,
+  expires_at            INTEGER,
+  created_at            INTEGER,
+  started_at            INTEGER,
+  last_error            TEXT
+)
+
+players (
+  id TEXT PK, name TEXT, is_host INTEGER, ready INTEGER,
+  score INTEGER, locked INTEGER, left INTEGER
+)
+
+questions (idx INTEGER PK, payload TEXT)
+answers (player_id TEXT, q_idx INTEGER, correct INTEGER, typed TEXT, answered_at INTEGER,
+         PRIMARY KEY (player_id, q_idx))
+```
+
+**Note:** `players.rowid` (implicit SQLite column) reflects join order. `#promoteNextHost()` uses `rowid ASC` to pick the earliest-joined active player.
+
+## host-sporcle-wrangler — API
+
+### Routes
+```
+POST /host-sporcle/create
+POST /host-sporcle/:code/join
+GET  /host-sporcle/:code/state?since=N
+POST /host-sporcle/:code/action
+POST /host-sporcle/:code/leave?playerId=…     (sendBeacon endpoint)
+GET  /host-sporcle/:code/debug                (LOCAL-ONLY)
+```
+
+### Action types
+
+| Type | Who | Params | Effect |
+|---|---|---|---|
+| `ready` | Non-host, lobby | `{ ready: bool }` | Toggle ready |
+| `start` | Host, lobby | — | Sets `phase='loading'`, kicks off fetch in background |
+| `answer` | Any active player | `{ typed }` | Records answer for `room.q_index`; rejected if a row already exists |
+| `advance` | Host, reveal | — | `reveal` → next `question`, or → `finished` |
+| `leave` | Any | — | See leave behaviour below |
+| `reset` | Host, finished/lobby | — | Clear, → `lobby` |
+| `rejoin` | Any marked `left` | — | Flips `left=0`; conditionally resets `locked` |
+
+### Leave behaviour
+
+```js
+async #leave(player, room) {
+  const sql = this.ctx.storage.sql;
+
+  if (room.phase === 'lobby') {
+    sql.exec('DELETE FROM players WHERE id = ?', player.id);
+
+    const remaining = sql.exec('SELECT COUNT(*) AS n FROM players').one().n;
+    if (remaining === 0) {
+      await this.ctx.storage.deleteAll();
+      return { ok: true, version: 0 };
+    }
+
+    if (player.is_host) this.#promoteNextHost();
+  } else {
+    // In-game: mark as left. `locked` is NOT touched.
+    sql.exec('UPDATE players SET left = 1 WHERE id = ?', player.id);
+    if (player.is_host) {
+      sql.exec('UPDATE players SET is_host = 0 WHERE id = ?', player.id);
+      this.#promoteNextHost();
+    }
+  }
+
+  this.#touchExpiry();
+  const version = this.#bumpVersion();
+
+  // Mode 2: if all remaining active players have answered, end the question.
+  if (room.phase === 'question') {
+    const total = sql.exec('SELECT COUNT(*) AS n FROM players WHERE left = 0').one().n;
+    const answered = sql.exec(
+      `SELECT COUNT(*) AS n FROM answers a
+        JOIN players p ON p.id = a.player_id
+       WHERE a.q_idx = ? AND p.left = 0`,
+      room.q_index
+    ).one().n;
+    if (total > 0 && answered >= total) await this.#endQuestion();
+  }
+
+  return { ok: true, version };
+}
+```
+
+### Leave outcomes
+
+| Scenario | Result |
+|---|---|
+| Host alone, closes modal or tab | Room destroyed (`deleteAll()`) |
+| Host + guests, host leaves | Earliest-joined guest becomes host |
+| Guest leaves | No promotion |
+| Host leaves mid-game | Earliest-joined active player becomes host, game continues |
+| Guest joins a destroyed code | 404 `Room not found` |
+| Player refreshes mid-game | Beacon fires → `left=1` → client auto-rejoins (`rejoin`) on mount |
+| `#getRoom` when table is gone | Returns `null` via try/catch → `getState` responds with `{ ok: false, error: 'Room not found' }` (HTTP 404) |
+
+### `#rejoin`
+
+```js
+async #rejoin(player, room) {
+  if (!player.left) return { ok: true, version: room.version };
+
+  const inQuestion = room.phase === 'question';
+  const existingAnswer = inQuestion
+    ? this.ctx.storage.sql.exec(
+        'SELECT 1 FROM answers WHERE player_id = ? AND q_idx = ? LIMIT 1',
+        player.id, room.q_index
+      ).toArray()
+    : [];
+  const hasAnsweredCurrent = existingAnswer.length > 0;
+
+  const activeHost = this.ctx.storage.sql.exec(
+    'SELECT id FROM players WHERE is_host = 1 AND left = 0 LIMIT 1'
+  ).toArray();
+
+  const shouldClearHostFlag =
+    player.is_host && activeHost.length > 0 && activeHost[0].id !== player.id;
+
+  const lockedValue = hasAnsweredCurrent ? 1 : 0;
+
+  const setClauses = [
+    'left = 0',
+    `locked = ${lockedValue}`,
+    shouldClearHostFlag ? 'is_host = 0' : null,
+  ].filter(Boolean).join(', ');
+
+  this.ctx.storage.sql.exec(
+    `UPDATE players SET ${setClauses} WHERE id = ?`,
+    player.id
+  );
+
+  this.#touchExpiry();
+  const version = this.#bumpVersion();
+  return { ok: true, version };
+}
+```
+
+### `#answer` — existing-answer guard
+
+```js
+async #answer(player, room, action) {
+  if (room.phase !== 'question') return { ok: false, error: 'Not in question phase' };
+  if (player.locked) return { ok: false, error: 'Already answered this question' };
+
+  const existing = this.ctx.storage.sql.exec(
+    'SELECT 1 FROM answers WHERE player_id = ? AND q_idx = ? LIMIT 1',
+    player.id, room.q_index
+  ).toArray();
+  if (existing.length > 0) {
+    this.ctx.storage.sql.exec('UPDATE players SET locked = 1 WHERE id = ?', player.id);
+    return { ok: false, error: 'Already answered this question' };
+  }
+
+  // …rest unchanged…
+}
+```
+
+### `handleAction` gate
+
+```js
+async handleAction(playerId, action) {
+  const room = this.#getRoom();
+  if (!room) return { ok: false, error: 'Room not found' };
+
+  const player = this.#getPlayer(playerId);
+  if (!player) return { ok: false, error: 'Player not in this room' };
+
+  const type = action?.type;
+
+  // `rejoin` is allowed even when the player is marked left.
+  if (type !== 'rejoin' && player.left) {
+    return { ok: false, error: 'Player has left' };
+  }
+
+  if (type === 'ready')   return this.#ready(player, room, action);
+  if (type === 'start')   return this.#start(player, room);
+  if (type === 'answer')  return this.#answer(player, room, action);
+  if (type === 'advance') return this.#advance(player, room);
+  if (type === 'leave')   return this.#leave(player, room);
+  if (type === 'reset')   return this.#reset(player, room);
+  if (type === 'rejoin')  return this.#rejoin(player, room);
+
+  return { ok: false, error: `Unknown action: ${type}` };
+}
+```
+
+### `#promoteNextHost`
+
+```js
+#promoteNextHost() {
+  const sql = this.ctx.storage.sql;
+
+  const alreadyHost = sql
+    .exec('SELECT id FROM players WHERE is_host = 1 AND left = 0 LIMIT 1')
+    .toArray();
+  if (alreadyHost.length > 0) return;
+
+  // Clear stale is_host flags before assigning the new host.
+  sql.exec('UPDATE players SET is_host = 0 WHERE is_host = 1');
+
+  const next = sql
+    .exec('SELECT id FROM players WHERE left = 0 ORDER BY rowid ASC LIMIT 1')
+    .toArray();
+  if (next[0]) {
+    sql.exec('UPDATE players SET is_host = 1 WHERE id = ?', next[0].id);
+  }
+}
+```
+
+### Phase flow
+
+```
+lobby ──start()──► loading ──fetch complete──► countdown ──alarm(10s)──► question
+                                                                            │
+                                    answer() correct in speed mode ─────────┤
+                                    answer() all answered in collect ───────┤
+                                    alarm(20s) timeout ─────────────────────┤
+                                                                            ▼
+                                                                         reveal
+                                                                            │
+                                  advance() or alarm(autoAdvanceSeconds) ───┴──► next question
+                                                                            │
+                                                                            └──► finished
+```
+
+### Constants
+```js
+const MIN_PLAYERS = 2;
+const COUNTDOWN_MS = 10000;
+const SPORCLE_TIMER_SECONDS = 20;
+const AUTO_ADVANCE_MS_LYRICS = 10000;
+const ROOM_EXPIRY_MS = 2 * 60 * 60 * 1000;
+```
+
+## host-sporcle-wrangler — Service Binding
+
+```jsonc
+{
+  "name": "host-sporcle-wrangler",
+  "main": "src/index.js",
+  "compatibility_date": "2026-04-03",
+  "services": [{ "binding": "MUSIC_GAME", "service": "music-game-wrangler" }],
+  "durable_objects": {
+    "bindings": [{ "name": "HOST_SPORCLE", "class_name": "HostSporcle" }]
+  },
+  "exports": {
+    "HostSporcle": { "type": "durable-object", "storage": "sqlite" }
+  }
+}
+```
+
+## host-sporcle-wrangler — response.js (status handling)
+
+**Important:** `json()` accepts a bare number as the second argument.
+
+```js
+export function json(data, init = {}) {
+  const normalized = typeof init === 'number' ? { status: init } : init;
+  return Response.json(data, {
+    ...normalized,
+    headers: { ...CORS_HEADERS, ...(normalized.headers || {}) },
+  });
+}
+```
+
+**Why:** earlier, calls like `json(result, result.ok ? 200 : 404)` passed a bare number. `Response.json` ignored it (defaulted to 200). Now the number is normalized to `{ status }`.
+
+Also — the client-side `sporcleApi.request` throws on `{ ok: false }` even with a 2xx status, as a defense in depth:
+
+```js
+if (body && typeof body === 'object' && body.ok === false) {
+  const err = new Error(body.error ?? 'Request failed');
+  err.status = res.status;
+  err.body = body;
+  throw err;
+}
+```
+
+## question-fetcher.js
+
+Builds the query string from `room.config` and calls `env.MUSIC_GAME.fetch(...)`. Uses the deployed public origin so `clip.serveUrl` is browser-reachable.
+
+**Flattens** L1/L2 into a list of questions:
+```js
+{ idx, clip, lyrics, revealClip, source, type, prompt, options, correctValue }
+```
+
+## Sporcle Client — Files (v49)
+
+```
+game/src/
+├── lib/
+│   └── sporcleApi.js              # fetch wrapper; leaveBeacon; throws on ok:false
+├── hooks/sporcle/
+│   ├── useHostSporcle.js          # long-poll state; refresh() aborts in-flight
+│   ├── useHostSporcleIdentity.js  # localStorage identity per room code
+│   └── useHostSporcleActions.js   # ready/start/answer/advance/leave/reset/rejoin
+├── components/domain/Sporcle/
+│   ├── RoomPanel.jsx              # modal's room panel; renders by phase
+│   ├── RoomCodeBadge.jsx
+│   ├── PlayerRoster.jsx           # shows locked/ready; dims + strikes left players
+│   ├── SporcleProgress.jsx        # correctness history; dims + strikes left players
+│   ├── SporcleTimer.jsx
+│   ├── QuestionPanel.jsx          # accepts `isLocked` prop
+│   ├── CountdownOverlay.jsx       # inline-capable
+│   └── LoadingOverlay.jsx         # inline-capable
+├── components/domain/Setup/Modals/
+│   ├── SharedGameSettings.jsx     # accepts variant="sporcle"
+│   └── SporcleModal.jsx           # 3 panels: host / join / room
+└── routes/Sporcle/
+    ├── Play.jsx                   # single route; owns polling
+    └── Result.jsx                 # /sporcle/result/:code
+```
+
+## Sporcle Client — Routing
+
+**Only two Sporcle routes:**
+```
+/sporcle/play/:code     → Play.jsx
+/sporcle/result/:code   → Result.jsx
+```
+
+**Entry point:** Setup's "Sporcle" button opens `<SporcleModal>`.
+
+## Sporcle Client — Flow
+
+**Host:**
+1. `/setup` → pick genres/artists/years → click **Sporcle**.
+2. Modal opens at `panel='host'`. Fill name + `SharedGameSettings variant="sporcle"`.
+3. **Create room** → POST `/create` → localStorage → **`navigate('/sporcle/play/<CODE>')`**.
+4. Setup unmounts. Play mounts. `identity` present. `useHostSporcle` starts polling.
+5. `phase === 'lobby'` → `modalOpen=true`, `modalMode='room'`.
+6. Play renders `<SporcleModal state={state} actions={actions} myId={myId}>`.
+7. `RoomPanel` shows room code + copy buttons + roster + Start.
+
+**Guest:** same flow via the Join tab.
+
+**Shared link:** a player opens `/sporcle/play/<CODE>` directly. `identity` is null, `state.phase === 'lobby'` → `modalOpen=true`, `modalMode='join'`.
+
+**Game start:** Host clicks Start → DO sets `loading` → Play's effect keeps modal open at `'room'` → `RoomPanel` renders `<LoadingOverlay inline />` → DO flips to `countdown` → `<CountdownOverlay inline />` → DO flips to `question` → Play's effect: `preGame=false` → `modalOpen=false` → Q1 renders.
+
+**Game end:** `phase === 'finished'` → Play navigates to `/sporcle/result/<CODE>`.
+
+## Sporcle Client — Key Design Decisions
+
+**Long-poll driven.** `useHostSporcle` loops `GET /state?since=N`. The DO holds the request ~3s when version is unchanged.
+
+**Overlays driven by server timestamps.** `CountdownOverlay` takes `endsAt` and computes `remaining = endsAt - Date.now()` on every 100ms tick.
+
+**`refresh()` aborts in-flight polls.** After any action, `useHostSporcleActions` calls `onVersion` → `refresh()`.
+
+**State hoisting — single polling loop.** `SporcleModal` does NOT call `useHostSporcle`. Play owns the polling loop and passes `state`, `actions`, `myId` down.
+
+**`RoomPanel` is presentational.** Renders by phase: lobby (roster + ready/start), loading (spinner), countdown (countdown card).
+
+**`SporcleProgress`** shows per-player correctness history. Fed by `answersByQ`, accumulated on Play from each `state.reveal` payload.
+
+**Play.jsx board split:**
+- `question` phase → `PlayerRoster` (locked state — who's answered)
+- `reveal` phase → `SporcleProgress` (correctness history)
+- **Both** dim and strike-through players marked `left: true`.
+
+**Mid-game rejoin — the `isLocked` guard.**
+Play.jsx computes `isLocked = !!me?.locked`. `handlePick` refuses when `isLocked`. `QuestionPanel` accepts an `isLocked` prop that feeds `hasAnswered`, so the "Locked in" hint shows.
+DO side: `#rejoin` sets `locked` based on whether the player already answered the current question. `#answer` also checks the `answers` table as a safety net.
+
+**Auto-rejoin on refresh.** Play.jsx has a ref-guarded effect that calls `actions.rejoin(myId)` if the local player is `left: true`. Prevents refresh-kicks-you-out.
+
+**Leave beacon on tab close.** `beforeunload` → `sporcleApi.leaveBeacon(code, myId)`. **Unreliable on mobile Safari** — the mobile case leaves the player marked as active until the room expires.
+
+## Game Client — Phase 2 & 3 Complete
+
+**Phase 2:** `GameSettingsContext` has `instruments`, `InstrumentsPicker.jsx`, `SharedGameSettings.jsx` Instruments section, `usePlayParams` parses `instruments`, `useRoundMulti` forwards it, `Setup.jsx`'s `buildBaseParams()` includes it.
+
+**Phase 3:** `QuestionCard.jsx` accepts `source` prop; renders "🎼 Instrumental" badge + accent frame. `Play.jsx`, `Play2.jsx`, `PlayMulti.jsx` pass `source`. `PlayMulti.jsx`'s `buildSuddenDeathUrl` forwards `instruments`. `SuddenDeathQuestionCard.jsx` same.
+
+**`Play3.jsx` NOT updated** — L3 modal still sets `allowInstruments={false}`.
+
+## music-game-wrangler — Endpoints
+
+### Game
+```
+GET /game/catalog
+GET /game/round                 L1
+GET /game/round-multi           L2
+GET /game/round-set             L3
+GET /game/round-multiplayer     Multiplayer wrapper
+```
+All accept `?instruments=none|mixed|all`.
+
+### Instruments / Instrumentals
+```
+GET    /instruments?artist_id=…&position=…&search=…&limit=&offset=
+POST   /instruments/bulk
+POST   /instruments/check-duplicates
+DELETE /instruments/artist/:artistId
+DELETE /instruments/:id
+
+PUT /instrumentals/upload?key=instrumentals/<artist>/<track>/<middle|custom>.mp3
+GET /instrumentals/serve?key=instrumentals/…
+```
+
+## Environment
+
+- **Windows.** `cmd` for wrangler, PowerShell for test scripts.
+- Node 18+. Express uses ESM.
+- Python 3.14.8 at `C:\Users\Desktop\AppData\Local\Programs\Python\Python314\`.
+- Virtual environment at `E:\matb3aa-game\venv\`.
+- **Never pass Arabic inline through `cmd` `curl -d`.**
+- **`jq` is not installed.**
+- **After `wrangler deploy`, verification curls may hit a stale edge for ~30s.**
+- **`curl` in `cmd`:** `&` terminates the command. Wrap URLs in `"…"`. Variables use `%VAR%`.
+- **PowerShell + Arabic:** use `-Body ([System.Text.Encoding]::UTF8.GetBytes($json))`.
+
+## Commands
+
+```cmd
+:: Local dev
+cd E:\matb3aa-game && npm run dev
+cd E:\matb3aa-game\game && npm run dev
+
+:: music-game-wrangler
+cd E:\matb3aa-game\music-game-wrangler
+npx wrangler dev --port 8787
+npx wrangler deploy
+
+:: host-sporcle-wrangler
+cd E:\matb3aa-game\host-sporcle-wrangler
+npx wrangler dev --port 8788
+npx wrangler deploy
+
+:: Deploy game
+cd E:\matb3aa-game\game
+npm run build
+npx wrangler pages deploy dist --project-name=music-game --branch=production
+
+:: Git
+cd E:\matb3aa-game
+git add .
+git commit -m "…"
+git push
+```
+
+## Known Open / Broken
+
+### 1. **Sporcle end-to-end run not yet fully verified on deployed**
+The v46–v49 changes work in local tests. A full 2-player game on the deployed client (Setup → modal → lobby → loading → countdown → Q1 → reveal → … → result → play-again) still needs one clean run.
+
+### 2. **Mobile tab-close doesn't reliably mark players as `left`**
+`beforeunload`/`sendBeacon` is unreliable on mobile Safari. A player who closes the tab on mobile stays `left: 0` in the DO until the room expires or they refresh. A heartbeat + staleness sweep would fix this. Deferred.
+
+### 3. **Enable L3 instruments**
+`Level3Modal` sets `allowInstruments={false}`. `Play3.jsx` lacks `source` prop.
+
+### 4. **Anti-skew round-robin — traditional audio not fixed**
+`slots.js` (`pickSlotsVaried`) and `fetchFeaturedSlots` still use naive `ORDER BY RANDOM() LIMIT N`.
+
+### 5. **No `PublishedInstruments.jsx` admin page**
+
+### 6. **Client rendition chain incomplete**
+- `useRoundMultiplayer.js` — no `rendition` param
+- `PlayMulti.jsx` — doesn't pass `rendition: params.rendition`
+
+### 7–20. Carried over:
+- `handoff-*.md` and `prompt*.txt` tracked in repo
+- Duplicate controller at `music-game-wrangler/src/controllers/admin/tracks.js`
+- Punctuation-only lines in lyric snippets
+- Albumaty `/n/singer/` vs `/singer/` mismatch
+- `tracks_count` drift
+- matb3aa `release_date` may be uniform
+- `/published/artists` "has clips" filter may be truncated
+- `FetchLyricsBar` multi-artist mode
+- Upload flow has no `album_name` support
+- `useServerPagination` unused
+- R2 orphan cleanup — partially handled
+- No auth on the Worker
+- Auto-dropped artists don't restore
+- Strict genre mode doesn't send a `strict` param
+- `lyrics-album` disable rule
+- Garbled lyrics rows
+- Page deployment is manual
+- Legacy D1 Sporcle tables untouched
+
+## Style the User Prefers
+
+- **Complete files, not fragments.**
+- **Minimal fixes.**
+- **Tables** to explain changes.
+- **One clear next step.**
+- **Note what to test** and what to paste back.
+- **Concise.** Experienced with React/Node.
+- **Recommend explicitly** when there are tradeoffs.
+
+## Most Likely Next Tasks
+
+**In priority order:**
+
+1. **Full 2-player Sporcle run on deployed** — Setup → Create → navigate → roster → Ready → Start → loading → countdown → Q1 → answer → reveal (`SporcleProgress`) → next question → … → result → play-again. Report any issues.
+
+2. **Build a heartbeat / staleness sweep** — to fix the mobile tab-close gap. `POST /ping?playerId=…` updates `last_seen`; a periodic alarm sweeps players whose `last_seen` is older than ~60s.
+
+3. **Enable L3 instruments.**
+
+4. **Build `PublishedInstruments.jsx`.**
+
+5. **Extend anti-skew round-robin to traditional audio.**
+
+6. **Finish the client rendition chain.**
+
+**Recommended next step:** item 1 — run the full flow on the deployed client and report back.
+
+Ask what the user wants to work on next.
+
+---
+
+## END OF PROMPT
+
+Save this as `E:\matb3aa-game\handoff-v49.md`. Paste it as the first message of your next session.
+```
+
+---
+
+## What's new in v49
+
+| Section | Change |
+|---|---|
+| **Leave behaviour** | `#leave` no longer sets `locked=1` in-game |
+| **`#rejoin`** | Documented conditional `locked` reset |
+| **`#answer`** | Documented existing-answer guard |
+| **`#promoteNextHost`** | Documented stale `is_host` clearing |
+| **response.js** | Documented the bare-number `init` normalization |
+| **`QuestionPanel`** | Documented `isLocked` prop |
+| **Mid-game rejoin** | Documented the `isLocked` guard on both sides |
+| **Known Open** | #1 still "end-to-end not verified on deployed"; #2 heartbeat |
+| **Most Likely Next Tasks** | Unchanged — full deployed run is #1 |
+
+The document is self-contained. A fresh model knows:
+- The v49 Sporcle architecture
+- Why mid-game rejoin works (three coordinated DO methods + client `isLocked`)
+- The `response.js` bare-number fix
+- The mobile tab-close limitation
+- Everything about the rest of the project

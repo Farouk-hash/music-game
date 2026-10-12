@@ -8,14 +8,16 @@
     {
       "binding": "DB",
       "database_name": "music-game-db",
-      "database_id": "9593ff09-cf39-486d-9ca0-381371190378"
+      "database_id": "9593ff09-cf39-486d-9ca0-381371190378" , 
+      "remote": true
     }
   ],
   
    "r2_buckets": [
     {
       "binding": "AUDIO",
-      "bucket_name": "music-game-audio"
+      "bucket_name": "music-game-audio" , 
+      "remote": true
     }
   ],
 

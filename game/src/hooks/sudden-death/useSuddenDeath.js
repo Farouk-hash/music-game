@@ -50,7 +50,7 @@ export function isCorrectForQuestion(question, typed) {
  *   error      → fetch failed
  *
  * @param {object}   opts
- * @param {string[]} opts.playerIds  — stable IDs, e.g. ['Ali','Sara']
+ * @param {string[]} opts.playerIds  — stable IDs, e.g. ['Ali','Raffat']
  * @param {object}   opts.apiParams  — passthrough for /game/round
  */
 export function useSuddenDeath({ playerIds, apiParams }) {

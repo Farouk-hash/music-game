@@ -10,6 +10,9 @@ import Play3 from './routes/Play3.jsx';
 import PlayMulti from './routes/PlayMulti.jsx';
 import SuddenDeath from './routes/SuddenDeath.jsx';
 
+import SporclePlay from './routes/Sporcle/Play.jsx';
+import SporcleResult from './routes/Sporcle/Result.jsx';
+
 export default function App() {
   return (
     <Shell>
@@ -23,6 +26,11 @@ export default function App() {
 
         <Route path="/play-multi" element={<PlayMulti />} />
         <Route path="/sudden-death" element={<SuddenDeath />} />
+
+
+        <Route path="/sporcle/play/:code" element={<SporclePlay />} />
+        <Route path="/sporcle/result/:code" element={<SporcleResult />} />
+
 
         <Route path="*" element={<NotFound />} />
       </Routes>

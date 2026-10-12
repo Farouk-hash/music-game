@@ -8,7 +8,7 @@ import { usePlayParams } from './usePlayParams.js';
  *
  * URL shape:
  *   /play-multi?genres=1&artists=5&years=1977
- *              &players=Ali,Sara,Omar&level=2&count=5
+ *              &players=Ali,Raffat,Omar&level=2&count=5
  *              &answerMode=choose&timer=off&reversed=no
  *
  * Adds:

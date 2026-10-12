@@ -8,24 +8,25 @@ import { InstrumentsPicker } from '../Instruments/InstrumentsPicker.jsx';
 import { useGameSettings } from '../../../../context/GameSettingsContext.jsx';
 
 /**
- * The shared game-settings block embedded in every level modal.
+ * Shared game-settings block embedded in every modal.
  *
- * Reads/writes from GameSettingsContext so changing a value in one
- * modal affects all of them.
- *
- *   <SharedGameSettings disabledTypes={disabledTypes} />
- *
- * `hideRoundCount` — pass true in multiplayer, which has its own
- * rounds-per-player control.
- *
- * `allowInstruments` — pass false in levels that don't support
- * instrumental rounds (currently L3). The picker renders disabled.
+ * `variant="default"` — solo/co-op/multiplayer (existing behaviour).
+ * `variant="sporcle"` — adds Level, Mode, and Auto-advance controls.
+ *                       Consumed by SporcleModal.
  */
 export function SharedGameSettings({
   disabledTypes = new Set(),
   hideRoundCount = false,
   reversedClipsCount = 0,
   allowInstruments = true,
+  variant = 'default',
+  // Sporcle-only controlled props (only used when variant === 'sporcle')
+  level,
+  setLevel,
+  mode,
+  setMode,
+  autoAdvanceSeconds,
+  setAutoAdvanceSeconds,
 }) {
   const {
     questionTypes, setQuestionTypes,
@@ -36,7 +37,9 @@ export function SharedGameSettings({
     audioRendition, setAudioRendition,
     instruments, setInstruments,
   } = useGameSettings();
+
   const reversedAudioAvailable = reversedClipsCount > 0;
+  const isSporcle = variant === 'sporcle';
 
   return (
     <div className="space-y-6">
@@ -51,6 +54,32 @@ export function SharedGameSettings({
           disabledTypes={disabledTypes}
         />
       </section>
+
+      {/* Level (Sporcle only) */}
+      {isSporcle && (
+        <section className="space-y-3">
+          <h3 className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">
+            Level
+          </h3>
+          <p className="text-xs text-ink-muted">
+            How many questions you get from each clip.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <ChoiceCard
+              active={level === 1}
+              onClick={() => setLevel(1)}
+              title="Level 1"
+              description="One question per clip."
+            />
+            <ChoiceCard
+              active={level === 2}
+              onClick={() => setLevel(2)}
+              title="Level 2"
+              description="Multiple questions per clip."
+            />
+          </div>
+        </section>
+      )}
 
       {/* Answer mode */}
       <section className="space-y-3">
@@ -71,6 +100,9 @@ export function SharedGameSettings({
           </h3>
           <p className="text-xs text-ink-muted">
             How many clips do you want to guess?
+            {isSporcle && (
+              <> Level 2 returns several questions per clip.</>
+            )}
           </p>
           <RoundCountPicker value={roundCount} onChange={setRoundCount} />
         </section>
@@ -133,16 +165,14 @@ export function SharedGameSettings({
         </div>
       </section>
 
-      {/* Instruments — NEW */}
+      {/* Instruments */}
       <section className="space-y-3">
         <h3 className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">
           Instruments
         </h3>
         <p className="text-xs text-ink-muted">
           Play instrumental renditions (no vocals) instead of the original audio.
-          {!allowInstruments && (
-            <> Not available for this level.</>
-          )}
+          {!allowInstruments && <> Not available for this level.</>}
         </p>
 
         <InstrumentsPicker
@@ -158,6 +188,32 @@ export function SharedGameSettings({
         </ul>
       </section>
 
+      {/* Mode (Sporcle only) */}
+      {isSporcle && (
+        <section className="space-y-3">
+          <h3 className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">
+            Game mode
+          </h3>
+          <p className="text-xs text-ink-muted">
+            How scoring works.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <ChoiceCard
+              active={mode === 'speed'}
+              onClick={() => setMode('speed')}
+              title="Speed"
+              description="First correct answer wins the point. Question ends immediately."
+            />
+            <ChoiceCard
+              active={mode === 'collect'}
+              onClick={() => setMode('collect')}
+              title="Collect"
+              description="Everyone answers. Each correct answer earns a point."
+            />
+          </div>
+        </section>
+      )}
+
       {/* Timer */}
       <section className="space-y-3">
         <h3 className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">
@@ -165,6 +221,45 @@ export function SharedGameSettings({
         </h3>
         <TimerPicker value={timer} onChange={setTimer} answerMode={answerMode} />
       </section>
+
+      {/* Auto-advance (Sporcle only) */}
+      {isSporcle && (
+        <section className="space-y-3">
+          <h3 className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">
+            Auto-advance
+          </h3>
+          <p className="text-xs text-ink-muted">
+            Seconds after reveal before the next question. 0 = host advances manually.
+          </p>
+          <input
+            type="number"
+            min={0}
+            max={30}
+            value={autoAdvanceSeconds}
+            onChange={(e) => setAutoAdvanceSeconds(Math.max(0, Math.min(30, Number(e.target.value) || 0)))}
+            className="w-full h-11 rounded-md border border-border bg-surface-2 px-3 text-ink focus:border-accent focus:outline-none"
+          />
+        </section>
+      )}
     </div>
+  );
+}
+
+function ChoiceCard({ active, onClick, title, description }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={[
+        'text-left p-4 rounded-md border transition-colors space-y-1',
+        active
+          ? 'bg-accent-soft border-accent text-ink'
+          : 'bg-surface-2 border-border text-ink-muted hover:border-accent-2',
+      ].join(' ')}
+    >
+      <p className="font-semibold text-sm">{title}</p>
+      <p className="text-xs">{description}</p>
+    </button>
   );
 }

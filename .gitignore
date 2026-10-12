@@ -18,12 +18,15 @@ wrangler.toml.bak
 
 # ── Environment / secrets ────────────────────────────────
 .env
-.env.*
+.env.local
+.env.*.local
+.env.development
+.env.development.local
+.env.production.local
+
+# Tracked templates (no secrets)
 !.env.example
 !.env.production
-*.pem
-*.key
-credentials.json
 
 # ── Logs ─────────────────────────────────────────────────
 *.log

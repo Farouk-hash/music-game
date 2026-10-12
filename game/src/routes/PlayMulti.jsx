@@ -145,7 +145,7 @@ export default function PlayMulti() {
 
         <PromptSource round={session.currentRound} />
 
-                <QuestionCard
+        <QuestionCard
           eyebrow={q.type.replace('name-', '').replace('lyrics-', '')}
           prompt={q.prompt}
           options={q.options}
