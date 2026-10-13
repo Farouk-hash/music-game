@@ -6,4 +6,4 @@ export {
   pickRoomAvatarStyle,
   DEFAULT_AVATAR_STYLE,
   AVATAR_STYLES,
-} from './AvatarProvider.js';
+} from './AvatarProvider.jsx';

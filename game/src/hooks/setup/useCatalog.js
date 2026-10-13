@@ -15,6 +15,9 @@ export function useCatalog() {
   return useQuery({
     queryKey: ['game-catalog'],
     queryFn: () => api.get('/catalog'),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30 * 60 * 1000,       // 30 min — catalogue is admin-published, rarely changes
+    gcTime: 60 * 60 * 1000,           // 1 hour
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
   });
 }

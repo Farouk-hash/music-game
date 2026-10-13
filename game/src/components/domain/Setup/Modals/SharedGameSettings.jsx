@@ -27,6 +27,7 @@ export function SharedGameSettings({
   setMode,
   autoAdvanceSeconds,
   setAutoAdvanceSeconds,
+  onQuestionTypeUnfavorited
 }) {
   const {
     questionTypes, setQuestionTypes,
@@ -49,6 +50,7 @@ export function SharedGameSettings({
           Question types
         </h3>
         <QuestionTypePicker
+          onUnfavorited={onQuestionTypeUnfavorited}
           value={questionTypes}
           onChange={setQuestionTypes}
           disabledTypes={disabledTypes}

@@ -11,10 +11,17 @@ import { BorderContainer } from './BorderContainer.jsx';
  *     onToggle={() => setGenresOpen(o => !o)}
  *     title="Genres"
  *     meta={genreMode === 'some' ? `(${selectedGenres.size})` : null}
+ *     secondaryActions={<StrictGenreToggle ... />}
  *     actions={<button>All genres</button>}
  *   >
  *     <GenreTileGrid ... />
  *   </CollapsibleSection>
+ *
+ * Layout:
+ *   [▾ TITLE (meta)]  [secondaryActions]  ........  [actions]
+ *   - title sits left
+ *   - secondaryActions sits immediately after the title (optional)
+ *   - actions are pushed to the far right via ml-auto (optional)
  */
 export function CollapsibleSection({
   open,
@@ -22,11 +29,12 @@ export function CollapsibleSection({
   title,
   meta,
   actions,
+  secondaryActions,
   children,
 }) {
   return (
     <BorderContainer border="all" className="p-8 space-y-4">
-      <div className="flex items-baseline justify-between gap-4 flex-wrap">
+      <div className="flex items-baseline gap-4 flex-wrap">
         <button
           type="button"
           onClick={onToggle}
@@ -60,8 +68,14 @@ export function CollapsibleSection({
           </h2>
         </button>
 
-        {actions && (
+        {secondaryActions && (
           <div className="flex items-center gap-4">
+            {secondaryActions}
+          </div>
+        )}
+
+        {actions && (
+          <div className="flex items-center justify-end gap-4 ml-auto">
             {actions}
           </div>
         )}

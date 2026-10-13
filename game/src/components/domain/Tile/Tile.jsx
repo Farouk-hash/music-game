@@ -3,6 +3,10 @@
 // A single selectable tile. Used for genres, artists, difficulty levels,
 // and any future picker. Background is either an image URL or a soft
 // accent tint with a large initial letter (fallback).
+//
+// The outer element is a <div role="button"> rather than <button>,
+// so callers can slot in a sibling <button> (e.g. a heart toggle)
+// without producing invalid nested-button HTML.
 
 import { Image } from "../../ui/Image";
 
@@ -14,19 +18,35 @@ export function Tile({
   selected = false,
   onToggle,
   disabled = false,
+  heart = null,
 }) {
+  function handleClick() {
+    if (disabled) return;
+    onToggle?.();
+  }
+
+  function handleKeyDown(e) {
+    if (disabled) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onToggle?.();
+    }
+  }
 
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      disabled={disabled}
+    <div
+      role="button"
+      tabIndex={disabled ? -1 : 0}
       aria-pressed={selected}
+      aria-disabled={disabled || undefined}
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
       className={[
-        'group relative overflow-hidden text-left',
+        'group relative overflow-hidden text-left cursor-pointer',
         'rounded-md border transition-all duration-150',
-        'aspect-[4/3] w-full',
-        'disabled:opacity-40 disabled:cursor-not-allowed',
+        'aspect-[4/3] w-full select-none',
+        'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+        disabled ? 'opacity-40 cursor-not-allowed' : '',
         selected
           ? 'border-accent ring-2 ring-accent shadow-md'
           : 'border-border hover:border-accent-2 shadow-sm',
@@ -44,7 +64,14 @@ export function Tile({
       {/* Dark gradient overlay for legibility */}
       <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/10" />
 
-      {/* Corner selection badge */}
+      {/* Heart — top-left corner */}
+      {heart && (
+        <div className="absolute top-2 left-2 z-20">
+          {heart}
+        </div>
+      )}
+
+      {/* Corner selection badge — top-right */}
       <div className="absolute top-2 right-2 z-10">
         <span
           className={[
@@ -78,6 +105,6 @@ export function Tile({
           </p>
         )}
       </div>
-    </button>
+    </div>
   );
 }

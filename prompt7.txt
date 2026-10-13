@@ -1,4 +1,4 @@
-Here's the v50 handoff. Save as `E:\matb3aa-game\handoff-v50.md`.
+Here's the v52 handoff. Save as `E:\matb3aa-game\handoff-v52.md`.
 
 ---
 
@@ -21,7 +21,7 @@ The game does **not** go through Express. It fetches `music-game-wrangler` direc
 
 **GitHub:** `https://github.com/Farouk-hash/music-game` (private, monorepo)
 **Local repo root:** `E:\matb3aa-game\.git`
-**Last committed state:** v28 (initial commit `c2a9ad3`). Work from v29–v50 is **uncommitted**.
+**Last committed state:** v28 (initial commit `c2a9ad3`). Work from v29–v52 is **uncommitted**.
 
 **`.gitignore`** covers `node_modules/`, `dist/`, `.env`, `.env.local`, `.env.*.local`, `.env.development`, `.env.development.local`, `.env.production.local`, `.wrangler/`, `.dev.vars`, `*.log`, `venv/`, `__pycache__/`, `*.pyc`, `server/instrumental-output/`, `test-vocals/`.
 
@@ -73,6 +73,7 @@ npx wrangler deploy
 - `npm`/`npx` have occasionally failed with "The system cannot execute the specified program" or OOM.
 - Mitigations: clear `NODE_OPTIONS` (`set NODE_OPTIONS=`), use `node --max-old-space-size=4096 "...wrangler.js" ...`.
 - **Express does not hot-reload.** Every `server/` code change needs a Ctrl+C restart of `npm run dev`.
+- **`esbuild spawn UNKNOWN`** can occur when Windows Defender quarantines the esbuild binary. Fix: whitelist `node_modules\esbuild` in Defender, or `rmdir /S /Q node_modules\esbuild && npm install`.
 
 ## Local Dev — Two Workers, Two Terminals
 
@@ -81,7 +82,7 @@ npx wrangler deploy
 cd E:\matb3aa-game\music-game-wrangler
 npx wrangler dev --port 8787
 ```
-`wrangler.jsonc` has `"remote": true` on the D1 and R2 bindings. Do NOT use `--remote` on the whole command.
+`wrangler.jsonc` has `"remote": true` on the D1 and R2 bindings.
 
 **Terminal 2 — host-sporcle-wrangler:**
 ```cmd
@@ -94,9 +95,10 @@ npx wrangler dev --port 8788
 env.HOST_SPORCLE (HostSporcle)     Durable Object      local
 env.MUSIC_GAME (music-game-wrangler) Worker            local [connected]
 ```
-Start Terminal 1 BEFORE Terminal 2.
 
 **Client test calls go to `http://localhost:8788/host-sporcle/...`.**
+
+**The game client's `vite.config.js` proxies `/api/game` and `/api/profiles` to the deployed `music-game-wrangler`.**
 
 **Mobile testing:** use the deployed client (`https://music-game-9vn.pages.dev`) — `localhost` doesn't resolve to your PC from a phone.
 
@@ -107,19 +109,15 @@ Start Terminal 1 BEFORE Terminal 2.
 
 **Valid (game):** `bg-bg`, `bg-surface`, `bg-surface-2`, `border-border`, `text-ink`, `text-ink-muted`, `text-ink-subtle`, `bg-accent`, `text-accent`, `border-accent`, `border-accent-2`, `bg-accent-soft`, `text-correct`, `bg-correct-soft`, `border-correct`, `text-wrong`, `bg-wrong-soft`, `border-wrong`, `text-highlight`.
 
-**`bg-brand-500` DOES NOT EXIST in game tokens** — use `bg-accent text-bg`.
+**Ring tokens:** `ring-border`, `ring-accent`, `ring-correct`, `ring-wrong` are valid.
 
-**Opacity modifiers (`/40`, `/10`) DO NOT WORK** on token-mapped classes.
-
-**Ring tokens:** `ring-border`, `ring-accent`, `ring-correct`, `ring-wrong` are valid (Tailwind maps `ring-*` to the same variables).
+**Opacity modifiers (`/40`, `/10`) DO NOT WORK** on token-mapped classes. Raw Tailwind colors like `text-white/70` DO work.
 
 ## D1 Schema (music-game-wrangler)
 
-Existing: `genres`, `artists`, `tracks` (~17,414 rows), `lyrics`, `album_years`.
+Existing: `genres`, `artists`, `tracks` (~17,414 rows), `lyrics`, `album_years`, `instruments`.
 
-**Instruments:** `instruments` table with `(artist_id, track_name, position)` UNIQUE.
-
-**Migrations:** `0003_sporcle.sql`, `0004_instruments.sql`, `0005_drop_source_url.sql`, `0006_instruments_index.sql`.
+**Migrations:** `0003_sporcle.sql`, `0004_instruments.sql`, `0005_drop_source_url.sql`, `0006_instruments_index.sql`, **`0007_profiles.sql`** (applied — see Profile System section).
 
 **Legacy:** `sporcle_rooms`, `sporcle_players`, `sporcle_answers` (D1-based Sporcle, superseded). Leave in place.
 
@@ -139,32 +137,178 @@ export const LYRICS_TYPES = new Set(['lyrics-track','lyrics-artist','lyrics-albu
 export const VALID_TYPES = [...AUDIO_TYPES, ...LYRICS_TYPES];
 ```
 
-### Round shapes (music-game-wrangler)
+### Round shapes
 
-**L1 audio round:**
-```js
-{ slotId, type, clip: { r2_key, serveUrl, position }, question: { prompt, options, correctValue } }
-```
+**L1 audio:** `{ slotId, type, clip: { r2_key, serveUrl, position }, question: { prompt, options, correctValue } }`
 
-**L1 lyrics round:**
-```js
-{ slotId, type, lyrics, revealClip: { r2_key, serveUrl } | null, question: { prompt, options, correctValue } }
-```
-**No top-level `clip`.** The audio evidence lives in `revealClip`.
+**L1 lyrics:** `{ slotId, type, lyrics, revealClip: { r2_key, serveUrl } | null, question }` — no top-level `clip`.
 
-**L1 instrumental round:**
-```js
-{ slotId, type, source: 'instrumental', clip: { r2_key, serveUrl, position }, question: {…} }
-```
+**L1 instrumental:** `{ slotId, type, source: 'instrumental', clip: {...}, question }`
 
-**L2 rounds** (all builders): wrap question(s) into `questions[]`.
+**L2:** wrap question(s) into `questions[]`.
 
 ## Instrumental Rounds
 
-- `buildingInstrumental.js` exports two builders: `buildInstrumentalRound` (L1/L3) and `buildInstrumentalRoundMulti` (L2).
+- `buildingInstrumental.js` exports `buildInstrumentalRound` (L1/L3) and `buildInstrumentalRoundMulti` (L2).
 - **`lyrics-track` options use snippet text as `value` AND `correctValue`** — not `opt-N`.
 - Anti-skew round-robin in `instruments-slots.js`.
-- **Same skew may still exist in traditional audio** (`slots.js`, `fetchFeaturedSlots`). Not changed.
+- Same skew may still exist in traditional audio (`slots.js`, `fetchFeaturedSlots`). Not changed.
+
+## PROFILE SYSTEM (v52 — COMPLETE)
+
+### Identity model
+
+- **Anonymous profile id.** Server-generated UUID. No auth.
+- **Cross-device** via a **recovery code** — 8-char alphanumeric (uppercase, no `O/0/I/1`). Generated once at profile creation. Returned only to the creating client.
+- **The UUID is the sole credential.** Stored in `localStorage['music-game:profile:id']`.
+- **Silent creation.** `useProfile` creates a profile on first mount with a placeholder nickname (`Player-XXX`). The recovery code is stored in `localStorage['music-game:profile:recoveryCode']` and shown once in the modal until dismissed.
+
+### Schema
+
+```sql
+CREATE TABLE profiles (
+  id              TEXT PRIMARY KEY,
+  nickname        TEXT NOT NULL,
+  recovery_code   TEXT UNIQUE,
+  avatar_kind     TEXT NOT NULL DEFAULT 'generated',   -- 'generated' | 'uploaded'
+  avatar_style    TEXT,
+  avatar_seed     TEXT,
+  avatar_r2_key   TEXT,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE profile_favorites (
+  profile_id      TEXT NOT NULL,
+  kind            TEXT NOT NULL,   -- 'artist' | 'genre' | 'track' | 'question-type'
+  value           TEXT NOT NULL,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (profile_id, kind, value)
+);
+```
+
+### Caps (server-enforced)
+
+| Constraint | Value |
+|---|---|
+| Favourites per kind | 100 |
+| Favourites total | 300 |
+| Nickname length | 24 chars |
+| Recovery code length | 8 chars |
+| Avatar upload max size | 256 KB |
+| Avatar MIME types | `image/jpeg`, `image/png`, `image/webp` |
+
+### R2 storage
+
+**Reuses the `AUDIO` bucket** with an `avatars/` prefix: `avatars/<profile_id>/avatar-<timestamp>.<ext>`. **No new bucket, no new binding.**
+
+**Client-side resize** before upload: `resizeImageToSquare` in `ProfileModal.jsx` center-crops to 256×256 and encodes JPEG at 0.85 quality. Wire payload drops from several MB to ~30 KB.
+
+### Routes (music-game-wrangler)
+
+```
+POST   /profiles                       create → { profile, recoveryCode }
+POST   /profiles/recover               body { recoveryCode } → { id }
+GET    /profiles/:id                   full profile + favorites
+PATCH  /profiles/:id                   partial update
+PUT    /profiles/:id                   bulk save (nickname + avatar + favorites)
+POST   /profiles/:id/avatar            multipart upload
+DELETE /profiles/:id/avatar            revert to generated avatar
+GET    /profiles/:id/avatar            serve avatar from R2
+POST   /profiles/:id/favorites         body { kind, value }
+DELETE /profiles/:id/favorites         body { kind, value }
+```
+
+**Route file:** `music-game-wrangler/src/routes/profiles.js` (uses **named capture groups** `(?<id>...)` so the router populates `params.id`).
+
+**Controller files:** `src/controllers/profiles/{profiles,favorites,avatar}.js`.
+
+**Utilities:** `src/utilities/{recoveryCode,imageValidation,profileLimits}.js`.
+
+### `PUT /profiles/:id` — bulk save semantics
+
+- **All sections optional.** Sending `{ nickname }` alone updates the nickname; favourites untouched.
+- **If `favorites` is present, the whole set is replaced** — `DELETE FROM profile_favorites WHERE profile_id = ?` then `INSERT` each. Runs in a single `env.DB.batch()` (transactional).
+- **If `avatar` is present**, sets `avatar_kind` and (only when `kind === 'generated'`) `avatar_style` + `avatar_seed`. **Does NOT touch `avatar_r2_key`** — the avatar upload path owns that.
+
+**Known limitation:** if `avatar.kind === 'generated'` is sent while a valid `avatar_r2_key` exists, the profile still has a stale R2 key. **UI-side fix:** `ProfileModal.handleSave` only sends the `avatar` block when `usingUploaded === false`, so the R2 key isn't clobbered. The stale key is harmless but should be removed via `DELETE /profiles/:id/avatar` if the user wants to free storage.
+
+### Client files
+
+```
+game/src/
+├── lib/
+│   └── profileApi.js               # fetch wrapper; absoluteAvatarUrl helper
+├── hooks/profile/
+│   ├── profileStorage.js           # localStorage keys for id + recovery code
+│   └── useProfile.js               # the main hook + ensureProfileCreated
+├── context/
+│   └── ProfileContext.jsx          # ProfileProvider + useProfileContext
+└── components/
+    ├── Avatar/
+    │   ├── PlayerAvatar.jsx        # DiceBear wrapper
+    │   ├── avatarProvider.js       # AVATAR_STYLES + getAvatarUrl + pickRoomAvatarStyle
+    │   └── index.js
+    └── domain/Profile/
+        ├── ProfileChip.jsx          # header chip → opens modal
+        ├── ProfileModal.jsx         # 3 tabs: Profile / Avatar / Favourites
+        ├── FavoritesTab.jsx         # the three lists + inline FavoritePicker
+        ├── FavoritePicker.jsx       # searchable item list
+        └── HeartButton.jsx          # the heart icon button (variant: 'tile' | 'chip')
+```
+
+### The `useProfile` hook
+
+- Module-level `creatingPromise` deduplicates profile creation across StrictMode double-mounts.
+- `useQuery` with `staleTime: 5 * 60 * 1000`, `gcTime: 30 * 60 * 1000`, `refetchOnMount: false`, `refetchOnWindowFocus: false`.
+- Exposes: `id, profile, favorites, isLoading, error, updateNickname, updateAvatarStyle, uploadAvatar, removeUploadedAvatar, save, addFavorite, removeFavorite, pendingRecoveryCode, dismissRecovery, refetch`.
+- **Every mutation calls `invalidate()`** → immediate refetch. That's expected — mutations should not be optimistically stale.
+
+### The `ProfileModal` behaviour
+
+- **Save:** only writes nickname + generated-avatar fields. `saving` flips off on success or error. On success, `✓ Saved` chip shows for 600ms then the modal auto-closes.
+- **Favourites** are added/removed immediately (via `FavoritesTab` → `useProfile`), independent of Save.
+- **Uploads** are immediate `POST /profiles/:id/avatar`. Client resizes to 256×256 JPEG.
+- **`saving`/`uploading`/`error`/`saved`** reset on every modal open via a `useEffect` on `[profile?.id, open]`.
+
+### The `HeartButton`
+
+Two variants:
+- **`variant="tile"`** (default) — white-ish inactive, `text-white/70` + `textShadow`. Used on dark image tiles.
+- **`variant="chip"`** — `text-ink-subtle` inactive. Used on lighter backgrounds.
+
+Both stop propagation so the parent tile's `onToggle` doesn't fire.
+
+### The `useFavoriteToggles` hook
+
+Returns `isGenreFavorite(id)`, `isArtistFavorite(id)`, `isTrackFavorite(id)`, `isQuestionTypeFavorite(slug)` plus `toggleX` variants that call `addFavorite`/`removeFavorite`.
+
+Memoizes `Set` lookups for the current favourites.
+
+### Setup screen integration
+
+- **Hearts on tiles.** `Tile.jsx` (a `<div role="button">`, not a `<button>`, so the heart can be a real nested button) accepts a `heart` prop. `TileGrid.jsx` accepts a `renderHeart(item)` callback. `GenreTileGrid` and `ArtistTileGrid` wire it to `HeartButton` + `useFavoriteToggles`.
+- **Hearts on question-type chips.** `QuestionTypePicker.jsx` renders each type as a `<div>` wrapper containing a `<button>` (selection) and an absolutely-positioned `<HeartButton>`.
+- **Auto-preselect on Setup mount.** A `preselectedRef`-guarded effect in `Setup.jsx` selects the profile's favourite genres, artists, and question types **once per mount**. Deselecting a tile does NOT un-favourite it (per user decision). Un-favouriting via the heart DOES deselect it from the current scope.
+- **The `onUnfavorited` callback.** `Setup.jsx` passes `handleGenreUnfavorited`, `handleArtistUnfavorited`, `handleQuestionTypeUnfavorited` into the grids. `SharedGameSettings.jsx` forwards `onUnfavorited` to `QuestionTypePicker`. All four modals pass `onQuestionTypeUnfavorited` down.
+- **The Favourites button was removed from `SelectionBar`.** The old "Play from Favourites" flow is gone — favourites are now pre-selected on Setup mount.
+
+### Behaviour summary
+
+| Action | Profile (favourite) | Scope (Setup selection) |
+|---|---|---|
+| Click tile (select) | unchanged | toggled on |
+| Click tile (deselect) | unchanged | toggled off |
+| Heart on non-favourite | **added** | unchanged |
+| Heart on favourite | **removed** | **removed** |
+| Page reload with favourites | preserved | auto-selected |
+
+### The `ProfileChip` and `Header`
+
+- `Header.jsx` (`components/layout/Header.jsx`) renders the app logo, a Home link, and `<ProfileChip />`.
+- `Shell.jsx` renders `<Header />` and the main content.
+- `ProfileChip.jsx` shows a placeholder skeleton while `isLoading`, then the avatar + nickname. Clicking opens the modal.
+- **`App.jsx` wraps everything in `<ProfileProvider>`.** The provider must sit inside `QueryClientProvider`.
 
 ## host-sporcle-wrangler — Folder Structure
 
@@ -189,7 +333,7 @@ host-sporcle-wrangler/
     ├── controllers/
     │   └── host-sporcle.js         # Durable Object class
     ├── lib/
-    │   ├── response.js
+    │   ├── response.js             # json() accepts a bare number as status
     │   ├── cors.js
     │   ├── codes.js
     │   └── stub.js
@@ -197,8 +341,6 @@ host-sporcle-wrangler/
 ```
 
 ## host-sporcle-wrangler — Durable Object Schema
-
-Per-room SQLite. One DO instance per room code.
 
 ```sql
 room (
@@ -226,11 +368,10 @@ answers (player_id TEXT, q_idx INTEGER, correct INTEGER, typed TEXT, answered_at
          PRIMARY KEY (player_id, q_idx))
 ```
 
-**Note:** `players.rowid` reflects join order. `#promoteNextHost()` uses `rowid ASC` to pick the earliest-joined active player.
+**Note:** `players.rowid` reflects join order. `#promoteNextHost()` uses `rowid ASC`.
 
 ## host-sporcle-wrangler — API
 
-### Routes
 ```
 POST /host-sporcle/create
 POST /host-sporcle/:code/join
@@ -242,151 +383,40 @@ GET  /host-sporcle/:code/debug                (LOCAL-ONLY)
 
 ### Action types
 
-| Type | Who | Params | Effect |
-|---|---|---|---|
-| `ready` | Non-host, lobby | `{ ready: bool }` | Toggle ready |
-| `start` | Host, lobby | — | Sets `phase='loading'`, kicks off fetch in background |
-| `answer` | Any active player | `{ typed }` | Records answer for `room.q_index`; rejected if a row exists |
-| `advance` | Host, reveal | — | `reveal` → next `question`, or → `finished` |
-| `leave` | Any | — | See leave behaviour |
-| `reset` | Host, finished/lobby | — | Clear, → `lobby` |
-| `rejoin` | Any marked `left` | — | Flips `left=0`; conditionally resets `locked` |
+| Type | Who | Params |
+|---|---|---|
+| `ready` | Non-host, lobby | `{ ready: bool }` |
+| `start` | Host, lobby | — |
+| `answer` | Active player, question | `{ typed }` |
+| `advance` | Host, reveal | — |
+| `leave` | Any | — |
+| `reset` | Host, finished/lobby | — |
+| `rejoin` | Any marked `left` | — |
 
 ### Leave behaviour
 
-```js
-async #leave(player, room) {
-  const sql = this.ctx.storage.sql;
-
-  if (room.phase === 'lobby') {
-    sql.exec('DELETE FROM players WHERE id = ?', player.id);
-    const remaining = sql.exec('SELECT COUNT(*) AS n FROM players').one().n;
-    if (remaining === 0) {
-      await this.ctx.storage.deleteAll();
-      return { ok: true, version: 0 };
-    }
-    if (player.is_host) this.#promoteNextHost();
-  } else {
-    // In-game: mark as left. `locked` is NOT touched.
-    sql.exec('UPDATE players SET left = 1 WHERE id = ?', player.id);
-    if (player.is_host) {
-      sql.exec('UPDATE players SET is_host = 0 WHERE id = ?', player.id);
-      this.#promoteNextHost();
-    }
-  }
-
-  this.#touchExpiry();
-  const version = this.#bumpVersion();
-
-  if (room.phase === 'question') {
-    const total = sql.exec('SELECT COUNT(*) AS n FROM players WHERE left = 0').one().n;
-    const answered = sql.exec(
-      `SELECT COUNT(*) AS n FROM answers a
-        JOIN players p ON p.id = a.player_id
-       WHERE a.q_idx = ? AND p.left = 0`,
-      room.q_index
-    ).one().n;
-    if (total > 0 && answered >= total) await this.#endQuestion();
-  }
-
-  return { ok: true, version };
-}
-```
-
-### Leave outcomes
-
-| Scenario | Result |
-|---|---|
-| Host alone, closes modal or tab | Room destroyed (`deleteAll()`) |
-| Host + guests, host leaves | Earliest-joined guest becomes host |
-| Guest leaves | No promotion |
-| Host leaves mid-game | Earliest-joined active player becomes host, game continues |
-| Guest joins a destroyed code | 404 `Room not found` |
-| Player refreshes mid-game | Beacon fires → `left=1` → client auto-rejoins (`rejoin`) on mount |
-| `#getRoom` when table is gone | Returns `null` via try/catch → `getState` responds 404 |
+- **Lobby:** `DELETE FROM players WHERE id = ?`. If empty → `deleteAll()`. If the host left and someone else is present → `#promoteNextHost()`.
+- **In-game:** `UPDATE players SET left = 1 WHERE id = ?` (**not `locked`** — that broke rejoin-mid-question and was fixed). If host left → demote + `#promoteNextHost()`.
 
 ### `#rejoin`
 
-```js
-async #rejoin(player, room) {
-  if (!player.left) return { ok: true, version: room.version };
+- No-op if not left.
+- Checks for an existing answer row for the current question → sets `locked` accordingly (0 if unanswered, 1 if answered).
+- Clears stale `is_host` flag if another active host exists.
 
-  const inQuestion = room.phase === 'question';
-  const existingAnswer = inQuestion
-    ? this.ctx.storage.sql.exec(
-        'SELECT 1 FROM answers WHERE player_id = ? AND q_idx = ? LIMIT 1',
-        player.id, room.q_index
-      ).toArray()
-    : [];
-  const hasAnsweredCurrent = existingAnswer.length > 0;
+### `#answer`
 
-  const activeHost = this.ctx.storage.sql.exec(
-    'SELECT id FROM players WHERE is_host = 1 AND left = 0 LIMIT 1'
-  ).toArray();
-
-  const shouldClearHostFlag =
-    player.is_host && activeHost.length > 0 && activeHost[0].id !== player.id;
-
-  const lockedValue = hasAnsweredCurrent ? 1 : 0;
-
-  const setClauses = [
-    'left = 0',
-    `locked = ${lockedValue}`,
-    shouldClearHostFlag ? 'is_host = 0' : null,
-  ].filter(Boolean).join(', ');
-
-  this.ctx.storage.sql.exec(`UPDATE players SET ${setClauses} WHERE id = ?`, player.id);
-
-  this.#touchExpiry();
-  const version = this.#bumpVersion();
-  return { ok: true, version };
-}
-```
-
-### `#answer` — existing-answer guard
-
-```js
-async #answer(player, room, action) {
-  if (room.phase !== 'question') return { ok: false, error: 'Not in question phase' };
-  if (player.locked) return { ok: false, error: 'Already answered this question' };
-
-  const existing = this.ctx.storage.sql.exec(
-    'SELECT 1 FROM answers WHERE player_id = ? AND q_idx = ? LIMIT 1',
-    player.id, room.q_index
-  ).toArray();
-  if (existing.length > 0) {
-    this.ctx.storage.sql.exec('UPDATE players SET locked = 1 WHERE id = ?', player.id);
-    return { ok: false, error: 'Already answered this question' };
-  }
-
-  // …rest unchanged…
-}
-```
-
-### `handleAction` gate
-
-```js
-if (type !== 'rejoin' && player.left) {
-  return { ok: false, error: 'Player has left' };
-}
-```
+- Guards against duplicate answers via an `answers` table lookup, even if `locked` is stale.
+- In speed mode, first correct answer ends the question.
+- In collect mode, ends when all active players have answered.
 
 ### `#promoteNextHost`
 
-```js
-#promoteNextHost() {
-  const sql = this.ctx.storage.sql;
-  const alreadyHost = sql
-    .exec('SELECT id FROM players WHERE is_host = 1 AND left = 0 LIMIT 1')
-    .toArray();
-  if (alreadyHost.length > 0) return;
-  sql.exec('UPDATE players SET is_host = 0 WHERE is_host = 1');
-  const next = sql
-    .exec('SELECT id FROM players WHERE left = 0 ORDER BY rowid ASC LIMIT 1')
-    .toArray();
-  if (next[0]) sql.exec('UPDATE players SET is_host = 1 WHERE id = ?', next[0].id);
-}
-```
+Clears all stale `is_host` flags, then promotes the earliest-joined `left = 0` player by `rowid ASC`.
+
+### `getState` null-guards
+
+Both `fresh` (after the 3s long-poll hold) and `latest` (before `#buildState`) are null-guarded — the room may be destroyed mid-hold.
 
 ### Phase flow
 
@@ -413,36 +443,19 @@ const AUTO_ADVANCE_MS_LYRICS = 10000;
 const ROOM_EXPIRY_MS = 2 * 60 * 60 * 1000;
 ```
 
-### `#buildState`
-
-Currently returns:
+### Correctness rules
 ```js
-{
-  ok, version, phase, mode, qIndex, deadline, countdownEndsAt,
-  autoAdvanceSeconds, reversed, rendition, lastError, players[], totalQuestions,
-  question?, reveal?, finished?
+function normalize(s) { return String(s ?? '').trim().toLowerCase(); }
+function isCorrect(q, typed) {
+  if (typed == null || typed === '') return false;
+  if (q.type === 'name-position') {
+    return canonicalPosition(typed) === canonicalPosition(q.correctValue);
+  }
+  return normalize(typed) === normalize(q.correctValue);
 }
 ```
 
-**To add in v50:** `avatarStyle: config.avatarStyle ?? null`.
-
-### `response.js` — status handling
-
-`json()` accepts a bare number as the second argument:
-
-```js
-export function json(data, init = {}) {
-  const normalized = typeof init === 'number' ? { status: init } : init;
-  return Response.json(data, {
-    ...normalized,
-    headers: { ...CORS_HEADERS, ...(normalized.headers || {}) },
-  });
-}
-```
-
-**Why:** earlier, calls like `json(result, result.ok ? 200 : 404)` passed a bare number. `Response.json` ignored it (defaulted to 200). Now the number is normalized to `{ status }`.
-
-## host-sporcle-wrangler — Service Binding
+### Service Binding
 
 ```jsonc
 {
@@ -468,68 +481,34 @@ Builds the query string from `room.config` and calls `env.MUSIC_GAME.fetch(...)`
 { idx, clip, lyrics, revealClip, source, type, prompt, options, correctValue }
 ```
 
-## Sporcle Client — Files (v50)
+## Sporcle Client — Files
 
 ```
 game/src/
 ├── lib/
 │   └── sporcleApi.js              # fetch wrapper; leaveBeacon; throws on ok:false
 ├── hooks/sporcle/
-│   ├── useHostSporcle.js          # long-poll state; refresh() aborts in-flight
+│   ├── useHostSporcle.js          # long-poll state; refresh() aborts in-flight; breaks on 404
 │   ├── useHostSporcleIdentity.js  # localStorage identity per room code
 │   └── useHostSporcleActions.js   # ready/start/answer/advance/leave/reset/rejoin
 ├── components/
-│   ├── Avatar/                    # NEW in v50 — general-purpose avatar primitive
-│   │   ├── PlayerAvatar.jsx
-│   │   ├── avatarProvider.js
-│   │   └── index.js
+│   ├── Avatar/                    # general-purpose avatar primitive
 │   └── domain/Sporcle/
 │       ├── RoomPanel.jsx
 │       ├── RoomCodeBadge.jsx
-│       ├── PlayerRoster.jsx       # renders <PlayerAvatar>
-│       ├── SporcleProgress.jsx    # renders <PlayerAvatar>
+│       ├── PlayerRoster.jsx
+│       ├── SporcleProgress.jsx
 │       ├── SporcleTimer.jsx
 │       ├── QuestionPanel.jsx      # accepts `isLocked` prop
-│       ├── CountdownOverlay.jsx   # inline-capable
-│       └── LoadingOverlay.jsx     # inline-capable
+│       ├── CountdownOverlay.jsx
+│       └── LoadingOverlay.jsx
 ├── components/domain/Setup/Modals/
 │   ├── SharedGameSettings.jsx     # accepts variant="sporcle"
 │   └── SporcleModal.jsx           # 3 panels: host / join / room
 └── routes/Sporcle/
     ├── Play.jsx
-    └── Result.jsx                 # not yet updated with avatars
+    └── Result.jsx
 ```
-
-## Avatar system (v50 — in progress)
-
-**Design:** Each room gets ONE random avatar style. All players in the room use the same style, seeded by their own name. A new room → a new random style.
-
-**Provider:** DiceBear HTTP API v10 (`https://api.dicebear.com/10.x/<style>/svg?seed=<encoded-name>`).
-
-**Curated style list** (`AVATAR_STYLES` in `avatarProvider.js`):
-```
-adventurer-neutral, adventurer, big-smile, fun-emoji, micah, miniavs,
-personas, open-peeps, lorelei, notionists, big-ears, bottts,
-pixel-art, croodles
-```
-
-**Components:**
-
-- `game/src/components/Avatar/PlayerAvatar.jsx` — the wrapper. Props: `seed`, `style`, `size`, `ring`, `alt`.
-- `game/src/components/Avatar/avatarProvider.js` — URL builder, curated styles, `pickRoomAvatarStyle()`.
-- `game/src/components/Avatar/index.js` — barrel.
-
-**Room-scoped flow (partially wired):**
-
-1. **`SporcleModal.handleCreate`** must call `pickRoomAvatarStyle()` and set `config.avatarStyle`.
-2. **DO `#buildState`** must expose `avatarStyle: config.avatarStyle ?? null`.
-3. **`Play.jsx`** must pass `state.avatarStyle` into `PlayerRoster` and `SporcleProgress`.
-4. **`RoomPanel.jsx`** must pass `state.avatarStyle` into `PlayerRoster`.
-5. **`PlayerRoster.jsx`** and **`SporcleProgress.jsx`** must accept `avatarStyle` prop and render `<PlayerAvatar seed={p.name} style={avatarStyle} size={32 | 28} ring={…} />` **before** the host crown in each row.
-
-**Not yet done:** steps 1–5 above, plus `Result.jsx` standings avatars.
-
-**Fallback behaviour:** if `avatarStyle` is `undefined`, `PlayerAvatar` uses `DEFAULT_AVATAR_STYLE = 'adventurer-neutral'`. Safe for old rooms.
 
 ## Sporcle Client — Routing
 
@@ -542,39 +521,52 @@ pixel-art, croodles
 
 ## Sporcle Client — Flow
 
-**Host:** `/setup` → pick genres/artists/years → click **Sporcle** → modal at `panel='host'` → fill name + settings → **Create room** → POST `/create` → localStorage → `navigate('/sporcle/play/<CODE>')` → Play mounts, polls state → `phase='lobby'` → modal renders at `'room'` → `RoomPanel` shows code + roster + Start.
+**Host:** `/setup` → pick scope → click **Sporcle** → modal at `'host'` → fill name + settings → **Create room** → POST `/create` → localStorage → `navigate('/sporcle/play/<CODE>')` → Play mounts, polls → `phase='lobby'` → modal at `'room'` → `RoomPanel` shows code + roster + Start.
 
 **Guest:** same via Join tab.
 
-**Shared link:** `/sporcle/play/<CODE>` directly. `identity` null, `phase='lobby'` → `modalOpen=true`, `modalMode='join'`.
+**Shared link:** `/sporcle/play/<CODE>` directly → modal at `'join'` with code prefilled.
 
-**Game start:** Start → DO sets `loading` → modal stays open → `RoomPanel` renders `<LoadingOverlay inline />` → DO flips to `countdown` → `<CountdownOverlay inline />` → DO flips to `question` → Play's effect: `preGame=false` → `modalOpen=false` → Q1.
+**Game start:** Start → DO sets `loading` → modal stays open → `RoomPanel` renders `<LoadingOverlay inline />` → DO flips to `countdown` → `<CountdownOverlay inline />` → DO flips to `question` → Play's effect → `modalOpen=false` → Q1.
 
 **Game end:** `phase='finished'` → Play navigates to `/sporcle/result/<CODE>`.
 
 ## Sporcle Client — Key Design Decisions
 
-**Long-poll driven.** `useHostSporcle` loops `GET /state?since=N`. DO holds ~3s when version unchanged.
+**Long-poll driven.** `useHostSporcle` loops `GET /state?since=N`. DO holds ~3s when version unchanged. **Breaks on 404** (terminal) instead of retrying.
 
-**Overlays driven by server timestamps.** `CountdownOverlay` takes `endsAt` and computes `remaining = endsAt - Date.now()` every 100ms.
+**Overlays driven by server timestamps.** `CountdownOverlay` takes `endsAt`, recomputes every 100ms.
 
 **`refresh()` aborts in-flight polls** after any action.
 
-**State hoisting — single polling loop.** `SporcleModal` does NOT poll. Play owns the polling loop and passes `state`, `actions`, `myId` down as props.
+**State hoisting — single polling loop.** `SporcleModal` does NOT poll. Play owns the loop and passes `state`, `actions`, `myId` down.
 
-**Mid-game rejoin — the `isLocked` guard.** `Play.jsx` computes `isLocked = !!me?.locked`. `handlePick` refuses when `isLocked`. `QuestionPanel` accepts `isLocked` prop that feeds `hasAnswered`. DO side: `#rejoin` conditionally resets `locked`; `#answer` checks the `answers` table.
+**Mid-game rejoin — the `isLocked` guard.** Play computes `isLocked = !!me?.locked`. `handlePick` refuses when `isLocked`. DO's `#rejoin` conditionally resets `locked`; `#answer` checks the `answers` table.
 
 **Auto-rejoin on refresh.** Ref-guarded effect calls `actions.rejoin(myId)` if the local player is `left: true`.
 
 **Leave beacon on tab close.** `beforeunload` → `sendBeacon`. Unreliable on mobile.
 
-**`response.js` bare-number status.** `json(data, 404)` now works. Also `sporcleApi.request` throws on `{ ok: false }` even with 2xx.
+**`response.js` bare-number status.** `json(data, 404)` works. Also `sporcleApi.request` throws on `{ ok: false }` even with 2xx.
+
+## Avatar system
+
+**Two places avatars are used:**
+
+1. **Profile avatar** — the user's own avatar (DiceBear or uploaded).
+2. **Sporcle room avatars** — per-room style chosen at create time (`pickRoomAvatarStyle()`), seeded by each player's name. Not yet wired into the DO.
+
+**DiceBear provider:** `game/src/components/Avatar/avatarProvider.js`. Curated list of 14 styles. `getAvatarUrl(seed, { style })` builds `https://api.dicebear.com/10.x/<style>/svg?seed=<encoded>`.
+
+**`PlayerAvatar`** wraps DiceBear.
+
+**`ProfileAvatarSmall`** in `ProfileChip.jsx` handles the uploaded-vs-generated branch.
 
 ## Game Client — Phase 2 & 3 Complete
 
-**Phase 2:** `GameSettingsContext` has `instruments`, `InstrumentsPicker.jsx`, `SharedGameSettings.jsx` Instruments section, `usePlayParams` parses `instruments`, `useRoundMulti` forwards it, `Setup.jsx`'s `buildBaseParams()` includes it.
+**Phase 2:** `GameSettingsContext` has `instruments`. `SharedGameSettings.jsx` Instruments section. `usePlayParams` parses `instruments`. `useRoundMulti` forwards it. `Setup.jsx`'s `buildBaseParams()` includes it.
 
-**Phase 3:** `QuestionCard.jsx` accepts `source` prop; renders "🎼 Instrumental" badge + accent frame. `Play.jsx`, `Play2.jsx`, `PlayMulti.jsx` pass `source`. `PlayMulti.jsx`'s `buildSuddenDeathUrl` forwards `instruments`. `SuddenDeathQuestionCard.jsx` same.
+**Phase 3:** `QuestionCard.jsx` accepts `source` prop — "🎼 Instrumental" badge + accent frame. `Play.jsx`, `Play2.jsx`, `PlayMulti.jsx` pass `source`. `PlayMulti.jsx`'s `buildSuddenDeathUrl` forwards `instruments`. `SuddenDeathQuestionCard.jsx` same.
 
 **`Play3.jsx` NOT updated** — L3 modal still sets `allowInstruments={false}`.
 
@@ -636,6 +628,11 @@ cd E:\matb3aa-game\game
 npm run build
 npx wrangler pages deploy dist --project-name=music-game --branch=production
 
+:: D1
+cd E:\matb3aa-game\music-game-wrangler
+npx wrangler d1 execute music-game-db --remote --command="SELECT …"
+npx wrangler d1 execute music-game-db --remote --file=./migrations/0007_profiles.sql
+
 :: Git
 cd E:\matb3aa-game
 git add .
@@ -645,34 +642,59 @@ git push
 
 ## Known Open / Broken
 
-### 1. **Avatar system half-wired (v50 in progress)**
-The `Avatar/` folder exists with `PlayerAvatar`, `avatarProvider`, `index.js`. Not yet wired:
-- `SporcleModal.handleCreate` doesn't call `pickRoomAvatarStyle()`.
-- DO `#buildState` doesn't expose `avatarStyle`.
-- `Play.jsx` and `RoomPanel.jsx` don't pass `state.avatarStyle`.
-- `PlayerRoster.jsx` and `SporcleProgress.jsx` don't accept/render the avatar.
-- `Result.jsx` doesn't render avatars.
-**Until these are wired, every room uses the default `adventurer-neutral`.** Not broken — just not randomized.
+### 1. **Sporcle nickname autofill not yet wired**
+`SporcleModal.jsx`'s host/join name inputs and `MultiplayerModal.jsx` should prefill from `profile.nickname`. The pattern:
 
-### 2. **Sporcle end-to-end run not yet fully verified on deployed**
-The v46–v49 changes work in local tests. A full 2-player game on the deployed client still needs one clean run.
+```jsx
+const { profile } = useProfileContext();
+const [hostName, setHostName] = useState('');
+useEffect(() => {
+  if (!profile?.nickname) return;
+  setHostName((prev) => prev || profile.nickname);
+}, [profile?.nickname]);
+```
 
-### 3. **Mobile tab-close doesn't reliably mark players as `left`**
+`prev || nickname` preserves typed input if the profile updates while the modal is open.
+
+### 2. **Avatar system half-wired (room-scoped styles)**
+The pieces exist:
+- `pickRoomAvatarStyle()` in `avatarProvider.js`.
+- `PlayerAvatar` supports a `style` prop.
+- `PlayerRoster.jsx` and `SporcleProgress.jsx` accept an `avatarStyle` prop and render `<PlayerAvatar seed={p.name} style={avatarStyle} />` (assumed, verify).
+
+**Not yet wired:**
+- `SporcleModal.handleCreate` doesn't call `pickRoomAvatarStyle()` into `config.avatarStyle`.
+- The DO's `#buildState` doesn't expose `avatarStyle`.
+- `Play.jsx` and `RoomPanel.jsx` don't pass `state.avatarStyle` down.
+- `Result.jsx` doesn't render avatars in standings.
+
+**Until wired, all Sporcle players use `adventurer-neutral`.**
+
+### 3. **Full 2-player Sporcle run on deployed not yet verified after v50+**
+The v46–v52 changes work in local tests. A full game on the deployed client still needs a clean run.
+
+### 4. **Mobile tab-close doesn't reliably mark players as `left`**
 `beforeunload`/`sendBeacon` unreliable on mobile Safari. Deferred — needs a heartbeat + staleness sweep.
 
-### 4. **Enable L3 instruments**
+### 5. **Enable L3 instruments**
 `Level3Modal` sets `allowInstruments={false}`. `Play3.jsx` lacks `source` prop.
 
-### 5. **Anti-skew round-robin — traditional audio not fixed**
-`slots.js` (`pickSlotsVaried`) and `fetchFeaturedSlots` still use naive `ORDER BY RANDOM() LIMIT N`.
+### 6. **Anti-skew round-robin — traditional audio not fixed**
+`slots.js` and `fetchFeaturedSlots` still use naive `ORDER BY RANDOM() LIMIT N`.
 
-### 6. **No `PublishedInstruments.jsx` admin page**
+### 7. **No `PublishedInstruments.jsx` admin page**
 
-### 7. **Client rendition chain incomplete**
+### 8. **Client rendition chain incomplete**
 - `useRoundMultiplayer.js` — no `rendition` param
-- `PlayMulti.jsx` — doesn't pass `rendition: params.rendition`
+- `PlayMulti.jsx` — doesn't pass `rendition`
 
-### 8–21. Carried over:
+### 9. **Favourite counts cap on the client**
+The server caps at 100 per kind, 300 total. The client doesn't surface a message when the cap is hit — the toggle silently fails with a 400. Add a toast or inline message in `FavoritesTab`.
+
+### 10. **Orphaned profiles**
+Every device that loads the game creates a profile with a placeholder nickname. Devices that never engage leave a stub row in D1. Consider a periodic sweep: delete profiles with `nickname LIKE 'Player-%'` and zero favourites older than N days. Not urgent.
+
+### 11–22. Carried over:
 - `handoff-*.md` and `prompt*.txt` tracked in repo
 - Duplicate controller at `music-game-wrangler/src/controllers/admin/tracks.js`
 - Punctuation-only lines in lyric snippets
@@ -684,7 +706,7 @@ The v46–v49 changes work in local tests. A full 2-player game on the deployed 
 - Upload flow has no `album_name` support
 - `useServerPagination` unused
 - R2 orphan cleanup — partially handled
-- No auth on the Worker
+- No auth on the Worker (now also: no auth on profiles)
 - Auto-dropped artists don't restore
 - Strict genre mode doesn't send a `strict` param
 - `lyrics-album` disable rule
@@ -706,27 +728,25 @@ The v46–v49 changes work in local tests. A full 2-player game on the deployed 
 
 **In priority order:**
 
-1. **Finish wiring the Avatar system (v50)** — five coordinated edits:
-   - `SporcleModal.handleCreate` → `config.avatarStyle = pickRoomAvatarStyle()`.
-   - DO `#buildState` → `avatarStyle: config.avatarStyle ?? null`.
-   - `Play.jsx` → pass `state.avatarStyle` to `PlayerRoster` and `SporcleProgress`.
-   - `RoomPanel.jsx` → pass `state.avatarStyle` to `PlayerRoster`.
-   - `PlayerRoster.jsx` + `SporcleProgress.jsx` → accept `avatarStyle` prop, render `<PlayerAvatar seed={p.name} style={avatarStyle} size={32|28} ring={…} />`.
-   - Optionally `Result.jsx` → standings avatars + winner banner avatar.
+1. **Wire the nickname autofill** in `SporcleModal.jsx` and `MultiplayerModal.jsx` — pattern above.
 
-2. **Full 2-player Sporcle run on deployed** — Setup → Create → navigate → roster → Ready → Start → loading → countdown → Q1 → answer → reveal → next → … → result → play-again.
+2. **Finish the room-scoped avatar style** — five small edits (SporcleModal.handleCreate, DO #buildState, Play.jsx, RoomPanel.jsx, Result.jsx).
 
-3. **Build a heartbeat / staleness sweep** — for the mobile tab-close gap.
+3. **Full 2-player Sporcle run on deployed.**
 
-4. **Enable L3 instruments.**
+4. **Favourite cap feedback** — show a message when a toggle is rejected by the 100/300 caps.
 
-5. **Build `PublishedInstruments.jsx`.**
+5. **Mobile heartbeat / staleness sweep.**
 
-6. **Extend anti-skew round-robin to traditional audio.**
+6. **Enable L3 instruments.**
 
-7. **Finish the client rendition chain.**
+7. **Build `PublishedInstruments.jsx`.**
 
-**Recommended next step:** item 1 — finish the Avatar wiring. Five small edits, then a single visual verification.
+8. **Extend anti-skew round-robin to traditional audio.**
+
+9. **Finish the client rendition chain.**
+
+**Recommended next step:** item 1 — nickname autofill. It's the last piece of the profile-system integration and it's two small edits.
 
 Ask what the user wants to work on next.
 
@@ -734,25 +754,25 @@ Ask what the user wants to work on next.
 
 ## END OF PROMPT
 
-Save this as `E:\matb3aa-game\handoff-v50.md`. Paste it as the first message of your next session.
+Save this as `E:\matb3aa-game\handoff-v52.md`. Paste it as the first message of your next session.
 ```
 
 ---
 
-## What's new in v50
+## What's new in v52
 
 | Section | Change |
 |---|---|
-| **Styling — ring tokens** | Documented that `ring-border`, `ring-accent`, `ring-correct`, `ring-wrong` are valid |
-| **Sporcle Client Files** | Added `components/Avatar/` folder with three files |
-| **Avatar system** | New full section — provider, curated list, room-scoped flow, fallback behaviour |
-| **`#buildState`** | Noted `avatarStyle` must be added |
-| **Known Open #1** | Avatar system half-wired — five edits remaining |
-| **Most Likely Next Tasks** | Avatar wiring is #1 |
+| **PROFILE SYSTEM** | New full section — complete, ready-to-use reference |
+| **Dashboard** | Documented the whole client/server surface for profiles |
+| **Setup integration** | Documented hearts, auto-preselect, un-favourite-deselects, and the removal of the Favourites button |
+| **HeartButton variants** | Documented `variant: 'tile' | 'chip'` |
+| **`PUT /profiles/:id` semantics** | Documented the bulk-save replace-set behaviour |
+| **Known Open** | Profile system is complete; the two remaining items are nickname autofill and room-scoped avatars |
+| **Most Likely Next Tasks** | Rewritten — nickname autofill is #1 |
 
 The document is self-contained. A fresh model knows:
-- The v50 Sporcle architecture
-- The Avatar system design (one style per room, seeded by name)
-- Which five edits are needed to finish the wiring
-- Why the fallback (`adventurer-neutral`) makes partial wiring safe
+- The full profile system (schema, routes, client, behaviour)
+- The Setup integration with hearts and auto-preselect
+- What's left: nickname autofill, room-scoped avatars, mobile heartbeat, L3
 - Everything else about the project

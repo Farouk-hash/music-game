@@ -7,18 +7,20 @@ import App from './App.jsx';
 import './index.css';
 import { queryClient } from './lib/queryClient.js';
 import { GameSettingsProvider } from './context/GameSettingsContext.jsx';
+import { ProfileProvider } from './context/ProfileContext.jsx';
 
 
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <GameSettingsProvider>
-
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
-      </GameSettingsProvider>
+       <ProfileProvider>
+        <GameSettingsProvider>
+          <BrowserRouter>
+            <App />
+          </BrowserRouter>
+        </GameSettingsProvider>
+       </ProfileProvider>
     </QueryClientProvider>
   </StrictMode>
 );

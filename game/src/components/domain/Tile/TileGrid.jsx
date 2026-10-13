@@ -2,20 +2,6 @@
 import { useState, useEffect } from 'react';
 import { Tile } from './Tile.jsx';
 
-/**
- * Responsive tile grid.
- *
- * When `initialCount` is provided, on small screens (< sm) only the
- * first `initialCount` tiles are visible. A "Show more" button
- * reveals the next chunk of the same size on each click. Once
- * everything is visible, the button flips to "Show less" and
- * collapses back to the first chunk.
- *
- * On sm+ screens everything is visible and the button is hidden.
- *
- * `resetKey` re-collapses the grid when it changes (e.g. the artist
- * filter narrowed and the visible list is new).
- */
 export function TileGrid({
   items,
   selectedIds,
@@ -31,13 +17,12 @@ export function TileGrid({
   disabled = false,
   initialCount,
   resetKey,
+  renderHeart,
 }) {
   const [visibleCount, setVisibleCount] = useState(
     typeof initialCount === 'number' ? initialCount : Infinity
   );
 
-  // Collapse back to the initial chunk when the caller signals a
-  // context change.
   useEffect(() => {
     if (typeof initialCount === 'number') setVisibleCount(initialCount);
   }, [resetKey, initialCount]);
@@ -71,10 +56,7 @@ export function TileGrid({
           const hiddenOnSmall = chunked && i >= visibleCount;
 
           return (
-            <div
-              key={key}
-              className={hiddenOnSmall ? 'hidden sm:block' : ''}
-            >
+            <div key={key} className={hiddenOnSmall ? 'hidden sm:block' : ''}>
               <Tile
                 title={getTitle(item)}
                 subtitle={getSubtitle ? getSubtitle(item) : undefined}
@@ -83,6 +65,7 @@ export function TileGrid({
                 selected={selected}
                 disabled={disabled}
                 onToggle={() => onToggle(key)}
+                heart={renderHeart ? renderHeart(item) : null}
               />
             </div>
           );

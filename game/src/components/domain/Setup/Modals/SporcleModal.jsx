@@ -7,7 +7,8 @@ import { SharedGameSettings } from './SharedGameSettings.jsx';
 import { useGameSettings } from '../../../../context/GameSettingsContext.jsx';
 import { sporcleApi } from '../../../../lib/sporcleApi.js';
 import { RoomPanel } from '../../Sporcle/RoomPanel.jsx';
-import { pickRoomAvatarStyle } from '../../../Avatar/AvatarProvider.js';
+import { pickRoomAvatarStyle } from '../../../Avatar/AvatarProvider.jsx';
+import { useProfileContext } from '../../../../context/ProfileContext.jsx';
 
 /**
  * The Sporcle modal — entry + lobby, all in one.
@@ -53,14 +54,24 @@ export function SporcleModal({
   const [code, setCode] = useState(initialCode);
 
   // Host inputs
-  const [hostName, setHostName] = useState('');
   const [level, setLevel] = useState(1);
   const [mode, setMode] = useState('speed');
   const [autoAdvanceSeconds, setAutoAdvanceSeconds] = useState(5);
 
   // Join inputs
   const [joinCode, setJoinCode] = useState(initialCode ?? '');
+
+
+  const { profile } = useProfileContext();
+
+  const [hostName, setHostName] = useState('');
   const [joinName, setJoinName] = useState('');
+
+  useEffect(() => {
+    if (!profile?.nickname) return;
+    setHostName((prev) => prev || profile.nickname);
+    setJoinName((prev) => prev || profile.nickname);
+  }, [profile?.nickname]);
 
   const [submitting, setSubmitting] = useState(null);
   const [error, setError] = useState(null);

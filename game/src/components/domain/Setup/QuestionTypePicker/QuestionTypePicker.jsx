@@ -1,13 +1,13 @@
 // game/src/components/domain/Setup/QuestionTypePicker/QuestionTypePicker.jsx
+import { HeartButton } from '../../Profile/HeartButton.jsx';
+import { useFavoriteToggles } from '../../../../hooks/setup/useFavoriteToggles.js';
 
 const ALL_TYPES = [
-  // Audio
   { value: 'name-track',    label: 'Track name',      hint: 'What is the song?' },
   { value: 'name-artist',   label: 'Artist name',     hint: 'Who made it?' },
   { value: 'name-album',    label: 'Album name',      hint: 'What album is it from?' },
   { value: 'name-featured', label: 'Featured artist', hint: 'Who is featured?' },
   { value: 'name-position', label: 'Clip position',   hint: 'Start, middle, or end?' },
-  // Lyrics
   { value: 'lyrics-track',  label: 'Lyric → track',   hint: 'Read the lyric, name the song' },
   { value: 'lyrics-artist', label: 'Lyric → artist',  hint: 'Read the lyric, name the singer' },
   { value: 'lyrics-album',  label: 'Lyric → album',   hint: 'Read the lyric, name the album' },
@@ -21,10 +21,13 @@ const DISABLED_HINTS = {
 };
 
 export function QuestionTypePicker({
-  value = [],
+    value = [],
   onChange,
   disabledTypes = new Set(),
+  onUnfavorited,
 }) {
+  const { isQuestionTypeFavorite, toggleQuestionType } = useFavoriteToggles();
+
   const availableValues = ALL_VALUES.filter(v => !disabledTypes.has(v));
 
   const allSelected =
@@ -41,11 +44,8 @@ export function QuestionTypePicker({
   }
 
   function chooseAll() {
-    if (allSelected) {
-      onChange([]);
-    } else {
-      onChange([...availableValues]);
-    }
+    if (allSelected) onChange([]);
+    else onChange([...availableValues]);
   }
 
   return (
@@ -77,30 +77,57 @@ export function QuestionTypePicker({
         {ALL_TYPES.map((opt) => {
           const disabled = disabledTypes.has(opt.value);
           const selected = !disabled && value.includes(opt.value);
+          const favourite = isQuestionTypeFavorite(opt.value);
           return (
-            <button
+            <div
               key={opt.value}
-              type="button"
-              onClick={() => toggle(opt.value)}
-              disabled={disabled}
-              aria-pressed={selected}
-              title={disabled ? DISABLED_HINTS[opt.value] : undefined}
               className={[
-                'rounded-md border px-4 py-3 text-left transition-colors',
+                'relative rounded-md border transition-colors',
                 'disabled:opacity-40 disabled:cursor-not-allowed',
                 selected
                   ? 'bg-accent-soft border-accent text-ink'
                   : 'bg-surface-2 border-border text-ink-muted hover:border-accent-2 hover:text-ink',
+                disabled ? 'opacity-40 cursor-not-allowed' : '',
               ].join(' ')}
             >
-              <p className="text-sm font-semibold flex items-center gap-1.5">
-                {selected && <span aria-hidden="true">✓</span>}
-                {opt.label}
-              </p>
-              <p className="text-xs mt-0.5 opacity-80">
-                {disabled ? DISABLED_HINTS[opt.value] : opt.hint}
-              </p>
-            </button>
+              <button
+                type="button"
+                onClick={() => toggle(opt.value)}
+                disabled={disabled}
+                aria-pressed={selected}
+                title={disabled ? DISABLED_HINTS[opt.value] : undefined}
+                className="w-full text-left px-4 py-3 disabled:cursor-not-allowed"
+              >
+                <p className="text-sm font-semibold flex items-center gap-1.5 pr-8">
+                  {selected && <span aria-hidden="true">✓</span>}
+                  {opt.label}
+                </p>
+                <p className="text-xs mt-0.5 opacity-80 pr-8">
+                  {disabled ? DISABLED_HINTS[opt.value] : opt.hint}
+                </p>
+              </button>
+
+              {/* Heart — absolutely positioned top-right */}
+              <div className="absolute top-2 right-2">
+                
+                <HeartButton
+                  variant="chip"
+                  active={favourite}
+                  onClick={async () => {
+                    try {
+                      await toggleQuestionType(opt.value);
+                      if (favourite) onUnfavorited?.(opt.value);
+                    } catch {
+                      // ignore                    
+                  }}}
+                  label={
+                    favourite
+                      ? 'Remove question type from favourites'
+                      : 'Add question type to favourites'
+                  }
+                />
+              </div>
+            </div>
           );
         })}
       </div>

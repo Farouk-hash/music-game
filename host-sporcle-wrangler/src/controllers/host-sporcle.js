@@ -140,13 +140,20 @@ export class HostSporcle extends DurableObject {
     if (sinceVersion > 0 && room.version <= sinceVersion) {
       await new Promise(r => setTimeout(r, 3000));
       const fresh = this.#getRoom();
+
+      // Room may have been destroyed during the hold.
+      if (!fresh) return { ok: false, error: 'Room not found' };
+
       if (fresh.version <= sinceVersion) {
         return { ok: true, unchanged: true, version: fresh.version };
       }
     }
 
-    return this.#buildState(this.#getRoom());
-  }
+  const latest = this.#getRoom();
+  if (!latest) return { ok: false, error: 'Room not found' };
+
+  return this.#buildState(latest);
+}
 
   #buildState(room) {
     const sql = this.ctx.storage.sql;

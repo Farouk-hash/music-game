@@ -7,11 +7,14 @@ import { trackRoutes } from './admin/tracks.js';
 import { catalogRoutes } from './game/catalog.js';
 import { roundRoutes } from './game/rounds.js';
 import { instrumentRoutes } from './admin/instruments.js';
+import { profileRoutes } from './profiles.js';
 const allRoutes = [
   // GAME ROUTES ;
   ...catalogRoutes,
   ...roundRoutes,
-
+  // GAME ROUTES-> PROFILE ROUTE
+  ...profileRoutes,
+  
   // ADMIN PANEL ROUTES ;
   ...genreRoutes,
   ...artistRoutes,

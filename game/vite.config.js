@@ -17,6 +17,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
+      '/api/profiles': {
+        target: CF_BASE,
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/api\/profiles/, '/profiles'),
+      },
     },
   },
 });

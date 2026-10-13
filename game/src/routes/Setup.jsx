@@ -1,8 +1,9 @@
 // game/src/routes/Setup.jsx
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCatalog } from '../hooks/setup/useCatalog.js';
 import { useGameSettings } from '../context/GameSettingsContext.jsx';
+import { useProfileContext } from '../context/ProfileContext.jsx';
 import { GenreTileGrid } from '../components/domain/Setup/Genres/GenreTileGrid.jsx';
 import { StrictGenreToggle } from '../components/domain/Setup/Genres/StrictGenreToggle.jsx';
 import { SelectionBar } from '../components/domain/SelectionBar.jsx';
@@ -41,6 +42,7 @@ export default function Setup() {
   const navigate = useNavigate();
   const { data, isLoading, error } = useCatalog();
   const settings = useGameSettings();
+  const { favorites } = useProfileContext();
 
   // Catalogue counts — used to gate the reverse-audio toggle.
   const reversedClipsCount = data?.counts?.reversedClips ?? 0;
@@ -75,6 +77,69 @@ export default function Setup() {
   const genres  = data?.genres  ?? [];
   const artists = data?.artists ?? [];
   const years   = data?.years   ?? [];
+
+  // ── Auto-preselect favourites once per Setup mount ────────
+  // Runs when the profile loads (or when favourites change for the
+  // first time). Guarded by a ref so heart clicks in the profile
+  // modal don't clobber the user's current Setup state.
+  const preselectedRef = useRef(false);
+
+  useEffect(() => {
+    if (preselectedRef.current) return;
+    if (!favorites) return;
+
+    const hasAny =
+      favorites.genres.length > 0 ||
+      favorites.artists.length > 0 ||
+      favorites.questionTypes.length > 0;
+
+    if (!hasAny) return;
+
+    preselectedRef.current = true;
+
+    if (favorites.genres.length > 0) {
+      setSelectedGenres(new Set(favorites.genres));
+      setGenreMode('some');
+    }
+    if (favorites.artists.length > 0) {
+      setSelectedArtists(new Set(favorites.artists));
+    }
+    if (favorites.questionTypes.length > 0) {
+      const current = settings.questionTypes ?? [];
+      const union = Array.from(new Set([...current, ...favorites.questionTypes]));
+      settings.setQuestionTypes(union);
+    }
+  }, [favorites, settings]);
+
+  // ── Deselect-on-unfavourite callbacks ─────────────────────
+  // Called by the tile grids when a heart un-favourites an item.
+  // Removal from the scope is the only side effect — the profile
+  // favourite has already been updated by the heart handler itself.
+
+  const handleGenreUnfavorited = useCallback((id) => {
+    setSelectedGenres((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      if (next.size === 0) setGenreMode('idle');
+      return next;
+    });
+  }, []);
+
+  const handleArtistUnfavorited = useCallback((id) => {
+    setSelectedArtists((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const handleQuestionTypeUnfavorited = useCallback((slug) => {
+    const current = settings.questionTypes ?? [];
+    if (!current.includes(slug)) return;
+    settings.setQuestionTypes(current.filter((t) => t !== slug));
+  }, [settings]);
 
   // ── Artist/year helpers ──
   const artistYears = useMemo(() => {
@@ -354,41 +419,44 @@ export default function Setup() {
         <>
           {/* Genres */}
           <CollapsibleSection
-            open={genresOpen}
-            onToggle={() => setGenresOpen(o => !o)}
-            title="Genres"
-            meta={genreMode === 'some' ? `(${selectedGenres.size})` : null}
-            actions={
-              <>
-                <StrictGenreToggle
-                  value={strictGenres}
-                  onChange={toggleStrictGenres}
-                  disabled={genreMode !== 'some' || selectedGenres.size < 2}
-                />
-                <button
-                  type="button"
-                  onClick={chooseAllGenres}
-                  aria-pressed={genreMode === 'all'}
-                  className={[
-                    'inline-flex items-center gap-2 px-4 h-9 rounded-md border text-sm transition-colors',
-                    genreMode === 'all'
-                      ? 'bg-accent text-bg border-accent'
-                      : 'bg-surface-2 text-ink-muted border-border hover:border-accent-2 hover:text-ink',
-                  ].join(' ')}
-                >
-                  <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="none">
-                    <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                  </svg>
-                  All genres
-                </button>
-              </>
-            }
-          >
+  open={genresOpen}
+  onToggle={() => setGenresOpen(o => !o)}
+  title="Genres"
+  meta={genreMode === 'some' ? `(${selectedGenres.size})` : null}
+  secondaryActions={
+    <StrictGenreToggle
+      value={strictGenres}
+      onChange={toggleStrictGenres}
+      disabled={genreMode !== 'some' || selectedGenres.size < 2}
+    />
+  }
+  actions={
+    <button
+        type="button"
+        onClick={chooseAllGenres}
+        aria-pressed={genreMode === 'all'}
+        aria-label="All genres"
+        title="All genres"
+        className={[
+          'inline-flex items-center gap-2 px-4 h-9 rounded-md border text-sm transition-colors',
+          genreMode === 'all'
+            ? 'bg-accent text-bg border-accent'
+            : 'bg-surface-2 text-ink-muted border-border hover:border-accent-2 hover:text-ink',
+        ].join(' ')}
+      >
+        <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="none">
+          <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+        <span className="hidden sm:inline">All genres</span>
+      </button>
+  }
+>
             <GenreTileGrid
               genres={genres}
               selectedIds={selectedGenres}
               onToggle={toggleGenre}
               allSelected={genreMode === 'all'}
+              onUnfavorited={handleGenreUnfavorited}
             />
           </CollapsibleSection>
 
@@ -457,71 +525,76 @@ export default function Setup() {
             </CollapsibleSection>
           )}
 
-          {/* Artists */}
-          {showArtists ? (
-            <CollapsibleSection
-              open={artistsOpen}
-              onToggle={() => setArtistsOpen(o => !o)}
-              title="Artists"
-              meta={effectiveSelectedArtists.size > 0 ? `${effectiveSelectedArtists.size} selected` : null}
-              actions={
-                <button
-                  type="button"
-                  onClick={toggleSelectAllArtists}
-                  disabled={visibleArtists.length === 0}
-                  aria-pressed={allVisibleSelected}
-                  className={[
-                    'inline-flex items-center gap-2 px-4 h-9 rounded-md border text-sm transition-colors',
-                    'disabled:opacity-40 disabled:cursor-not-allowed',
-                    allVisibleSelected
-                      ? 'bg-accent text-bg border-accent'
-                      : 'bg-surface-2 text-ink-muted border-border hover:border-accent-2 hover:text-ink',
-                  ].join(' ')}
-                >
-                  <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="none">
-                    <path d="M3 8.5 L6.5 12 L13 4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                  {allVisibleSelected ? 'Clear artists' : 'Select all artists'}
-                </button>
-              }
-            >
-              <div className="space-y-1">
-                <SearchBar
-                  value={artistQuery}
-                  onChange={setArtistQuery}
-                  placeholder="Filter artists…"
-                />
-                {artistQuery && (
-                  <p className="text-xs text-ink-subtle">
-                    {visibleArtists.length} of {yearFilteredArtists.length} match
-                  </p>
-                )}
-              </div>
+         {/* Artists */}
+{showArtists ? (
+  <CollapsibleSection
+    open={artistsOpen}
+    onToggle={() => setArtistsOpen(o => !o)}
+    title="Artists"
+    meta={effectiveSelectedArtists.size > 0 ? `${effectiveSelectedArtists.size} selected` : null}
+    actions={
+      <button
+        type="button"
+        onClick={toggleSelectAllArtists}
+        disabled={visibleArtists.length === 0}
+        aria-pressed={allVisibleSelected}
+        aria-label={allVisibleSelected ? 'Clear artists' : 'Select all artists'}
+        title={allVisibleSelected ? 'Clear artists' : 'Select all artists'}
+        className={[
+          'inline-flex items-center gap-2 px-4 h-9 rounded-md border text-sm transition-colors',
+          'disabled:opacity-40 disabled:cursor-not-allowed',
+          allVisibleSelected
+            ? 'bg-accent text-bg border-accent'
+            : 'bg-surface-2 text-ink-muted border-border hover:border-accent-2 hover:text-ink',
+        ].join(' ')}
+      >
+        <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="none">
+          <path d="M3 8.5 L6.5 12 L13 4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <span className="hidden sm:inline">
+          {allVisibleSelected ? 'Clear artists' : 'Select all artists'}
+        </span>
+      </button>
+    }
+  >
+    <div className="space-y-1">
+      <SearchBar
+        value={artistQuery}
+        onChange={setArtistQuery}
+        placeholder="Filter artists…"
+      />
+      {artistQuery && (
+        <p className="text-xs text-ink-subtle">
+          {visibleArtists.length} of {yearFilteredArtists.length} match
+        </p>
+      )}
+    </div>
 
-              {visibleArtists.length === 0 ? (
-                <p className="text-sm text-ink-subtle text-center py-6 border border-dashed border-border rounded-md">
-                  {artistQuery
-                    ? `No artists match "${artistQuery}"`
-                    : strictGenres && selectedGenres.size >= 2
-                      ? 'No artists have all the selected genres. Try turning off strict genres.'
-                      : 'No artists match the current filters.'}
-                </p>
-              ) : (
-                <ArtistTileGrid
-                  artists={visibleArtists}
-                  selectedIds={effectiveSelectedArtists}
-                  onToggle={toggleArtist}
-                  resetKey={`${genreMode}:${[...selectedGenres].sort().join(',')}`}
-                />
-              )}
-            </CollapsibleSection>
-          ) : (
-            <BorderContainer border="all" className="p-8">
-              <p className="text-sm text-ink-subtle text-center py-6 border border-dashed border-border rounded-md">
-                Pick a genre — or choose “All genres” — to see the artists.
-              </p>
-            </BorderContainer>
-          )}
+    {visibleArtists.length === 0 ? (
+      <p className="text-sm text-ink-subtle text-center py-6 border border-dashed border-border rounded-md">
+        {artistQuery
+          ? `No artists match "${artistQuery}"`
+          : strictGenres && selectedGenres.size >= 2
+            ? 'No artists have all the selected genres. Try turning off strict genres.'
+            : 'No artists match the current filters.'}
+      </p>
+    ) : (
+      <ArtistTileGrid
+        artists={visibleArtists}
+        selectedIds={effectiveSelectedArtists}
+        onToggle={toggleArtist}
+        resetKey={`${genreMode}:${[...selectedGenres].sort().join(',')}`}
+        onUnfavorited={handleArtistUnfavorited}
+      />
+    )}
+  </CollapsibleSection>
+) : (
+  <BorderContainer border="all" className="p-8">
+    <p className="text-sm text-ink-subtle text-center py-6 border border-dashed border-border rounded-md">
+      Pick a genre — or choose “All genres” — to see the artists.
+    </p>
+  </BorderContainer>
+)}
         </>
       )}
 
@@ -590,6 +663,7 @@ export default function Setup() {
         onPlay={() => handlePlay('one')}
         disabledTypes={disabledTypes}
         reversedClipsCount={reversedClipsCount}
+        onQuestionTypeUnfavorited={handleQuestionTypeUnfavorited}
       />
       <Level2Modal
         open={level2Open}
@@ -597,6 +671,7 @@ export default function Setup() {
         onPlay={() => handlePlay('two')}
         disabledTypes={disabledTypes}
         reversedClipsCount={reversedClipsCount}
+        onQuestionTypeUnfavorited={handleQuestionTypeUnfavorited}
       />
       <Level3Modal
         open={level3Open}
@@ -606,6 +681,7 @@ export default function Setup() {
         reversedClipsCount={reversedClipsCount}
         genreMode={genreMode}
         effectiveSelectedArtistsCount={effectiveSelectedArtists.size}
+        onQuestionTypeUnfavorited={handleQuestionTypeUnfavorited}
       />
       <MultiplayerModal
         open={multiOpen}
@@ -614,6 +690,7 @@ export default function Setup() {
         starting={false}
         disabledTypes={disabledTypes}
         reversedClipsCount={reversedClipsCount}
+        onQuestionTypeUnfavorited={handleQuestionTypeUnfavorited}
       />
       <SporcleModal
         open={sporcleOpen}

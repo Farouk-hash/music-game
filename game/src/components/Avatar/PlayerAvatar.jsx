@@ -1,5 +1,5 @@
 // game/src/components/Avatar/PlayerAvatar.jsx
-import { getAvatarUrl, DEFAULT_AVATAR_STYLE } from './AvatarProvider.js';
+import { getAvatarUrl, DEFAULT_AVATAR_STYLE } from './AvatarProvider.jsx';
 
 /**
  * Renders a player's avatar.

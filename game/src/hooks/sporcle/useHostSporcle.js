@@ -62,8 +62,14 @@ export function useHostSporcle(code, { enabled = true } = {}) {
         } catch (e) {
           if (cancelledRef.current) return;
           if (e.name === 'AbortError') continue;
+
           setError(e);
           setLoading(false);
+
+          // Terminal: room is gone. Stop polling so we don't hammer the DO.
+          if (e.status === 404) break;
+
+          // Transient: backoff and retry.
           await new Promise(r => setTimeout(r, 2000));
         } finally {
           abortRef.current = null;
