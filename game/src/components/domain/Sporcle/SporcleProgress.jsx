@@ -9,7 +9,7 @@ export function SporcleProgress({
   phase = 'lobby',
   answersByQ = {},
   myId = null,
-  avatarStyle,
+  profilesById = new Map(),
 }) {
   if (players.length === 0 || totalQuestions === 0) return null;
 
@@ -20,7 +20,7 @@ export function SporcleProgress({
       {players.map((p) => {
         const isMe = p.id === myId;
         const isLeft = !!p.left;
-
+        const profile = p.profileId ? profilesById.get(p.profileId) ?? null : null;
         const segments = Array.from({ length: totalQuestions }).map((_, q) => {
           const result = answersByQ?.[q]?.[p.id];
 
@@ -54,7 +54,7 @@ export function SporcleProgress({
               {/* Avatar */}
               <PlayerAvatar
                 seed={p.name}
-                style={avatarStyle}
+                avatar={profile}
                 size={28}
                 ring={isMe && !isLeft ? 'ring-accent' : 'ring-border'}
               />

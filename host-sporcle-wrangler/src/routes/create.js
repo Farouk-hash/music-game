@@ -1,4 +1,3 @@
-// E:\matb3aa-game\host-sporcle-wrangler\src\routes\create.js
 import { json } from '../lib/response.js';
 import { generateCode } from '../lib/codes.js';
 import { getStub } from '../lib/stub.js';
@@ -13,7 +12,8 @@ export async function handleCreate(request, env) {
     body.hostName ?? 'Host',
     body.config ?? {},
     body.mode ?? 'speed',
-    Number(body.autoAdvanceSeconds ?? 0)
+    Number(body.autoAdvanceSeconds ?? 0),
+    body.profileId ?? null
   );
 
   if (!result.ok) return json({ error: result.error }, 409);

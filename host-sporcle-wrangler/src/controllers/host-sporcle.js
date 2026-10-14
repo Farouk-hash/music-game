@@ -35,7 +35,8 @@ export class HostSporcle extends DurableObject {
           ready    INTEGER NOT NULL DEFAULT 0,
           score    INTEGER NOT NULL DEFAULT 0,
           locked   INTEGER NOT NULL DEFAULT 0,
-          left     INTEGER NOT NULL DEFAULT 0
+          left     INTEGER NOT NULL DEFAULT 0,
+          profile_id TEXT
         );
         CREATE TABLE IF NOT EXISTS questions (
           idx     INTEGER PRIMARY KEY,
@@ -91,13 +92,13 @@ export class HostSporcle extends DurableObject {
 
   /* ── Public RPC methods ───────────────────────────────── */
 
-  async init(hostName, config = {}, mode = 'speed', autoAdvanceSeconds = 0) {
+  async init(hostName, config = {}, mode = 'speed', autoAdvanceSeconds = 0, profileId = null) {
     const sql = this.ctx.storage.sql;
     if (this.#getRoom()) return { ok: false, error: 'Room already exists' };
 
     sql.exec(
       `INSERT INTO room (id, phase, mode, config, auto_advance_seconds, created_at, expires_at)
-       VALUES (1, 'lobby', ?, ?, ?, ?, ?)`,
+      VALUES (1, 'lobby', ?, ?, ?, ?, ?)`,
       mode,
       JSON.stringify(config ?? {}),
       autoAdvanceSeconds,
@@ -107,9 +108,10 @@ export class HostSporcle extends DurableObject {
 
     const hostId = crypto.randomUUID();
     sql.exec(
-      'INSERT INTO players (id, name, is_host) VALUES (?, ?, 1)',
+      'INSERT INTO players (id, name, is_host, profile_id) VALUES (?, ?, 1, ?)',
       hostId,
-      hostName
+      hostName,
+      profileId
     );
 
     this.#bumpVersion();
@@ -117,16 +119,17 @@ export class HostSporcle extends DurableObject {
     return { ok: true, hostId };
   }
 
-  async join(name) {
+  async join(name, profileId = null) {
     const room = this.#getRoom();
     if (!room) return { ok: false, error: 'Room not found' };
     if (room.phase !== 'lobby') return { ok: false, error: 'Game already started' };
 
     const playerId = crypto.randomUUID();
     this.ctx.storage.sql.exec(
-      'INSERT INTO players (id, name) VALUES (?, ?)',
+      'INSERT INTO players (id, name, profile_id) VALUES (?, ?, ?)',
       playerId,
-      name
+      name,
+      profileId
     );
     this.#touchExpiry();
     this.#bumpVersion();
@@ -158,7 +161,7 @@ export class HostSporcle extends DurableObject {
   #buildState(room) {
     const sql = this.ctx.storage.sql;
     const players = sql
-      .exec('SELECT id, name, is_host, ready, score, locked, left FROM players')
+      .exec('SELECT id, name, is_host, ready, score, locked, left , profile_id  FROM players')
       .toArray();
     const config = JSON.parse(room.config ?? '{}');
     
@@ -175,12 +178,12 @@ export class HostSporcle extends DurableObject {
       autoAdvanceSeconds: room.auto_advance_seconds,
       reversed: config.reversed ?? 'no',
       rendition: config.rendition ?? 'forward',
-      avatarStyle: config.avatarStyle ?? null, 
       lastError: room.last_error ?? null,
       players: players.map(p => ({
         id: p.id,
         name: p.name,
         isHost: !!p.is_host,
+        profileId: p.profile_id ?? null,
         ready: !!p.ready,
         score: p.score,
         locked: !!p.locked,
@@ -231,7 +234,7 @@ export class HostSporcle extends DurableObject {
     const sql = this.ctx.storage.sql;
 
     const players = sql
-      .exec('SELECT id, name, score FROM players ORDER BY score DESC, name ASC')
+      .exec('SELECT id, name, score , profile_id FROM players ORDER BY score DESC, name ASC')
       .toArray();
 
     const top = players[0]?.score ?? 0;
@@ -257,7 +260,7 @@ export class HostSporcle extends DurableObject {
 
     return {
       winnerId,
-      standings: players.map(p => ({ playerId: p.id, score: p.score, name: p.name })),
+      standings: players.map(p => ({ playerId: p.id, score: p.score, name: p.name , profile_id:p.profile_id })),
       perQuestion,
     };
   }

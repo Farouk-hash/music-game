@@ -15,6 +15,7 @@ import { useHostSporcleIdentity } from '../../hooks/sporcle/useHostSporcleIdenti
 import { useHostSporcleActions } from '../../hooks/sporcle/useHostSporcleActions.js';
 import { useRoundReversal } from '../../hooks/rounds/useRoundReversal.js';
 import { sporcleApi } from '../../lib/sporcleApi.js';
+import { useRoomProfiles } from '../../hooks/sporcle/useRoomProfiles.js';
 
 /**
  * The single Sporcle game route.
@@ -38,6 +39,7 @@ export default function SporclePlay() {
   const actions = useHostSporcleActions(normalizedCode, {
     onVersion: () => refresh(),
   });
+  const profilesById = useRoomProfiles(state?.players ?? []);
 
   const myId = identity?.playerId ?? null;
   const avatarStyle = state?.avatarStyle ?? undefined;
@@ -165,6 +167,7 @@ export default function SporclePlay() {
       state={state}
       actions={actions}
       myId={myId}
+      profilesById={profilesById}
     />
   ) : null;
 
@@ -241,17 +244,22 @@ export default function SporclePlay() {
           - question phase → PlayerRoster (shows who's locked in yet)
           - reveal phase   → SporcleProgress (shows correctness history) */}
       {inQuestion && (
-        <PlayerRoster players={state.players} phase={state.phase} myId={myId}  avatarStyle={avatarStyle}/>
+        <PlayerRoster
+          players={state?.players ?? []}
+          phase={state?.phase ?? 'lobby'}
+          myId={myId}
+          profilesById={profilesById}
+        />
       )}
       {inReveal && (
         <SporcleProgress
-          players={state.players}
-          avatarStyle={avatarStyle}
-          totalQuestions={state.totalQuestions}
-          qIndex={state.qIndex}
-          phase={state.phase}
+          players={state?.players ?? []}
+          totalQuestions={state?.totalQuestions ?? 0}
+          qIndex={state?.qIndex ?? 0}
+          phase={state?.phase ?? 'lobby'}
           answersByQ={answersByQ}
           myId={myId}
+          profilesById={profilesById}
         />
       )}
 

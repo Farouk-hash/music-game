@@ -275,3 +275,31 @@ export async function saveProfile(request, env, { id }) {
   const profile = await buildProfileResponse(env, id);
   return json({ profile });
 }
+
+
+export async function deleteProfile(request, env, { id }) {
+  if (!id) return error('id required', 400);
+
+  // Read the R2 key first — we need it to clean up storage.
+  const row = await env.DB.prepare(
+    'SELECT avatar_r2_key FROM profiles WHERE id = ?'
+  ).bind(id).first();
+
+  // Idempotent: deleting a missing profile is a no-op success.
+  if (!row) return json({ ok: true, deleted: false });
+
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM profile_favorites WHERE profile_id = ?').bind(id),
+    env.DB.prepare('DELETE FROM profiles WHERE id = ?').bind(id),
+  ]);
+
+  if (row.avatar_r2_key) {
+    try {
+      await env.AUDIO.delete(row.avatar_r2_key);
+    } catch {
+      // Orphaned R2 object is harmless — don't fail the request.
+    }
+  }
+
+  return json({ ok: true, deleted: true });
+}

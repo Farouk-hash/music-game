@@ -7,7 +7,9 @@ import { Loader } from '../../components/ui/Loader.jsx';
 import { useHostSporcle } from '../../hooks/sporcle/useHostSporcle.js';
 import { useHostSporcleIdentity } from '../../hooks/sporcle/useHostSporcleIdentity.js';
 import { useHostSporcleActions } from '../../hooks/sporcle/useHostSporcleActions.js';
+import { useRoomProfiles } from '../../hooks/sporcle/useRoomProfiles.js';
 import { PlayerAvatar } from '../../components/Avatar/PlayerAvatar.jsx';
+
 export default function SporcleResult() {
   const { code } = useParams();
   const navigate = useNavigate();
@@ -18,6 +20,12 @@ export default function SporcleResult() {
   const actions = useHostSporcleActions(normalizedCode, { onVersion: () => refresh() });
 
   const myId = identity?.playerId ?? null;
+
+  // Fetch profile records for every player in the room so we can
+  // render real avatars in the standings. `state.players` carries
+  // `profileId`; standings carries `playerId`. We key by profileId
+  // here and index into the map by looking up the player.
+  const profilesById = useRoomProfiles(state?.players ?? []);
 
   // If we somehow land here before the game is done, route to Play.
   useEffect(() => {
@@ -49,12 +57,21 @@ export default function SporcleResult() {
   if (!state?.finished) return null;
 
   const { finished, players } = state;
-  const avatarStyle = state.avatarStyle;
   const { winnerId, standings } = finished;
 
   const me = players.find((p) => p.id === myId);
   const isHost = !!me?.isHost;
   const winner = winnerId ? standings.find((s) => s.playerId === winnerId) : null;
+
+  // Map from playerId → profile, so standings rows can find their avatar.
+  const profileByPlayerId = new Map();
+  for (const p of players) {
+    if (p.profileId && profilesById.has(p.profileId)) {
+      profileByPlayerId.set(p.id, profilesById.get(p.profileId));
+    }
+  }
+
+  const winnerProfile = winner ? profileByPlayerId.get(winner.playerId) ?? null : null;
 
   async function handlePlayAgain() {
     try {
@@ -66,11 +83,11 @@ export default function SporcleResult() {
   return (
     <div className="space-y-8 max-w-lg mx-auto pb-24">
       <BorderContainer border="all" className="p-10 text-center space-y-4">
-         {winner ? (
+        {winner ? (
           <div className="flex justify-center">
             <PlayerAvatar
               seed={winner.name}
-              style={avatarStyle}
+              avatar={winnerProfile}
               size={72}
               ring="ring-correct"
             />
@@ -94,6 +111,7 @@ export default function SporcleResult() {
           {standings.map((s, i) => {
             const isWinner = s.playerId === winnerId;
             const isMe = s.playerId === myId;
+            const profile = profileByPlayerId.get(s.playerId) ?? null;
             return (
               <li
                 key={s.playerId}
@@ -110,7 +128,7 @@ export default function SporcleResult() {
 
                 <PlayerAvatar
                   seed={s.name}
-                  style={avatarStyle}
+                  avatar={profile}
                   size={32}
                   ring={isWinner ? 'ring-correct' : isMe ? 'ring-accent' : 'ring-border'}
                 />

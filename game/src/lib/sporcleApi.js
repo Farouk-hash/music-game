@@ -58,20 +58,19 @@ async function request(path, options = {}) {
 }
 export const sporcleApi = {
   // ── Room lifecycle ───────────────────────────────────────
-  create: ({ hostName, mode, config, autoAdvanceSeconds = 0 }) =>
+  create: ({ hostName, mode, config, autoAdvanceSeconds = 0, profileId = null }) =>
     request('/host-sporcle/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hostName, mode, config, autoAdvanceSeconds }),
+      body: JSON.stringify({ hostName, mode, config, autoAdvanceSeconds, profileId }),
     }),
 
-  join: (code, { name }) =>
+  join: (code, { name, profileId = null }) =>
     request(`/host-sporcle/${code}/join`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, profileId }),
     }),
-
   // ── State (long-poll) — accepts an AbortSignal ───────────
   state: (code, since = 0, { signal } = {}) =>
     request(`/host-sporcle/${code}/state?since=${since}`, { signal }),

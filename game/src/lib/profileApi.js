@@ -93,6 +93,9 @@ export const profileApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kind, value: String(value) }),
     }),
+
+  deleteProfile: (id) =>
+    request(`/profiles/${id}`, { method: 'DELETE' }),
 };
 
 export function absoluteAvatarUrl(profile) {

@@ -401,19 +401,38 @@ export function ProfileModal({ open, onClose }) {
                 className="flex-1 h-11 rounded-md border border-border bg-surface-2 px-3 text-ink font-mono tracking-[0.3em] placeholder:text-ink-subtle focus:border-accent focus:outline-none disabled:opacity-50"
               />
               <Button
-                variant="primary"
-                onClick={handleRecover}
-                disabled={recoveryInput.trim().length !== 8 || recovering}
-              >
-                {recovering ? (
-                  <span className="inline-flex items-center gap-2">
-                    <span className="h-3.5 w-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
-                    Restoring…
-                  </span>
-                ) : (
-                  'Restore'
-                )}
-              </Button>
+                  variant="primary"
+                  onClick={handleRecover}
+                  disabled={recoveryInput.trim().length !== 8 || recovering}
+                  aria-label={recovering ? 'Restoring' : 'Restore'}
+                  title={recovering ? 'Restoring' : 'Restore'}
+                >
+                  {recovering ? (
+                    <span className="inline-flex items-center gap-2">
+                      <span className="h-3.5 w-3.5 shrink-0 rounded-full border-2 border-current border-t-transparent animate-spin" />
+                      <span className="hidden sm:inline">Restoring…</span>
+                    </span>
+                    ) : (
+                      <>
+                        {/* Download/restore icon */}
+                        <svg
+                          viewBox="0 0 16 16"
+                          className="w-4 h-4 shrink-0"
+                          fill="none"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M8 2 L8 10 M5 7 L8 10 L11 7 M3 13 L13 13"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                        <span className="hidden sm:inline">Restore</span>
+                      </>
+                    )}
+                  </Button>
             </div>
 
             {recoverError && (

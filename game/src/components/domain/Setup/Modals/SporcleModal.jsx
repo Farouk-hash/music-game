@@ -7,7 +7,6 @@ import { SharedGameSettings } from './SharedGameSettings.jsx';
 import { useGameSettings } from '../../../../context/GameSettingsContext.jsx';
 import { sporcleApi } from '../../../../lib/sporcleApi.js';
 import { RoomPanel } from '../../Sporcle/RoomPanel.jsx';
-import { pickRoomAvatarStyle } from '../../../Avatar/AvatarProvider.jsx';
 import { useProfileContext } from '../../../../context/ProfileContext.jsx';
 
 /**
@@ -34,7 +33,7 @@ import { useProfileContext } from '../../../../context/ProfileContext.jsx';
  *   - room panel → leave the room, then close
  */
 export function SporcleModal({
-  open,
+   open,
   onClose,
   initialMode = 'host',
   code: initialCode = null,
@@ -42,10 +41,10 @@ export function SporcleModal({
   canHost = false,
   disabledTypes = new Set(),
   reversedClipsCount = 0,
-  // Hoisted from the parent. Null when opened from Setup.
   state = null,
   actions = null,
   myId = null,
+  profilesById = new Map(),
 }) {
   const navigate = useNavigate();
   const settings = useGameSettings();
@@ -101,7 +100,6 @@ export function SporcleModal({
     setError(null);
 
     const config = { level };
-    config.avatarStyle = pickRoomAvatarStyle();
 
     if (scope.genres?.length)  config.genres  = scope.genres;
     if (scope.artists?.length) config.artists = scope.artists;
@@ -127,6 +125,7 @@ export function SporcleModal({
         mode,
         config,
         autoAdvanceSeconds,
+        profileId: profile?.id ?? null,
       });
 
       localStorage.setItem(`sporcle:${r.code}:playerId`, r.hostId);
@@ -149,7 +148,7 @@ export function SporcleModal({
     const c = joinCode.trim().toUpperCase();
 
     try {
-      const r = await sporcleApi.join(c, { name: joinName.trim() });
+      const r = await sporcleApi.join(c, { name: joinName.trim()  ,profileId: profile?.id ?? null,});
       localStorage.setItem(`sporcle:${c}:playerId`, r.playerId);
       localStorage.setItem(`sporcle:${c}:name`, joinName.trim());
 
@@ -178,17 +177,6 @@ export function SporcleModal({
 
   const showTabs = panel === 'host' || panel === 'join';
 
-
-    
-  {panel === 'room' && code && (
-    <RoomPanel
-      code={code}
-      onClose={handleClose}
-      state={state}
-      actions={actions}
-      myId={myId}
-    />
-  )}
   return (
     <Modal open={open} onClose={handleClose} size="lg">
       <div className="rounded-lg border border-border bg-surface p-6 space-y-6 max-h-[85vh] overflow-y-auto">
@@ -337,6 +325,7 @@ export function SporcleModal({
             state={state}
             actions={actions}
             myId={myId}
+            profilesById={profilesById}
           />
         )}
       </div>

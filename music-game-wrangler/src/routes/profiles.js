@@ -5,6 +5,7 @@ import {
   getProfile,
   patchProfile,
   saveProfile,
+  deleteProfile, 
 } from '../controllers/profiles/profiles.js';
 import {
   addFavorite,
@@ -28,7 +29,8 @@ export const profileRoutes = [
   { method: 'GET',    pattern: new RegExp(`^/profiles/(?<id>${UUID})/avatar$`),                 handler: serveAvatar },
   { method: 'POST',   pattern: new RegExp(`^/profiles/(?<id>${UUID})/avatar$`),                 handler: uploadAvatar },
   { method: 'DELETE', pattern: new RegExp(`^/profiles/(?<id>${UUID})/avatar$`),                 handler: deleteAvatar },
-
+  { method: 'DELETE', pattern: new RegExp(`^/profiles/(?<id>${UUID})$`),                        handler: deleteProfile },
+  
   // Favorites — single-item add/remove
   { method: 'POST',   pattern: new RegExp(`^/profiles/(?<id>${UUID})/favorites$`),              handler: addFavorite },
   { method: 'DELETE', pattern: new RegExp(`^/profiles/(?<id>${UUID})/favorites$`),              handler: removeFavorite },

@@ -17,7 +17,7 @@ import { CountdownOverlay } from './CountdownOverlay.jsx';
  * Presentational: receives `state`, `actions`, `myId` from the parent.
  * Does not poll — the Play route owns the polling loop.
  */
-export function RoomPanel({ code, onClose, state, actions, myId }) {
+export function RoomPanel({ code, onClose, state, actions, myId, profilesById = new Map()  }) {
   const me = state?.players?.find((p) => p.id === myId) ?? null;
   const isHost = !!me?.isHost;
 
@@ -147,7 +147,7 @@ export function RoomPanel({ code, onClose, state, actions, myId }) {
           players={state.players}
           phase={state.phase}
           myId={myId}
-          avatarStyle={state?.avatarStyle ?? undefined}
+          profilesById={profilesById}
         />
       </section>
 

@@ -192,13 +192,17 @@ export function useProfile() {
     if (r?.profile) writeProfileToCache(r.profile);
   }, [id, writeProfileToCache]);
 
-  /**
+   /**
    * Restore from a recovery code.
    *
-   * The recovered profile is NOT cached on this device, so we clear
-   * the cache and invalidate to force a fresh fetch.
+   * After switching to the recovered profile, best-effort deletes the
+   * old profile on this device (D1 row + R2 avatar). The delete is
+   * intentionally fire-and-forget: if it fails, the restore has
+   * already succeeded and the old row simply lingers — harmless.
    */
   const recoverProfile = useCallback(async (code) => {
+    const oldId = getProfileId();
+
     const r = await profileApi.recover({ recoveryCode: code });
 
     setProfileId(r.id);
@@ -213,6 +217,18 @@ export function useProfile() {
 
     clearCachedProfile();
     queryClient.removeQueries({ queryKey: ['profile'] });
+
+    // Best-effort cleanup of the profile this device is leaving.
+    // Never let a failure here bubble — the user is already on the
+    // recovered profile and the UI has moved on.
+    if (oldId && oldId !== r.id) {
+      try {
+        await profileApi.deleteProfile(oldId);
+      } catch (e) {
+        console.warn('[recoverProfile] failed to delete old profile', oldId, e);
+      }
+    }
+
     return r.id;
   }, [setId, setRecoveryCodeState, setRecoveryHidden, queryClient]);
 

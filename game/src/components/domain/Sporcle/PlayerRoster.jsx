@@ -19,7 +19,7 @@ import { PlayerAvatar } from "../../Avatar";
  * and a "left" badge, so the change persists across phase swaps
  * between PlayerRoster and SporcleProgress.
  */
-export function PlayerRoster({ players = [], phase = 'lobby', myId = null , avatarStyle}) {
+export function PlayerRoster({ players = [], phase = 'lobby', myId = null ,  profilesById = new Map(),}) {
   const inLobby = phase === 'lobby';
   const inGame = phase !== 'lobby' && phase !== 'finished';
 
@@ -28,6 +28,8 @@ export function PlayerRoster({ players = [], phase = 'lobby', myId = null , avat
       {players.map((p) => {
         const isMe = p.id === myId;
         const isLeft = !!p.left;
+        const profile = p.profileId ? profilesById.get(p.profileId) ?? null : null;
+
         return (
           <li
             key={p.id}
@@ -40,13 +42,13 @@ export function PlayerRoster({ players = [], phase = 'lobby', myId = null , avat
                 : 'border-border bg-surface-2',
             ].join(' ')}
           >
-
             <PlayerAvatar
               seed={p.name}
-              style={avatarStyle}
+              avatar={profile}
               size={32}
               ring={isMe && !isLeft ? 'ring-accent' : 'ring-border'}
             />
+            
             {/* Name + host crown + status */}
             <span className="flex-1 min-w-0 flex items-center gap-2">
               {p.isHost && (
