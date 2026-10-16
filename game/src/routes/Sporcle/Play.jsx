@@ -34,7 +34,7 @@ export default function SporclePlay() {
   const navigate = useNavigate();
   const normalizedCode = (code ?? '').toUpperCase();
 
-  const { identity } = useHostSporcleIdentity(normalizedCode);
+  const { identity , saveForCode  } = useHostSporcleIdentity(normalizedCode);
   const { state, loading, error, refresh } = useHostSporcle(normalizedCode);
   const actions = useHostSporcleActions(normalizedCode, {
     onVersion: () => refresh(),
@@ -78,6 +78,21 @@ export default function SporclePlay() {
     }
   }, [state?.phase, navigate, normalizedCode]);
 
+
+    // Hide the global header while the player is actually in a round.
+    // Lobby/loading/countdown/finished keep the header; question and
+    // reveal are focus moments where chrome should disappear.
+    useEffect(() => {
+      const inGame =
+        state?.phase === 'question' ||
+        state?.phase === 'reveal';
+
+      if (inGame) document.body.classList.add('hide-header');
+      else        document.body.classList.remove('hide-header');
+
+      return () => document.body.classList.remove('hide-header');
+    }, [state?.phase]);
+    
   /* ── Auto-rejoin ─────────────────────────────────────────
      If the local player is present in the room but marked `left`
      (from a tab close, refresh, or network blip), silently reactivate.
@@ -168,6 +183,7 @@ export default function SporclePlay() {
       actions={actions}
       myId={myId}
       profilesById={profilesById}
+      onIdentitySet={saveForCode}
     />
   ) : null;
 

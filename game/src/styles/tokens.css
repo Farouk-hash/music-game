@@ -44,3 +44,11 @@
   --radius-md:     10px;
   --radius-lg:     16px;
 }
+
+/* ── Mid-game header hide ──────────────────────────────
+   Sporcle Play toggles `body.hide-header` during the
+   question and reveal phases. The header is fully removed
+   from layout — no gap, no border. */
+body.hide-header header.app-header {
+  display: none;
+}

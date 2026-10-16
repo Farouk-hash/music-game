@@ -1,0 +1,754 @@
+Here's the v57 handoff. Supersedes v56.
+
+---
+
+```
+You are continuing a working project. **Do not re-derive the setup or re-verify anything below.** Everything here is confirmed working unless explicitly marked broken. Read it in full before proposing anything.
+
+## The Project
+
+Five pieces, plus a data pipeline:
+
+1. **`admin/`** — build tool for curating audio clips, lyrics, artists, album years. Port 5173.
+2. **`game/`** — the player-facing quiz app. Port 5174 locally; deployed to Cloudflare Pages.
+3. **`server/`** — local Express + orchestration. Port 3001.
+4. **`music-game-wrangler/`** — Cloudflare Worker holding D1 + R2 (tracks, artists, lyrics, instruments, profiles, follows, room_invites).
+5. **`host-sporcle-wrangler/`** — Durable Object service for Sporcle multiplayer.
+
+The game does **not** go through Express. It fetches `music-game-wrangler` directly for solo/co-op, profiles, follows, and invites, and `host-sporcle-wrangler` for Sporcle. The Sporcle Worker calls `music-game-wrangler` via a Service Binding.
+
+## Repository
+
+**GitHub:** `https://github.com/Farouk-hash/music-game` (private, monorepo)
+**Local repo root:** `E:\matb3aa-game\.git`
+**Last committed state:** v28 (initial commit `c2a9ad3`). Work from v29–v57 is **uncommitted**.
+
+**`.gitignore`** covers `node_modules/`, `dist/`, `.env`, `.env.local`, `.env.*.local`, `.env.development`, `.env.development.local`, `.env.production.local`, `.wrangler/`, `.dev.vars`, `*.log`, `venv/`, `__pycache__/`, `*.pyc`, `server/instrumental-output/`, `test-vocals/`.
+
+**`.env.production` is TRACKED** and contains:
+```
+VITE_API_BASE=https://music-game-wrangler.abdulrahman-muhammad2090.workers.dev/game
+VITE_API_BASE0=https://music-game-wrangler.abdulrahman-muhammad2090.workers.dev
+VITE_SPORCLE_BASE=https://host-sporcle-wrangler.abdulrahman-muhammad2090.workers.dev
+```
+
+**`VITE_API_BASE0`** (trailing zero) is the key `profileApi.js`, `followApi.js`, and `inviteApi.js` read — it does NOT end in `/game`. `VITE_API_BASE` (with `/game`) is used by `api.js`.
+
+**No `.env.local` should exist.**
+
+## Architecture
+
+| Piece | Location | Local port | URL |
+|---|---|---|---|
+| Express server | `server/` | 3001 | `http://localhost:3001` |
+| Admin app | `admin/` | 5173 | `http://localhost:5173` |
+| Game (local) | `game/` | 5174 | `http://localhost:5174` |
+| Game (deployed) | Pages | — | `https://music-game-9vn.pages.dev` |
+| Worker (music) | `music-game-wrangler/` | 8787 | `https://music-game-wrangler.abdulrahman-muhammad2090.workers.dev` |
+| Worker (Sporcle) | `host-sporcle-wrangler/` | 8788 | `https://host-sporcle-wrangler.abdulrahman-muhammad2090.workers.dev` |
+
+## Deployment
+
+**Pages (game):**
+```cmd
+cd E:\matb3aa-game\game
+npm run build
+npx wrangler pages deploy dist --project-name=music-game --branch=production
+```
+
+**Worker (music-game-wrangler):**
+```cmd
+cd E:\matb3aa-game\music-game-wrangler
+npx wrangler deploy
+```
+
+**Worker (host-sporcle-wrangler):**
+```cmd
+cd E:\matb3aa-game\host-sporcle-wrangler
+npx wrangler deploy
+```
+
+**D1 migration:**
+```cmd
+cd E:\matb3aa-game\music-game-wrangler
+npx wrangler d1 execute music-game-db --remote --file=./migrations/0009_room_invites.sql
+```
+
+**Deploy order:** migrations → `music-game-wrangler` → `host-sporcle-wrangler` → Pages.
+
+**CRITICAL:** After editing any DO class, **Ctrl+C and restart `wrangler dev`**. DO module code is NOT hot-reloaded.
+
+**Windows env gotchas:**
+- `npm`/`npx` occasionally fail with "The system cannot execute the specified program" or OOM.
+- Mitigations: clear `NODE_OPTIONS` (`set NODE_OPTIONS=`), use `node --max-old-space-size=4096 "...wrangler.js" ...`.
+- **Express does not hot-reload.** Every `server/` code change needs a Ctrl+C restart.
+- **`esbuild spawn UNKNOWN`** can occur when Windows Defender quarantines the esbuild binary. Fix: whitelist `node_modules\esbuild` in Defender, or `rmdir /S /Q node_modules\esbuild && npm install`.
+
+## Local Dev — Two Workers, Two Terminals
+
+**Terminal 1 — music-game-wrangler:**
+```cmd
+cd E:\matb3aa-game\music-game-wrangler
+npx wrangler dev --port 8787
+```
+
+**Terminal 2 — host-sporcle-wrangler:**
+```cmd
+cd E:\matb3aa-game\host-sporcle-wrangler
+npx wrangler dev --port 8788
+```
+
+**Binding resolution:** Terminal 2's banner must show `env.MUSIC_GAME (music-game-wrangler) Worker local [connected]`.
+
+**Vite dev proxy (`game/vite.config.js`).** All `/api/*` dev requests are proxied to the **deployed** worker (`CF_BASE = https://music-game-wrangler.…workers.dev`). Entries:
+
+```js
+proxy: {
+  '/api/game':     { target: CF_BASE, changeOrigin: true, rewrite: (p) => p.replace(/^\/api/, '') },
+  '/api/profiles': { target: CF_BASE, changeOrigin: true, rewrite: (p) => p.replace(/^\/api\/profiles/, '/profiles') },
+  '/api/follows':  { target: CF_BASE, changeOrigin: true, rewrite: (p) => p.replace(/^\/api\/follows/, '/follows') },
+  '/api/invites':  { target: CF_BASE, changeOrigin: true, rewrite: (p) => p.replace(/^\/api\/invites/, '/invites') },
+}
+```
+
+**Why this matters:** on `npm run dev`, `VITE_API_BASE0` is **undefined** (Vite only loads `.env.production` at build time). So `profileApi.js`, `followApi.js`, and `inviteApi.js` fall back to `RAW_BASE = '/api/game'`, `.replace(/\/game\/?$/, '')` → `BASE = '/api'`. Requests look like `/api/invites/...` and the proxy rewrites + forwards. **Any new API prefix must be added to this proxy table or localhost dev will 404.**
+
+**Vite config changes require a dev-server restart** — `vite.config.js` is not hot-reloaded.
+
+**StrictMode + provider tree:** all top-level providers live in `main.jsx`, NOT `App.jsx`. The tree is:
+
+```
+StrictMode
+└── QueryClientProvider
+    └── ProfileProvider
+        └── GameSettingsProvider
+            └── ToastProvider
+                └── BrowserRouter
+                    └── App
+                        ├── Shell
+                        │   └── Header + Routes
+                        └── ToastHost
+```
+
+`App.jsx` contains only routes + `<Shell>` + `<ToastHost />`. **Do not re-wrap `ProfileProvider` or `ToastProvider` in `App.jsx`** — they're already in `main.jsx`.
+
+## Styling System
+
+- `game/src/styles/tokens.css` — the ONE file with hex values. Also holds global CSS (see "Header hide").
+- `game/tailwind.config.js` — maps utility classes to CSS variables.
+
+**Valid (game):** `bg-bg`, `bg-surface`, `bg-surface-2`, `border-border`, `text-ink`, `text-ink-muted`, `text-ink-subtle`, `bg-accent`, `text-accent`, `border-accent`, `border-accent-2`, `bg-accent-soft`, `text-correct`, `bg-correct-soft`, `border-correct`, `text-wrong`, `bg-wrong-soft`, `border-wrong`, `text-highlight`.
+
+**Ring tokens:** `ring-border`, `ring-accent`, `ring-correct`, `ring-wrong`.
+
+**Opacity modifiers (`/40`, `/10`) DO NOT WORK** on token-mapped classes.
+
+**Responsive action buttons.** Icon-only at `<sm`, icon+label at `sm:+` via `<span className="hidden sm:inline">Label</span>`. Applied to: `All genres`, `Select all artists` / `Clear artists` (Setup), `Restore` (ProfileModal), `FollowButton`, `FriendsListTab`'s `Unfollow`, `RequestsTab`'s `Accept`/`Decline`/`Cancel`, `InvitesTab`'s `Join`.
+
+**Header hide (mid-game).** `Play.jsx` toggles `document.body.classList.add('hide-header')` during `phase === 'question' || phase === 'reveal'`. Rule in `tokens.css`:
+
+```css
+body.hide-header header.app-header {
+  display: none;
+}
+```
+
+The `app-header` class is on the `<header>` in `Header.jsx`. Cleanup removes the class on unmount.
+
+## Button component (`game/src/components/ui/Button.jsx`)
+
+```js
+const VARIANTS = {
+  primary:         'bg-accent text-bg hover:bg-accent-2 active:bg-accent-2 shadow-sm',
+  secondary:       'bg-surface-2 text-ink hover:bg-surface border border-border',
+  ghost:           'bg-transparent text-ink-muted hover:bg-surface-2 hover:text-ink',
+  danger:          'bg-wrong text-ink hover:opacity-90',
+  'danger-outline':'bg-surface-2 text-wrong border border-border hover:border-wrong',
+};
+
+const SIZES = {
+  sm: 'h-8 px-3 text-sm rounded-sm',
+  md: 'h-10 px-4 text-sm rounded-md',
+  lg: 'h-12 px-6 text-base rounded-md',
+};
+```
+
+**`Button` has no `gap`.** Icon+label children must be wrapped in an inner `<span className="inline-flex items-center gap-1.5">`.
+
+## D1 Schema (music-game-wrangler)
+
+Existing: `genres`, `artists`, `tracks` (~17,414 rows), `lyrics`, `album_years`, `instruments`, `profiles`, `profile_favorites`, `follows`, `room_invites`.
+
+**Migrations:** `0003_sporcle.sql`, `0004_instruments.sql`, `0005_drop_source_url.sql`, `0006_instruments_index.sql`, `0007_profiles.sql`, `0008_follows.sql`, `0009_room_invites.sql` (all applied).
+
+**Legacy:** `sporcle_rooms`, `sporcle_players`, `sporcle_answers` (D1-based Sporcle, superseded). Leave in place.
+
+## D1 Parameter Limit — CRITICAL
+
+**D1 hard-caps bound parameters at 100 per statement.** Chunk arrays to ≤90. Helper at `music-game-wrangler/src/utilities/chunkedIn.js`.
+
+## Question Types
+
+**Audio (5):** `name-track`, `name-artist`, `name-album`, `name-featured`, `name-position`
+**Lyrics (3):** `lyrics-track`, `lyrics-artist`, `lyrics-album`
+
+Sets in `music-game-wrangler/src/controllers/game/rounds-methods/scope-helpers.js`:
+```js
+export const AUDIO_TYPES = new Set(['name-track','name-artist','name-album','name-featured','name-position']);
+export const LYRICS_TYPES = new Set(['lyrics-track','lyrics-artist','lyrics-album']);
+export const VALID_TYPES = [...AUDIO_TYPES, ...LYRICS_TYPES];
+```
+
+## Round shapes
+
+**L1 audio:** `{ slotId, type, clip: { r2_key, serveUrl, position }, question: { prompt, options, correctValue } }`
+**L1 lyrics:** `{ slotId, type, lyrics, revealClip: { r2_key, serveUrl } | null, question }`
+**L1 instrumental:** `{ slotId, type, source: 'instrumental', clip: {...}, question }`
+**L2:** wrap question(s) into `questions[]`.
+
+## Instrumental Rounds
+
+- `buildingInstrumental.js` exports `buildInstrumentalRound` (L1/L3) and `buildInstrumentalRoundMulti` (L2).
+- **`lyrics-track` options use snippet text as `value` AND `correctValue`** — not `opt-N`.
+- Anti-skew round-robin in `instruments-slots.js`. **Deployed but unverified.**
+- Same skew may still exist in traditional audio (`slots.js`, `fetchFeaturedSlots`).
+
+## PROFILE SYSTEM — COMPLETE
+
+**Identity:** anonymous UUID, no auth. Cross-device via 8-char recovery code. UUID stored in `localStorage['music-game:profile:id']` — **raw UUID string, NOT JSON**. Silent creation via `useProfile`.
+
+**Restore deletes the old profile:** `recoverProfile(code)` switches id, then best-effort `DELETE /profiles/<oldId>` (swallowed errors).
+
+**Schema:** `profiles(id, nickname, recovery_code, avatar_kind, avatar_style, avatar_seed, avatar_r2_key, created_at, updated_at)` and `profile_favorites(profile_id, kind, value, created_at)`.
+
+**Caps:** 100 favourites/kind, 300 total; 24-char nickname; 8-char recovery code; 256 KB avatar; JPEG/PNG/WebP only.
+
+**R2 storage:** reuses `AUDIO` bucket, `avatars/<profile_id>/avatar-<timestamp>.<ext>`.
+
+**Response shape (CANONICAL):**
+```json
+{
+  "profile": {
+    "id": "uuid", "nickname": "...",
+    "avatar": { "kind": "generated"|"uploaded", "style": "...", "seed": "...", "url": null|"/profiles/<id>/avatar" },
+    "createdAt": "...", "updatedAt": "...",
+    "favorites": { "artists": [...], "genres": [...], "tracks": [...], "questionTypes": [...] }
+  }
+}
+```
+
+**Key facts:** `avatar` is **nested** and **camelCase**. `profileApi.get(id)` returns `{ profile }`.
+
+## FOLLOW SYSTEM — COMPLETE
+
+**Model:** M2 — two-way with accept. Pending = one row `status='pending'`. Friendship = two rows `status='accepted'`.
+
+**Schema — `0008_follows.sql`:**
+```sql
+CREATE TABLE IF NOT EXISTS follows (
+  follower_id TEXT NOT NULL, followee_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  accepted_at TEXT,
+  PRIMARY KEY (follower_id, followee_id)
+);
+```
+
+**Routes (all take `?as=<me>`):**
+```
+POST   /follows?as=<me>            body { followeeId }  → { ok, status }
+POST   /follows/accept?as=<me>     body { followerId }  → { ok, status: 'friends' }
+POST   /follows/decline?as=<me>    body { followerId }  → { ok }
+DELETE /follows?as=<me>&other=<id>                       → { ok }
+GET    /follows/friends?as=<me>                          → { ok, friends: [...] }
+GET    /follows/pending?as=<me>                          → { ok, incoming: [...], outgoing: [...] }
+GET    /follows/status?as=<me>&target=<id>               → { ok, status }
+```
+
+**Status enum:** `self`, `none`, `requested`, `incoming`, `friends`, `following`.
+
+**Player shape in lists:** `{ id, nickname, avatar: { kind, style, seed, url } }`.
+
+**`acceptRequest`** flips their→me to accepted AND inserts me→their accepted, in one `env.DB.batch()` (mutual handoff).
+
+**`sendRequest`** auto-accepts if a reverse pending exists.
+
+**Client hooks — `useFollows.js`:** `useFriends`, `usePending`, `useFollowStatus`, `useSendRequest`, `useAcceptRequest`, `useDeclineRequest`, `useUnfollow`. Query keys: `['follows','friends',me]`, `['follows','pending',me]`, `['follows','status',me,target]`.
+
+**FollowButton** states:
+
+| Status | Wide (`sm:+`) | Small (`<sm`) | Action |
+|---|---|---|---|
+| `none` | `+ Follow` | `+` | sendRequest |
+| `requested` | `Requested` + `×` | `×` | unfollow (cancel) |
+| `incoming` | `✓ Accept` | `✓` | acceptRequest |
+| `friends` / `following` | `✓ Friends` + `×` | `✓` + `×` | unfollow |
+
+**`friendsOnly="hidden"`** prop — hides the button once friends (ring signals it).
+
+**Optimistic** — local state flips immediately, clears when server matches, rolls back on error.
+
+**FollowRing** — wraps `PlayerAvatar`:
+
+| Status | Visual |
+|---|---|
+| `friends` / `following` | 2px **green** (`ring-correct`) ring on a padded wrapper |
+| `incoming` | 2px **accent** ring + small accent dot (bottom-right) |
+| others | plain |
+
+**Caller `ring` prop wins** — no double rings.
+
+**Used in:** `PlayerRoster.jsx`, `SporcleProgress.jsx`, `Result.jsx` standings rows.
+
+## ROOM INVITES — COMPLETE
+
+**Model:** persistent invite list in D1. Host selects followers → friends see invites → click Join → navigate to `/sporcle/play/<code>`.
+
+**Schema — `0009_room_invites.sql`:**
+```sql
+CREATE TABLE IF NOT EXISTS room_invites (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  profile_id   TEXT NOT NULL,
+  room_code    TEXT NOT NULL,
+  invited_by   TEXT NOT NULL,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  seen_at      TEXT,
+  UNIQUE(profile_id, room_code)
+);
+CREATE INDEX IF NOT EXISTS idx_invites_profile_pending ON room_invites(profile_id, seen_at);
+CREATE INDEX IF NOT EXISTS idx_invites_code            ON room_invites(room_code);
+```
+
+**Routes (all take `?as=<me>`):**
+```
+POST   /invites?as=<me>            body { roomCode, friendIds, revokedIds }  → { ok, sent, revoked }
+POST   /invites/dismiss?as=<me>    body { inviteId }                          → { ok }
+GET    /invites/pending?as=<me>                                               → { ok, invites: [...] }
+GET    /invites/room?as=<me>&code=<CODE>                                      → { ok, invitedIds: [...] }
+```
+
+**Controller — `music-game-wrangler/src/controllers/invites.js`:**
+
+- `sendInvites` — **upserts** `friendIds` (resets `seen_at = NULL`) and **deletes** `revokedIds` (only rows `invited_by = me AND room_code = code`). Verifies mutual friendship for each invited target; rejects with 403 if any are not friends. Runs all statements in one `env.DB.batch()`.
+- `listPendingInvites` — unread invites for the actor, **filters `created_at > datetime('now', '-2 hours')`** so stale invites auto-hide. Joins inviter profile.
+- `listRoomInvites` — host's own invite list for a room; used to pre-check the picker.
+- `dismissInvite` — **hard delete.** `DELETE FROM room_invites WHERE id = ? AND profile_id = ?`. The row is gone. (The `seen_at` column is now vestigial — harmless, left in place.)
+
+**Player shape:** same as follows — `{ id, nickname, avatar: { kind, style, seed, url } }`.
+
+**Re-invite semantics:** allowed. `ON CONFLICT DO UPDATE` resets `seen_at = NULL` and bumps `created_at`.
+
+**Revoke semantics:** `sendInvites` with `revokedIds` removes those rows.
+
+**Client files:**
+```
+game/src/lib/inviteApi.js                              # pending, roomInvites, send, dismiss
+game/src/hooks/invites/useInvites.js                   # usePendingInvites, useRoomInvites,
+                                                       # useSendInvites, useDismissInvite
+game/src/components/domain/Follow/InviteFriendsModal.jsx   # host picker; pre-check + revoke
+game/src/components/domain/Follow/InvitesTab.jsx           # invitee list; Join + ✕ dismiss
+```
+
+**Query keys:** `['invites','pending',me]`, `['invites','room',me,code]`.
+
+**Polling:** `usePendingInvites` uses `refetchInterval: 15000`. The header/mobile dot updates within 15s of a new invite.
+
+**`InvitesTab` does NOT dismiss on join.** Clicking Join navigates but leaves the invite pending, so the user can back out and re-join. Only the `✕` or the toast's expiry removes it.
+
+**`InviteFriendsModal`:** host-only. Single effect resets on close, pre-checks on open+data via `useRoomInvites`. `initialRef` tracks the pre-checked set; submit computes `revoked = initial - selected`. Button is disabled unless the selection is dirty. Button label: "Save (N)".
+
+## TOAST SYSTEM — NEW (v57)
+
+**File:** `game/src/hooks/ui/useToast.jsx` (**`.jsx` — must have the JSX extension**).
+
+**Three exports:**
+- `ToastProvider` — context provider. Mounted in `main.jsx` wrapping `<BrowserRouter>`.
+- `useToast()` — returns `{ toast, show, dismiss }`.
+- `ToastHost` — renders the current toast. Mounted in `App.jsx` as a sibling of `<Shell>`.
+
+**`show(config)` config shape:**
+```js
+{
+  message,               // string
+  actionLabel,           // optional — e.g. 'Undo'
+  onAction,              // called when the action button is clicked
+  onDismiss,             // called when the toast expires WITHOUT the action
+  durationMs,            // default 6000
+}
+```
+
+**Dismiss reasons — CRITICAL:**
+- `'cancel'` — user clicked the action button (Undo). Fires `onAction`, **does NOT fire `onDismiss`**.
+- `'expire'` — timer ran out OR user clicked the `✕` on the toast. Fires `onDismiss`.
+- Replacement by a new toast — `show()` calls `clearTimer()` + `setToast(new)` — **fires neither**.
+
+**`ToastHost` UI:**
+- Positioned top-center, `fixed top-4 inset-x-0 z-[70]`.
+- Card: rounded, bordered, `bg-surface`, `flex-col` with a progress bar as the bottom sibling.
+- Row: message · action label (accent) · ✕ button.
+- **Progress bar** (`ToastProgressBar`): drains 100% → 0% via `requestAnimationFrame` over `durationMs`. Three-tier color: `bg-correct` (>66%), `bg-highlight` (33–66%), `bg-wrong` (<33%). 200ms `transition-colors` between tiers.
+
+**Known limitation:** single-toast system. Showing a new toast replaces the current one and **does not fire the replaced toast's `onDismiss`**. So if a user dismisses invite A, then dismisses invite B before A's window expires, invite A's server delete never fires. Acceptable for v1.
+
+**`InvitesTab` uses the toast:**
+
+```js
+function handleDismiss(inv) {
+  setHidden((prev) => new Set(prev).add(inv.id));       // hide locally
+  show({
+    message: 'Invitation removed',
+    actionLabel: 'Undo',
+    durationMs: 30_000,
+    onAction: () => { /* unhide locally — no server call */ },
+    onDismiss: () => { dismiss.mutate(inv.id, { onSettled: /* unhide */ }); },
+  });
+}
+```
+
+**Flow:** click ✕ → row hidden → toast appears (30s, green→gold→red bar) → Undo un-hides (no server call) OR expiry fires `POST /invites/dismiss` (hard delete).
+
+## Follow/Invite UI surface
+
+**Desktop (≥ `sm`):** `Header.jsx` renders `<FriendsEntry>` pill (with pending dot for incoming requests AND invites) + `<ProfileChip>`.
+
+**Mobile (< `sm`):** `Header.jsx` renders a single burger that toggles `<MobileUserMenu>` — absolutely-positioned dropdown anchored under the burger via a `relative` wrapper. Rows: Profile (avatar + nickname + "Profile" label) and Friends (icon + "Friends" + dot). Burger toggles — click-outside handler must exclude the burger.
+
+**`FriendsModal.jsx`** — 3 tabs: `Friends` (list + Unfollow), `Requests` (incoming + outgoing), `Invites` (pending room invites with Join/dismiss). Each tab has a badge when non-empty.
+
+**`RoomPanel.jsx`** — host sees `Invite friends` (accent button) next to `Copy code` / `Copy invite link`. Non-hosts do not. Clicking opens `<InviteFriendsModal open onClose roomCode={code} />`.
+
+## Sporcle Client — avatar + follow threading (GOTCHA)
+
+```
+Play.jsx
+  useRoomProfiles(state?.players)         → Map<profileId, profile>
+  → <SporcleModal profilesById={map} onIdentitySet={saveForCode} />
+       → <RoomPanel profilesById={map} />
+            → <PlayerRoster profilesById={map} />
+                 → <FollowRing profileId={p.profileId} avatar={map.get(p.profileId)} />
+```
+
+**⚠️ Two documented gotchas:**
+
+1. `profilesById` must reach the **live** `<RoomPanel>` render **inside `<Modal>`** in `SporcleModal.jsx`. A dead-code duplicated block above the `return` once silently swallowed the prop.
+
+2. **Joining from an invite does not remount Play.** The identity hook's `useEffect` deps are `[playerIdKey, nameKey]` — derived from `code`, which doesn't change. So a localStorage write from within the modal does NOT trigger `identity` to update, and the Join modal stays stuck.
+
+   **Fix (applied):** `SporcleModal` takes an `onIdentitySet(code, playerId, name)` prop. `Play.jsx` passes `saveForCode` from `useHostSporcleIdentity`. `SporcleModal.handleCreate` and `handleJoin` call `onIdentitySet` (falling back to direct localStorage writes if absent). `saveForCode` writes localStorage AND calls `setIdentity` when `targetCode === normalizedCode`. Plus a `storage` event listener in the hook for cross-tab sync.
+
+   **Do not revert.**
+
+## host-sporcle-wrangler — Durable Object
+
+**Schema:**
+```sql
+room (id INTEGER PRIMARY KEY CHECK (id = 1), phase, mode, config, auto_advance_seconds,
+      version, q_index, q_deadline, expires_at, created_at, started_at, last_error)
+
+players (id TEXT PRIMARY KEY, name TEXT NOT NULL, is_host INTEGER DEFAULT 0,
+         ready INTEGER DEFAULT 0, score INTEGER DEFAULT 0, locked INTEGER DEFAULT 0,
+         left INTEGER DEFAULT 0, profile_id TEXT)
+
+questions (idx INTEGER PK, payload TEXT)
+answers (player_id TEXT, q_idx INTEGER, correct INTEGER, typed TEXT, answered_at INTEGER,
+         PRIMARY KEY (player_id, q_idx))
+```
+
+**The DO carries `profile_id` only.** No avatar or follow fields.
+
+**`players.rowid` reflects join order.** `#promoteNextHost()` uses `rowid ASC`.
+
+**API:**
+```
+POST /host-sporcle/create                     body { hostName, mode, config, autoAdvanceSeconds, profileId }
+POST /host-sporcle/:code/join                 body { name, profileId }
+GET  /host-sporcle/:code/state?since=N
+POST /host-sporcle/:code/action
+POST /host-sporcle/:code/leave?playerId=…     (sendBeacon endpoint)
+GET  /host-sporcle/:code/debug                (LOCAL-ONLY)
+```
+
+**`#buildState` players rows:** `{ id, name, profileId, isHost, ready, score, locked, left }`.
+
+**`#shapeFinished` standings — camelCase:**
+```js
+standings: players.map(p => ({
+  playerId: p.id,
+  profileId: p.profile_id ?? null,
+  score: p.score,
+  name: p.name,
+})),
+```
+**Do not revert to `profile_id`.**
+
+**Action types:** `ready`, `start`, `answer`, `advance`, `leave`, `reset`, `rejoin`.
+
+**Leave behaviour (mode-agnostic):** lobby → DELETE player, empty → deleteAll, host-left → promote. In-game → `UPDATE players SET left = 1`, host-left → demote + promote.
+
+**Phase flow:**
+```
+lobby ──start()──► loading ──fetch complete──► countdown ──alarm(10s)──► question
+                                                                            │
+                                    speed: first correct ───────────────────┤
+                                    collect: all answered ──────────────────┤
+                                    alarm(20s) ─────────────────────────────┤
+                                                                            ▼
+                                                                         reveal
+                                                                            │
+                                  advance() or alarm(autoAdvanceSeconds) ───┴──► next question
+                                                                            │
+                                                                            └──► finished
+```
+
+**Constants:** `MIN_PLAYERS = 2`, `COUNTDOWN_MS = 10000`, `SPORCLE_TIMER_SECONDS = 20`, `AUTO_ADVANCE_MS_LYRICS = 10000`, `ROOM_EXPIRY_MS = 2 * 60 * 60 * 1000`.
+
+**Correctness:**
+```js
+function normalize(s) { return String(s ?? '').trim().toLowerCase(); }
+function isCorrect(q, typed) {
+  if (typed == null || typed === '') return false;
+  if (q.type === 'name-position') return canonicalPosition(typed) === canonicalPosition(q.correctValue);
+  return normalize(typed) === normalize(q.correctValue);
+}
+```
+
+## OptionsGrid — three visual states
+
+| State | Picked | Others | Disabled? |
+|---|---|---|---|
+| Idle | default | default | no |
+| Locked in (picked, not revealed) | `bg-accent text-bg border-accent` | `opacity-40` dimmed | yes |
+| Revealed | correct green / wrong pick red | correct green, rest `opacity-60` | yes |
+
+`const locked = picked != null && !revealed;` — **timing-specific, not mode-specific.**
+
+## Layout / CollapsibleSection
+
+`CollapsibleSection.jsx` accepts `secondaryActions` (after title) and `actions` (flush right via `ml-auto`).
+
+## Game Client — Phase 2 & 3
+
+**Phase 2:** `GameSettingsContext` has `instruments`. `SharedGameSettings.jsx` Instruments section. `usePlayParams` parses `instruments`. `useRoundMulti` forwards. `Setup.jsx`'s `buildBaseParams()` includes it.
+
+**Phase 3:** `QuestionCard.jsx` accepts `source`. `Play.jsx`, `Play2.jsx`, `PlayMulti.jsx` pass it. `buildSuddenDeathUrl` forwards `instruments`.
+
+**`Play3.jsx` NOT updated** — L3 modal still sets `allowInstruments={false}`.
+
+## music-game-wrangler — Game endpoints
+
+```
+GET /game/catalog
+GET /game/round / round-multi / round-set / round-multiplayer
+```
+All accept `?instruments=none|mixed|all`.
+
+**Instruments / Instrumentals:**
+```
+GET    /instruments?artist_id=…&position=…&search=…&limit=&offset=
+POST   /instruments/bulk
+POST   /instruments/check-duplicates
+DELETE /instruments/artist/:artistId
+DELETE /instruments/:id
+PUT /instrumentals/upload?key=instrumentals/…
+GET /instrumentals/serve?key=instrumentals/…
+```
+
+## Environment
+
+- **Windows.** `cmd` for wrangler, PowerShell for test scripts.
+- Node 18+. Express uses ESM.
+- Python 3.14.8. Virtual env at `E:\matb3aa-game\venv\`.
+- **Never pass Arabic inline through `cmd` `curl -d`.**
+- **`jq` is not installed.**
+- **After `wrangler deploy`, verification curls may hit a stale edge for ~30s.**
+- **`curl` in `cmd`:** `&` terminates the command. Wrap URLs in `"…"`.
+- **`localStorage['music-game:profile:id']`** is a raw UUID string, NOT JSON.
+- **JSX files must use the `.jsx` extension.** Vite parses `.js` as plain JavaScript — JSX syntax errors out. `useToast.jsx`, every component file, and any hook that returns JSX must be `.jsx`.
+
+## Commands
+
+```cmd
+:: Local dev
+cd E:\matb3aa-game && npm run dev
+cd E:\matb3aa-game\game && npm run dev
+
+:: music-game-wrangler
+cd E:\matb3aa-game\music-game-wrangler
+npx wrangler dev --port 8787
+npx wrangler deploy
+
+:: host-sporcle-wrangler
+cd E:\matb3aa-game\host-sporcle-wrangler
+npx wrangler dev --port 8788
+npx wrangler deploy
+
+:: Migrations
+cd E:\matb3aa-game\music-game-wrangler
+npx wrangler d1 execute music-game-db --remote --file=./migrations/0009_room_invites.sql
+
+:: Deploy game
+cd E:\matb3aa-game\game
+npm run build
+npx wrangler pages deploy dist --project-name=music-game --branch=production
+
+:: Git
+cd E:\matb3aa-game
+git add .
+git commit -m "…"
+git push
+```
+
+## Known Open / Broken
+
+### 1. **Anti-skew round-robin — unverified**
+`instruments-slots.js` round-robins across artists. Deployed but no 5× curl verification.
+
+### 2. **Same skew may exist in traditional audio**
+`slots.js` and `fetchFeaturedSlots` still use `ORDER BY RANDOM() LIMIT N`.
+
+### 3. **Sporcle host-promotion in collect mode — reported, not reproduced**
+Console output showed correct promotion. Hypothesis: same visual-lag illusion as OptionsGrid. **Not a confirmed bug.**
+
+### 4. **Enable L3 instruments**
+`Level3Modal` sets `allowInstruments={false}`. `Play3.jsx` lacks `source`.
+
+### 5. **No `PublishedInstruments.jsx` admin page**
+
+### 6. **Client rendition chain incomplete**
+`useRoundMultiplayer.js` — no `rendition`. `PlayMulti.jsx` — doesn't pass it.
+
+### 7. **Favourite counts cap on the client**
+Server caps at 100/kind, 300 total. Client doesn't surface a message.
+
+### 8. **Orphaned profiles**
+Every device creates a profile with a placeholder nickname. Consider a periodic sweep.
+
+### 9. **Mobile tab-close doesn't reliably mark players as `left`**
+`beforeunload`/`sendBeacon` unreliable on mobile Safari. Needs heartbeat + staleness sweep.
+
+### 10. **Dead `avatarStyle` variable in `Play.jsx`**
+`const avatarStyle = state?.avatarStyle ?? undefined;` — leftover, never used.
+
+### 11. **Toast replacement drops the pending `onDismiss`**
+Single-toast system. If toast A is on screen and toast B is shown, A's `onDismiss` never fires. Known limitation — accept, or queue toasts.
+
+### 12. **Leaderboard — spec locked in, not built**
+Design shelved. Locked-in decisions: **Sporcle Hall of Fame only** (product A), **DO writes at `finished` via service binding** (W1), **one row per player per game**, **G1 score-over-time graph** (hand-rolled SVG), **guests excluded**, **Header link entry point**.
+
+### 13. **Invite cleanup sweep**
+The 2h auto-hide filter is client-visible only — rows accumulate in D1 forever. Consider a periodic `DELETE FROM room_invites WHERE created_at < datetime('now', '-7 days')`. Options: opportunistic delete in `listPendingInvites`, or a daily cron.
+
+### 14–25. Carried over
+- `handoff-*.md` and `prompt*.txt` tracked in repo
+- Duplicate controller at `music-game-wrangler/src/controllers/admin/tracks.js`
+- Punctuation-only lines in lyric snippets
+- Albumaty `/n/singer/` vs `/singer/` mismatch
+- `tracks_count` drift
+- matb3aa `release_date` may be uniform
+- `/published/artists` "has clips" filter may be truncated
+- `FetchLyricsBar` multi-artist mode
+- Upload flow has no `album_name` support
+- `useServerPagination` unused
+- R2 orphan cleanup — partially handled
+- No auth on the Worker
+- Auto-dropped artists don't restore
+- Strict genre mode doesn't send a `strict` param
+- `lyrics-album` disable rule
+- Garbled lyrics rows
+- Page deployment is manual
+- Legacy D1 Sporcle tables untouched
+- `leftRef.current` in `Play.jsx` is never set to `true`
+
+## Style the User Prefers
+
+- **Complete files, not fragments.**
+- **Minimal fixes.**
+- **Tables** to explain changes.
+- **One clear next step.**
+- **Note what to test** and what to paste back.
+- **Concise.** Experienced with React/Node.
+- **Recommend explicitly** when there are tradeoffs.
+
+## Most Likely Next Tasks
+
+**In priority order:**
+
+1. **Anti-skew round-robin verification** — 5× L1 curl with `instruments=all`, count slugs.
+
+2. **Enable L3 instruments** — flip `allowInstruments={true}`, add `source` to `Play3.jsx`.
+
+3. **Build `PublishedInstruments.jsx`** — browse/delete uploaded instruments.
+
+4. **Invite cleanup sweep** — opportunistic `DELETE` or daily cron.
+
+5. **Finish the client rendition chain** — `useRoundMultiplayer.js` + `PlayMulti.jsx`.
+
+6. **Favourite cap feedback.**
+
+7. **Mobile heartbeat / staleness sweep.**
+
+8. **Leaderboard** — spec locked (see Known Open #12), not started.
+
+**Recommended next step:** item 4 — a 4-line opportunistic cleanup inside `listPendingInvites`. It closes the last gap in the invite system. Then commit.
+
+Ask what the user wants to work on next.
+
+---
+
+## END OF PROMPT
+
+Save this as `E:\matb3aa-game\handoff-v57.md`. Paste it as the first message of your next session.
+```
+
+---
+
+## What's new in v57
+
+| Section | Change |
+|---|---|
+| **TOAST SYSTEM** | New full section — provider, host, three dismiss reasons, progress bar, known limitation. |
+| **Provider tree** | Documented that all providers live in `main.jsx`, not `App.jsx`. |
+| **`InvitesTab`** | Updated: hard-delete via dismiss, 30s toast, undo flow. |
+| **`.jsx` rule** | Documented in Environment — Vite parses `.js` as plain JS. |
+| **`dismissInvite`** | Now documented as hard delete. |
+| **Known Open** | Toast replacement limitation, invite cleanup sweep. |
+| **Most Likely Next Tasks** | Reordered — invite cleanup is #4. |
+
+The document is self-contained. A fresh model knows:
+- The toast system's shape and the three-reason dismiss contract
+- The invite system end-to-end with undo
+- The provider tree lives in `main.jsx`
+- The `.jsx` extension rule
+- Exactly what remains: skew verification, L3, PublishedInstruments, invite cleanup, rendition chain, cap feedback, heartbeat, leaderboard
+
+## Before you close
+
+**Commit.** Substantial work since the last commit:
+
+```cmd
+cd E:\matb3aa-game
+git add .
+git commit -m "v57: toast system — provider in main.jsx, progress bar, invite undo flow with hard-delete on expiry"
+git push
+```
+
+Then run the last remaining small cleanup — the **invite sweep** — as a quick close:
+
+```js
+// Add to listPendingInvites, before the SELECT:
+await env.DB.prepare(
+  "DELETE FROM room_invites WHERE created_at < datetime('now', '-7 days')"
+).run();
+```
+
+That's a 3-line addition that closes the invite system entirely. Then the whole follow+invite feature is done.
+
+**What's next?** Options:
+
+- **Anti-skew round-robin verification** — 30-second curl.
+- **L3 instruments** — small, closes a gap.
+- **Admin `PublishedInstruments.jsx`** — admin-side progress.
+- **Leaderboard** — spec ready.
+- **Something else.**
+
+Say which and we start.

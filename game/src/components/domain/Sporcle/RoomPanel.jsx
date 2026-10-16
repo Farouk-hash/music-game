@@ -5,7 +5,7 @@ import { Button } from '../../ui/Button.jsx';
 import { PlayerRoster } from './PlayerRoster.jsx';
 import { LoadingOverlay } from './LoadingOverlay.jsx';
 import { CountdownOverlay } from './CountdownOverlay.jsx';
-
+import { InviteFriendsModal } from '../Follow/InviteFriendsModal.jsx';
 /**
  * The Sporcle room panel — the modal's 'room' content.
  *
@@ -18,6 +18,7 @@ import { CountdownOverlay } from './CountdownOverlay.jsx';
  * Does not poll — the Play route owns the polling loop.
  */
 export function RoomPanel({ code, onClose, state, actions, myId, profilesById = new Map()  }) {
+  const [inviteOpen, setInviteOpen] = useState(false);
   const me = state?.players?.find((p) => p.id === myId) ?? null;
   const isHost = !!me?.isHost;
 
@@ -119,7 +120,8 @@ export function RoomPanel({ code, onClose, state, actions, myId, profilesById = 
           <p className="text-4xl font-mono font-bold text-ink tracking-[0.4em]">
             {code}
           </p>
-          <div className="flex gap-2">
+
+          <div className="flex gap-2 flex-wrap justify-center">
             <button
               type="button"
               onClick={copyCode}
@@ -134,7 +136,17 @@ export function RoomPanel({ code, onClose, state, actions, myId, profilesById = 
             >
               {copied === 'link' ? '✓ Copied' : 'Copy invite link'}
             </button>
+            {isHost && (
+              <button
+                type="button"
+                onClick={() => setInviteOpen(true)}
+                className="px-3 h-9 rounded-md border border-accent bg-accent text-bg text-xs font-medium hover:bg-accent-2 transition-colors"
+              >
+                Invite friends
+              </button>
+            )}
           </div>
+
         </div>
       </BorderContainer>
 
@@ -209,6 +221,13 @@ export function RoomPanel({ code, onClose, state, actions, myId, profilesById = 
           Leave room
         </button>
       </footer>
+
+
+      <InviteFriendsModal
+          open={inviteOpen}
+          onClose={() => setInviteOpen(false)}
+          roomCode={code}
+        />
     </>
   );
 }

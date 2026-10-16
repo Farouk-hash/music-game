@@ -45,6 +45,7 @@ export function SporcleModal({
   actions = null,
   myId = null,
   profilesById = new Map(),
+  onIdentitySet = null, 
 }) {
   const navigate = useNavigate();
   const settings = useGameSettings();
@@ -128,8 +129,13 @@ export function SporcleModal({
         profileId: profile?.id ?? null,
       });
 
-      localStorage.setItem(`sporcle:${r.code}:playerId`, r.hostId);
-      localStorage.setItem(`sporcle:${r.code}:name`, hostName.trim());
+      if (onIdentitySet) {
+        onIdentitySet(r.code, r.hostId, hostName.trim());
+      } else {
+        // Fallback for when the modal is rendered without the setter.
+        localStorage.setItem(`sporcle:${r.code}:playerId`, r.hostId);
+        localStorage.setItem(`sporcle:${r.code}:name`, hostName.trim());
+      }
 
       // Hand off to the Play route. It owns the polling loop and
       // re-opens this modal at the 'room' panel with live state.
@@ -149,8 +155,13 @@ export function SporcleModal({
 
     try {
       const r = await sporcleApi.join(c, { name: joinName.trim()  ,profileId: profile?.id ?? null,});
-      localStorage.setItem(`sporcle:${c}:playerId`, r.playerId);
-      localStorage.setItem(`sporcle:${c}:name`, joinName.trim());
+  
+      if (onIdentitySet) {
+        onIdentitySet(c, r.playerId, joinName.trim());
+      } else {
+        localStorage.setItem(`sporcle:${c}:playerId`, r.playerId);
+        localStorage.setItem(`sporcle:${c}:name`, joinName.trim());
+      }
 
       navigate(`/sporcle/play/${c}`);
     } catch (e) {

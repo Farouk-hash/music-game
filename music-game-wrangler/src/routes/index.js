@@ -8,12 +8,17 @@ import { catalogRoutes } from './game/catalog.js';
 import { roundRoutes } from './game/rounds.js';
 import { instrumentRoutes } from './admin/instruments.js';
 import { profileRoutes } from './profiles.js';
+import { followRoutes } from './follows.js';
+import { inviteRoutes } from './invites.js';
 const allRoutes = [
   // GAME ROUTES ;
   ...catalogRoutes,
   ...roundRoutes,
-  // GAME ROUTES-> PROFILE ROUTE
+  // GAME ROUTES-> PROFILE ROUTE ;
   ...profileRoutes,
+  // GAME ROUTS -> FOLLOWERS , INVITES ; 
+  ...followRoutes,
+  ...inviteRoutes,
   
   // ADMIN PANEL ROUTES ;
   ...genreRoutes,

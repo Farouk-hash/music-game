@@ -1,7 +1,7 @@
 // game/src/App.jsx
 import { Routes, Route } from 'react-router-dom';
 import { Shell } from './components/layout/Shell.jsx';
-import { ProfileProvider } from './context/ProfileContext.jsx';
+import { ToastHost } from './hooks/ui/useToast';
 import Home from './routes/Home.jsx';
 import NotFound from './routes/NotFound.jsx';
 import Setup from './routes/Setup.jsx';
@@ -16,7 +16,7 @@ import SporcleResult from './routes/Sporcle/Result.jsx';
 
 export default function App() {
   return (
-    <ProfileProvider>
+    <>
       <Shell>
         <Routes>
           <Route path="/"       element={<Home />} />
@@ -31,6 +31,7 @@ export default function App() {
           <Route path="*" element={<NotFound />} />
         </Routes>
       </Shell>
-    </ProfileProvider>
+      <ToastHost />
+    </>
   );
 }

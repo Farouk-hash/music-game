@@ -8,6 +8,8 @@ const VARIANTS = {
     'bg-transparent text-ink-muted hover:bg-surface-2 hover:text-ink',
   danger:
     'bg-wrong text-ink hover:opacity-90',
+  'danger-outline':
+    'bg-surface-2 text-wrong border border-border hover:border-wrong',
 };
 
 const SIZES = {

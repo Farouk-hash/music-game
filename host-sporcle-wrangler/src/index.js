@@ -4,7 +4,7 @@ import { route } from './router.js';
 export { HostSporcle } from './controllers/host-sporcle.js';
 
 export default {
-  async fetch(request, env) {
-    return route(request, env); // ← env passed through from cloud-flare
+  async fetch(request, env, ctx) {
+    return route(request, env, ctx);
   },
 };

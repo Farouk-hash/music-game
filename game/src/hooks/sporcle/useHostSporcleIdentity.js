@@ -1,17 +1,6 @@
 // game/src/hooks/useHostSporcleIdentity.js
 import { useCallback, useEffect, useState } from 'react';
 
-/**
- * Manages per-room player identity in localStorage.
- *
- * Keys:
- *   sporcle:<CODE>:playerId
- *   sporcle:<CODE>:name
- *
- * Returns the current identity (or null if none) plus setters and a
- * clear function. The code is case-insensitive — codes are uppercased
- * on write and read.
- */
 export function useHostSporcleIdentity(code) {
   const normalizedCode = (code ?? '').toUpperCase();
 
@@ -34,6 +23,19 @@ export function useHostSporcleIdentity(code) {
     setIdentity(playerId ? { playerId, name: name ?? '' } : null);
   }, [playerIdKey, nameKey]);
 
+  // Cross-tab: another tab writes the identity → update this tab.
+  useEffect(() => {
+    if (!playerIdKey) return;
+    function onStorage(e) {
+      if (e.key !== playerIdKey && e.key !== nameKey) return;
+      const playerId = localStorage.getItem(playerIdKey);
+      const name = localStorage.getItem(nameKey);
+      setIdentity(playerId ? { playerId, name: name ?? '' } : null);
+    }
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [playerIdKey, nameKey]);
+
   const save = useCallback((nextPlayerId, nextName) => {
     if (!playerIdKey) return;
     localStorage.setItem(playerIdKey, nextPlayerId);
@@ -48,17 +50,15 @@ export function useHostSporcleIdentity(code) {
     setIdentity(null);
   }, [playerIdKey, nameKey]);
 
-
   const saveForCode = useCallback((targetCode, nextPlayerId, nextName) => {
     const c = (targetCode ?? '').toUpperCase();
     if (!c) return;
     localStorage.setItem(`sporcle:${c}:playerId`, nextPlayerId);
     localStorage.setItem(`sporcle:${c}:name`, nextName);
     if (c === normalizedCode) {
-        setIdentity({ playerId: nextPlayerId, name: nextName });
+      setIdentity({ playerId: nextPlayerId, name: nextName });
     }
-    }, [normalizedCode]);
+  }, [normalizedCode]);
 
-    return { identity, save, saveForCode, clear };
+  return { identity, save, saveForCode, clear };
 }
-

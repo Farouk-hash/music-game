@@ -9,6 +9,8 @@ import { useHostSporcleIdentity } from '../../hooks/sporcle/useHostSporcleIdenti
 import { useHostSporcleActions } from '../../hooks/sporcle/useHostSporcleActions.js';
 import { useRoomProfiles } from '../../hooks/sporcle/useRoomProfiles.js';
 import { PlayerAvatar } from '../../components/Avatar/PlayerAvatar.jsx';
+import { FollowRing } from '../../components/Avatar/FollowRing.jsx';
+import { FollowButton } from '../../components/domain/Follow/FollowButton.jsx';
 
 export default function SporcleResult() {
   const { code } = useParams();
@@ -126,11 +128,12 @@ export default function SporcleResult() {
                   {i + 1}
                 </span>
 
-                <PlayerAvatar
+                <FollowRing
+                  profileId={s.profileId}
                   seed={s.name}
                   avatar={profile}
                   size={32}
-                  ring={isWinner ? 'ring-correct' : isMe ? 'ring-accent' : 'ring-border'}
+                  ring={isWinner ? 'ring-correct' : isMe ? 'ring-accent' : undefined}
                 />
 
                 <span className="flex-1 truncate text-ink font-medium" dir="auto">
@@ -149,6 +152,16 @@ export default function SporcleResult() {
                 >
                   {s.score}
                 </span>
+
+                {/* Follow / Accept / Requested — hidden once friends
+                    (the avatar ring signals that state instead). */}
+                {!isMe && s.profileId && (
+                  <FollowButton
+                    profileId={s.profileId}
+                    size="sm"
+                    friendsOnly="hidden"
+                  />
+                )}
               </li>
             );
           })}

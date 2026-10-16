@@ -1,4 +1,4 @@
-// E:\matb3aa-game\host-sporcle-wrangler\src\router.js
+// host-sporcle-wrangler/src/router.js
 import { json } from './lib/response.js';
 import { handleCors } from './lib/cors.js';
 import { handleCreate } from './routes/create.js';
@@ -7,10 +7,11 @@ import { handleState } from './routes/state.js';
 import { handleAction } from './routes/action.js';
 import { handleDebug } from './routes/debug.js';
 import { getStub } from './lib/stub.js';
+import { notifyRoomDestroyed, wasRoomDestroyed } from './lib/cleanup.js';
 
 const PREFIX = '/host-sporcle';
 
-export async function route(request, env) {
+export async function route(request, env, execCtx) {
   // CORS preflight — must run before any routing.
   const preflight = handleCors(request);
   if (preflight) return preflight;
@@ -31,7 +32,6 @@ export async function route(request, env) {
 
   // POST /host-sporcle/:code/leave?playerId=…
   // Fire-and-forget endpoint for navigator.sendBeacon on tab close.
-  // Query-string params only (sendBeacon can't set JSON headers).
   const leaveMatch = path.match(/^\/host-sporcle\/([^/]+)\/leave$/);
   if (leaveMatch) {
     if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
@@ -41,6 +41,11 @@ export async function route(request, env) {
 
     const stub = getStub(env, code);
     const result = await stub.handleAction(playerId, { type: 'leave' });
+
+    if (wasRoomDestroyed(result)) {
+      execCtx.waitUntil(notifyRoomDestroyed(env, code));
+    }
+
     return json(result, result.ok ? 200 : 400);
   }
 
@@ -48,7 +53,7 @@ export async function route(request, env) {
   const match = path.match(/^\/host-sporcle\/([^/]+)\/(join|state|action|debug)$/);
   if (match) {
     const [, code, action] = match;
-    const ctx = { request, env, url, code, action };
+    const ctx = { request, env, url, code, action, execCtx };
 
     switch (action) {
       case 'join':

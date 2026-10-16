@@ -1,6 +1,6 @@
 // game/src/components/domain/Sporcle/PlayerRoster.jsx
-
-import { PlayerAvatar } from "../../Avatar";
+import { FollowButton } from "../Follow/FollowButton";
+import { FollowRing } from '../../Avatar/FollowRing.jsx';
 
 /**
  * Live list of players in the room.
@@ -42,11 +42,12 @@ export function PlayerRoster({ players = [], phase = 'lobby', myId = null ,  pro
                 : 'border-border bg-surface-2',
             ].join(' ')}
           >
-            <PlayerAvatar
+            <FollowRing
+              profileId={p.profileId}
               seed={p.name}
               avatar={profile}
               size={32}
-              ring={isMe && !isLeft ? 'ring-accent' : 'ring-border'}
+              ring={isMe && !isLeft ? 'ring-accent' : undefined}
             />
             
             {/* Name + host crown + status */}
@@ -121,6 +122,11 @@ export function PlayerRoster({ players = [], phase = 'lobby', myId = null ,  pro
               >
                 {p.score}
               </span>
+            )}
+
+            {/* Follow/accept/requested button — hidden once friends */}
+            {!isMe && !isLeft && p.profileId && (
+              <FollowButton profileId={p.profileId} size="sm" friendsOnly="hidden" />
             )}
           </li>
         );

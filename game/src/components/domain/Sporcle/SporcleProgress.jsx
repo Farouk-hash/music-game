@@ -1,6 +1,7 @@
 // game/src/components/domain/Sporcle/SporcleProgress.jsx
 import { PlayerAvatar } from '../../Avatar/PlayerAvatar.jsx';
 import { SegmentedProgress } from '../../ui/SegmentedProgress.jsx';
+import { FollowRing } from '../../Avatar/FollowRing.jsx';
 
 export function SporcleProgress({
   players = [],
@@ -52,11 +53,12 @@ export function SporcleProgress({
           >
             <div className="flex items-baseline justify-between gap-3">
               {/* Avatar */}
-              <PlayerAvatar
+              <FollowRing
+                profileId={p.profileId}
                 seed={p.name}
                 avatar={profile}
                 size={28}
-                ring={isMe && !isLeft ? 'ring-accent' : 'ring-border'}
+                ring={isMe && !isLeft ? 'ring-accent' : undefined}
               />
 
               <span
@@ -86,6 +88,7 @@ export function SporcleProgress({
                     you
                   </span>
                 )}
+               
               </span>
               <span className="text-xs tabular-nums shrink-0">
                 <span

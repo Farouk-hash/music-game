@@ -260,7 +260,7 @@ export class HostSporcle extends DurableObject {
 
     return {
       winnerId,
-      standings: players.map(p => ({ playerId: p.id, score: p.score, name: p.name , profile_id:p.profile_id })),
+      standings: players.map(p => ({ playerId: p.id, score: p.score, name: p.name , profileId:p.profile_id })),
       perQuestion,
     };
   }
