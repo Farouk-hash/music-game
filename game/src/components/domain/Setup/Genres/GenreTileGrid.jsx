@@ -9,6 +9,7 @@ export function GenreTileGrid({
   onToggle,
   allSelected = false,
   onUnfavorited,
+  view = 'grid', 
 }) {
   const { isGenreFavorite, toggleGenre } = useFavoriteToggles();
 
@@ -22,6 +23,7 @@ export function GenreTileGrid({
       getImage={(g) => g.image}
       emptyMessage="No genres available."
       initialCount={8}
+      view={view}
       renderHeart={(g) => {
         const active = isGenreFavorite(g.id);
         return (

@@ -1,5 +1,5 @@
 // music-game-wrangler/src/controllers/game/rounds-methods/resolvers-years.js
-import { chunkedIn } from '../../../utilities/chunkedIn.js';
+import { chunkedIn, D1_CHUNK_SIZE } from '../../../utilities/chunkedIn.js';
 import { shuffle } from '../../../utilities/shuffle.js';
 
 /* ═══════════════════════════════════════════════════════════

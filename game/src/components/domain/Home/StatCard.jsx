@@ -1,7 +1,6 @@
-import { Loader } from "../ui/Loader";
 
 // game/src/components/layout/StatCard.jsx
-export function StatCard({ icon, value, label, description, isLoading }) {
+export function StatCard({ icon, value, label, description }) {
   return (
     <div className="
       relative rounded-lg border border-border bg-surface p-6
@@ -15,11 +14,7 @@ export function StatCard({ icon, value, label, description, isLoading }) {
 
       {/* Value */}
       <p className="text-4xl font-bold tabular-nums text-ink leading-none">
-        {isLoading || value == null ? (
-          <Loader variant="inline" label="Loading catalogue…" />
-        ) : (
-          value.toLocaleString('en-US')
-        )}
+        {value?.toLocaleString('en-US') ?? '—'}
       </p>
 
       {/* Label */}

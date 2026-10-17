@@ -2,6 +2,7 @@
 import { PlayerAvatar } from '../../Avatar/PlayerAvatar.jsx';
 import { Button } from '../../ui/Button.jsx';
 import { useFriends, useUnfollow } from '../../../hooks/follows/useFollows.js';
+import { SkeletonRowList } from '../../ui/SkeletonRow.jsx';
 
 export function FriendsListTab() {
   const { data, isLoading, error } = useFriends();
@@ -10,9 +11,7 @@ export function FriendsListTab() {
   const friends = data?.friends ?? [];
 
   if (isLoading) {
-    return (
-      <p className="text-sm text-ink-muted py-8 text-center">Loading…</p>
-    );
+    return <SkeletonRowList count={3} />;
   }
 
   if (error) {

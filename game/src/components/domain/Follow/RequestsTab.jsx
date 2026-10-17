@@ -7,6 +7,7 @@ import {
   useDeclineRequest,
   useUnfollow,
 } from '../../../hooks/follows/useFollows.js';
+import { SkeletonRowList } from '../../ui/SkeletonRow.jsx';
 
 export function RequestsTab() {
   const { data, isLoading, error } = usePending();
@@ -15,7 +16,7 @@ export function RequestsTab() {
   const unfollow = useUnfollow();
 
   if (isLoading) {
-    return <p className="text-sm text-ink-muted py-8 text-center">Loading…</p>;
+    return <SkeletonRowList count={3} />;
   }
 
   if (error) {

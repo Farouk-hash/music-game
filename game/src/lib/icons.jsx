@@ -13,22 +13,99 @@ const base = {
   strokeLinejoin: 'round',
 };
 
-export function IconGenres({ className }) {
+
+export function IconGrid({ className }) {
   return (
     <svg {...base} className={className}>
-      <rect x="3" y="3" width="7" height="7" rx="1.5" />
-      <rect x="14" y="3" width="7" height="7" rx="1.5" />
-      <rect x="3" y="14" width="7" height="7" rx="1.5" />
-      <rect x="14" y="14" width="7" height="7" rx="1.5" />
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
     </svg>
   );
 }
 
+export function IconList({ className }) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M4 6h16M4 12h16M4 18h16" />
+    </svg>
+  );
+}
+
+export function IconDense({ className }) {
+  return (
+    <svg {...base} className={className}>
+      <rect x="3" y="3" width="4" height="4" rx="0.5" />
+      <rect x="10" y="3" width="4" height="4" rx="0.5" />
+      <rect x="17" y="3" width="4" height="4" rx="0.5" />
+      <rect x="3" y="10" width="4" height="4" rx="0.5" />
+      <rect x="10" y="10" width="4" height="4" rx="0.5" />
+      <rect x="17" y="10" width="4" height="4" rx="0.5" />
+      <rect x="3" y="17" width="4" height="4" rx="0.5" />
+      <rect x="10" y="17" width="4" height="4" rx="0.5" />
+      <rect x="17" y="17" width="4" height="4" rx="0.5" />
+    </svg>
+  );
+}
+
+export function IconGenres({ className }) {
+  return (
+    <svg {...base} className={className}>
+      {/* A balanced music note spanning roughly the same bounding box as the Artist icon */}
+      <path d="M10 18V6l8-2v12" />
+      <circle cx="7" cy="19" r="3" />
+      <circle cx="15" cy="17" r="3" />
+    </svg>
+  );
+}
 export function IconArtists({ className }) {
   return (
     <svg {...base} className={className}>
       <path d="M12 14a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" />
       <path d="M4 21c0-3.5 3.6-6 8-6s8 2.5 8 6" />
+    </svg>
+  );
+}
+
+export function IconStrict({ className }) {
+  return (
+    <svg {...base} className={className}>
+      {/* Funnel / Filter icon - slightly scaled down to balance with other icons */}
+      <path d="M4 5h16l-6 7v6l-4 2v-8L4 5z" />
+    </svg>
+  );
+}
+
+export function IconSelectAll({ className }) {
+  return (
+    <svg {...base} className={className}>
+      {/* Three rows, first two have checkmarks */}
+      <path d="M3 6h.01M7 6h14" strokeWidth="2.5" strokeLinecap="round" />
+      <path d="M3 12h.01M7 12h14" strokeWidth="2.5" strokeLinecap="round" />
+      <path d="M3 18h.01M7 18h14" strokeWidth="2.5" strokeLinecap="round" />
+      <path d="M1 4l1.5 1.5L5 3" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M1 10l1.5 1.5L5 9" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function IconCalendar({ className }) {
+  return (
+    <svg {...base} className={className}>
+      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+      <line x1="16" y1="2" x2="16" y2="6" />
+      <line x1="8" y1="2" x2="8" y2="6" />
+      <line x1="3" y1="10" x2="21" y2="10" />
+      <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01" />
+    </svg>
+  );
+}
+
+export function IconX({ className }) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M18 6L6 18M6 6l12 12" />
     </svg>
   );
 }
@@ -126,6 +203,22 @@ export function IconInstruments({ className }) {
       <path d="M20 9v6" />
       {/* Diagonal strike — signals "no vocals" */}
       <path d="M3 3l18 18" />
+    </svg>
+  );
+}
+
+
+export function IconDice({ className }) {
+  return (
+    <svg {...base} className={className}>
+      {/* Rounded square box */}
+      <rect x="3" y="3" width="18" height="18" rx="4" />
+      {/* Dice dots */}
+      <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="15.5" cy="8.5" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="8.5" cy="15.5" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="15.5" cy="15.5" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
     </svg>
   );
 }

@@ -9,6 +9,8 @@ build/
 .vite/
 .next/
 out/
+dist-python/
+build-python/
 
 # ── Wrangler / Cloudflare ────────────────────────────────
 .wrangler/
@@ -50,6 +52,7 @@ tmp/
 
 # ── Instrumental pipeline output ─────────────────────────
 server/instrumental-output/
+server/style-transfer-output/
 test-vocals/
 
 # ── Local audio / large binaries ─────────────────────────
@@ -59,16 +62,27 @@ test-vocals/
 *.flac
 *.ogg
 
+# ── Third-party tool clones (NOT committed) ──────────────
+# ACE-Step is cloned into tools/ACE-Step-1.5/.
+# It has its own .git, .venv (3+ GB), and model weights.
+tools/
+
 # ── Python ───────────────────────────────────────────────
 venv/
+.venv/
+venv.bak/
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 *.egg-info/
-dist-python/
-build-python/
+*.egg
+
+# ── Python build artifacts ───────────────────────────────
+*.whl
 
 # ── Test / coverage ──────────────────────────────────────
 coverage/
@@ -78,3 +92,8 @@ coverage/
 .cache/
 .eslintcache
 .parcel-cache/
+
+# ── Hugging Face / Torch (defensive) ─────────────────────
+# Only relevant if HF_HOME / TORCH_HOME ever point inside the repo.
+.huggingface/
+.torch/

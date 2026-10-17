@@ -1,26 +1,30 @@
 // game/src/components/domain/Setup/Genres/StrictGenreToggle.jsx
-import { Toggle } from '../../../ui/Toggle.jsx';
+import { IconStrict } from '../../../../lib/icons.jsx';
 
 /**
- * Strict mode for the genre filter.
- *
- * When ON:  artists must have ALL selected genres (AND).
- *           Picking "Diva" + "Rap" shows only diva-rappers.
- * When OFF: artists match if they have ANY selected genre (OR) —
- *           today's default behavior.
- *
- * Disabled when fewer than two genres are selected — AND with zero
- * or one genre is identical to OR, so the toggle is inert.
+ * Strict genres toggle — pill style with a funnel icon.
  */
 export function StrictGenreToggle({ value, onChange, disabled = false }) {
   return (
-    <Toggle
-      checked={value}
-      onChange={onChange}
-      label="Strict genres"
+    <button
+      type="button"
+      role="switch"
+      aria-checked={value}
       disabled={disabled}
-      title="Match artists who have ALL selected genres"
-      disabledTitle="Pick at least two genres to enable strict mode"
-    />
+      onClick={() => onChange(!value)}
+      title={value ? 'Strict genres ON' : 'Strict genres OFF'}
+      className={[
+        'inline-flex items-center justify-center gap-2 shrink-0',
+        'h-9 px-3 rounded-md border text-sm transition-colors',
+        'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+        disabled && 'opacity-40 cursor-not-allowed',
+        value
+          ? 'bg-accent text-bg border-accent hover:bg-accent-2'
+          : 'bg-surface-2 text-ink-muted border-border hover:border-accent-2 hover:text-ink',
+      ].join(' ')}
+    >
+      <IconStrict className="w-4 h-4 shrink-0" />
+      <span className="hidden sm:inline">Strict</span>
+    </button>
   );
 }

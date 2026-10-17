@@ -28,6 +28,7 @@ export default function App() {
           <Route path="/sudden-death" element={<SuddenDeath />} />
           <Route path="/sporcle/play/:code" element={<SporclePlay />} />
           <Route path="/sporcle/result/:code" element={<SporcleResult />} />
+
           <Route path="*" element={<NotFound />} />
         </Routes>
       </Shell>

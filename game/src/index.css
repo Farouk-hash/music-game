@@ -17,4 +17,11 @@
     box-shadow: 0 0 0 2px var(--focus-ring);
     border-radius: var(--radius-sm);
   }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-hide {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+  }
 }

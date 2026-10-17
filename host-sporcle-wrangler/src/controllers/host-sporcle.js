@@ -5,6 +5,7 @@ import { fetchQuestions } from '../question-fetcher.js';
 const MIN_PLAYERS = 2;
 const COUNTDOWN_MS = 10000;
 const SPORCLE_TIMER_SECONDS = 20;
+const TIE_BREAKER_TIMER_SECONDS = 15;
 const AUTO_ADVANCE_MS_LYRICS = 10000;
 const ROOM_EXPIRY_MS = 2 * 60 * 60 * 1000;   // 2 hours
 
@@ -26,7 +27,8 @@ export class HostSporcle extends DurableObject {
           expires_at            INTEGER,
           created_at            INTEGER NOT NULL,
           started_at            INTEGER,
-          last_error            TEXT
+          last_error            TEXT,
+          tie_breaker           INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS players (
           id       TEXT PRIMARY KEY,
@@ -63,8 +65,6 @@ export class HostSporcle extends DurableObject {
         .toArray();
       return rows[0] ?? null;
     } catch {
-      // After deleteAll(), the `room` table no longer exists.
-      // Treat that as "no room" instead of throwing.
       return null;
     }
   }
@@ -144,7 +144,6 @@ export class HostSporcle extends DurableObject {
       await new Promise(r => setTimeout(r, 3000));
       const fresh = this.#getRoom();
 
-      // Room may have been destroyed during the hold.
       if (!fresh) return { ok: false, error: 'Room not found' };
 
       if (fresh.version <= sinceVersion) {
@@ -152,11 +151,11 @@ export class HostSporcle extends DurableObject {
       }
     }
 
-  const latest = this.#getRoom();
-  if (!latest) return { ok: false, error: 'Room not found' };
+    const latest = this.#getRoom();
+    if (!latest) return { ok: false, error: 'Room not found' };
 
-  return this.#buildState(latest);
-}
+    return this.#buildState(latest);
+  }
 
   #buildState(room) {
     const sql = this.ctx.storage.sql;
@@ -179,6 +178,7 @@ export class HostSporcle extends DurableObject {
       reversed: config.reversed ?? 'no',
       rendition: config.rendition ?? 'forward',
       lastError: room.last_error ?? null,
+      isTieBreaker: !!room.tie_breaker,
       players: players.map(p => ({
         id: p.id,
         name: p.name,
@@ -274,8 +274,6 @@ export class HostSporcle extends DurableObject {
 
     const type = action?.type;
 
-    // `rejoin` is allowed even when the player is marked left — that's
-    // the whole point. Every other action requires an active player.
     if (type !== 'rejoin' && player.left) {
       return { ok: false, error: 'Player has left' };
     }
@@ -290,7 +288,6 @@ export class HostSporcle extends DurableObject {
 
     return { ok: false, error: `Unknown action: ${type}` };
   }
-  /* ── ready ────────────────────────────────────────────── */
 
   async #ready(player, room, action) {
     if (room.phase !== 'lobby') return { ok: false, error: 'Not in lobby' };
@@ -305,8 +302,6 @@ export class HostSporcle extends DurableObject {
     const version = this.#bumpVersion();
     return { ok: true, version };
   }
-
-  /* ── start ────────────────────────────────────────────── */
 
   async #start(player, room) {
     if (room.phase !== 'lobby') return { ok: false, error: 'Not in lobby' };
@@ -327,8 +322,6 @@ export class HostSporcle extends DurableObject {
       return { ok: false, error: `${notReady} player(s) not ready` };
     }
 
-    // Flip to 'loading' immediately. Clients render the loading overlay
-    // until the fetch finishes and the phase becomes 'countdown'.
     sql.exec(
       'UPDATE room SET phase = ?, started_at = ?, last_error = NULL WHERE id = 1',
       'loading',
@@ -337,8 +330,6 @@ export class HostSporcle extends DurableObject {
     this.#touchExpiry();
     const version = this.#bumpVersion();
 
-    // Kick off the fetch in the background so the HTTP response returns
-    // immediately. Clients see 'loading' on their next poll.
     this.ctx.waitUntil(this.#loadQuestionsAndCountdown());
 
     return { ok: true, version };
@@ -387,24 +378,16 @@ export class HostSporcle extends DurableObject {
     await this.ctx.storage.setAlarm(this.#now() + COUNTDOWN_MS);
   }
 
-  /* ── answer ───────────────────────────────────────────── */
-
   async #answer(player, room, action) {
     if (room.phase !== 'question') return { ok: false, error: 'Not in question phase' };
     if (player.locked) return { ok: false, error: 'Already answered this question' };
 
-    // Guard: if the player already has a row in `answers` for this question
-    // (e.g. they answered, left, and rejoined mid-question), reject and
-    // re-lock them.
     const existing = this.ctx.storage.sql.exec(
       'SELECT 1 FROM answers WHERE player_id = ? AND q_idx = ? LIMIT 1',
       player.id, room.q_index
     ).toArray();
     if (existing.length > 0) {
-      this.ctx.storage.sql.exec(
-        'UPDATE players SET locked = 1 WHERE id = ?',
-        player.id
-      );
+      this.ctx.storage.sql.exec('UPDATE players SET locked = 1 WHERE id = ?', player.id);
       return { ok: false, error: 'Already answered this question' };
     }
 
@@ -420,17 +403,19 @@ export class HostSporcle extends DurableObject {
        ON CONFLICT(player_id, q_idx) DO NOTHING`,
       player.id, room.q_index, typed, correct, this.#now()
     );
-    this.ctx.storage.sql.exec(
-      'UPDATE players SET locked = 1 WHERE id = ?',
-      player.id
-    );
+    this.ctx.storage.sql.exec('UPDATE players SET locked = 1 WHERE id = ?', player.id);
     this.#touchExpiry();
 
-    if (room.mode === 'speed' && correct === 1) {
+    const isTieBreaker = room.tie_breaker === 1;
+    
+    // In Speed mode OR Tie-breaker: First correct answer ends the round immediately.
+    if ((room.mode === 'speed' || isTieBreaker) && correct === 1) {
       await this.#endQuestion();
       return { ok: true, correct: true, ended: true, version: this.#getRoom().version };
     }
 
+    // In BOTH modes: If everyone has answered (correct OR wrong), end the round.
+    // This fixes the "all wrong" stall in speed mode.
     const total = this.ctx.storage.sql
       .exec('SELECT COUNT(*) AS n FROM players WHERE left = 0')
       .one().n;
@@ -452,17 +437,132 @@ export class HostSporcle extends DurableObject {
     return { ok: true, correct: correct === 1, ended: false, version };
   }
 
-  /* ── advance ──────────────────────────────────────────── */
+  /* ── tieBreaker check ──────────────────────────────── */
+  async #checkTieBreaker(room) {
+    const sql = this.ctx.storage.sql;
+    
+    const topRow = sql.exec(
+      'SELECT MAX(score) AS m FROM players WHERE left = 0'
+    ).one();
+    const topScore = topRow?.m ?? 0;
+    
+    const tied = sql.exec(
+      'SELECT id FROM players WHERE left = 0 AND score = ?', topScore
+    ).toArray();
+
+    if (tied.length < 2) return false;
+
+    const config = JSON.parse(room.config ?? '{}');
+    config.count = 3;
+    
+    let questions = [];
+    try {
+      const { fetchQuestions } = await import('../question-fetcher.js');
+      questions = await fetchQuestions(this.env, config);
+    } catch (e) {
+      console.error('[tie-breaker] fetch failed', e);
+      return false;
+    }
+
+    if (!questions || questions.length === 0) return false;
+
+    sql.exec('DELETE FROM questions');
+    for (let i = 0; i < questions.length; i++) {
+      questions[i].idx = i;
+      sql.exec('INSERT INTO questions (idx, payload) VALUES (?, ?)', i, JSON.stringify(questions[i]));
+    }
+    sql.exec('DELETE FROM answers');
+    
+    const tiedIds = tied.map(p => p.id);
+    const placeholders = tiedIds.map(() => '?').join(',');
+    
+    // Only tied players can answer. Non-tied players are locked.
+    sql.exec(
+      `UPDATE players SET locked = CASE WHEN id IN (${placeholders}) THEN 0 ELSE 1 END WHERE left = 0`,
+      ...tiedIds
+    );
+    
+    sql.exec(
+      'UPDATE room SET phase = ?, q_index = 0, q_deadline = ?, started_at = ?, tie_breaker = 1 WHERE id = 1',
+      'question',
+      this.#now() + TIE_BREAKER_TIMER_SECONDS * 1000,
+      this.#now()
+    );
+    
+    this.#bumpVersion();
+    await this.ctx.storage.setAlarm(this.#now() + TIE_BREAKER_TIMER_SECONDS * 1000);
+    return true;
+  }
 
   async #advance(player, room) {
     if (room.phase !== 'reveal') return { ok: false, error: 'Not in reveal phase' };
     if (!player.is_host) return { ok: false, error: 'Host only' };
 
-    const total = this.ctx.storage.sql
-      .exec('SELECT COUNT(*) AS n FROM questions').one().n;
+    const total = this.ctx.storage.sql.exec('SELECT COUNT(*) AS n FROM questions').one().n;
     const next = room.q_index + 1;
 
+    // ── TIE-BREAKER ADVANCE ──
+    if (room.tie_breaker === 1) {
+      const topRow = this.ctx.storage.sql.exec(
+        'SELECT MAX(score) AS m FROM players WHERE left = 0'
+      ).one();
+      const topScore = topRow?.m ?? 0;
+      const tied = this.ctx.storage.sql.exec(
+        'SELECT id FROM players WHERE left = 0 AND score = ?', topScore
+      ).toArray();
+
+      if (tied.length === 1) {
+        // Tie broken!
+        this.ctx.storage.sql.exec(
+          'UPDATE room SET phase = ?, q_deadline = NULL WHERE id = 1',
+          'finished'
+        );
+        this.#touchExpiry();
+        const version = this.#bumpVersion();
+        return { ok: true, finished: true, version };
+      }
+
+      // Still tied — try next pre-fetched question
+      if (next < total) {
+        this.ctx.storage.sql.exec(
+          'UPDATE room SET phase = ?, q_index = ?, q_deadline = ? WHERE id = 1',
+          'question',
+          next,
+          this.#now() + TIE_BREAKER_TIMER_SECONDS * 1000
+        );
+        const placeholders = tied.map(() => '?').join(',');
+        this.ctx.storage.sql.exec(
+          `UPDATE players SET locked = CASE WHEN id IN (${placeholders}) THEN 0 ELSE 1 END WHERE left = 0`,
+          ...tied.map(p => p.id)
+        );
+        this.#touchExpiry();
+        const version = this.#bumpVersion();
+        await this.ctx.storage.setAlarm(this.#now() + TIE_BREAKER_TIMER_SECONDS * 1000);
+        return { ok: true, qIndex: next, version };
+      }
+
+      // Exhausted tie-breaker questions; fetch a new batch
+      const stillTied = await this.#checkTieBreaker(room);
+      if (stillTied) {
+        return { ok: true, tieBreaker: true, version: this.#getRoom().version };
+      }
+
+      // Fallback: finish
+      this.ctx.storage.sql.exec(
+        'UPDATE room SET phase = ?, q_deadline = NULL WHERE id = 1',
+        'finished'
+      );
+      this.#touchExpiry();
+      const version = this.#bumpVersion();
+      return { ok: true, finished: true, version };
+    }
+
+    // ── NORMAL GAME ADVANCE ──
     if (next >= total) {
+      const isTie = await this.#checkTieBreaker(room);
+      if (isTie) {
+        return { ok: true, tieBreaker: true, version: this.#getRoom().version };
+      }
       this.ctx.storage.sql.exec(
         'UPDATE room SET phase = ?, q_deadline = NULL WHERE id = 1',
         'finished'
@@ -481,21 +581,16 @@ export class HostSporcle extends DurableObject {
     this.ctx.storage.sql.exec('UPDATE players SET locked = 0 WHERE left = 0');
     this.#touchExpiry();
     const version = this.#bumpVersion();
-
     await this.ctx.storage.setAlarm(this.#now() + SPORCLE_TIMER_SECONDS * 1000);
     return { ok: true, qIndex: next, version };
   }
 
-  /* ── leave ────────────────────────────────────────────── */
   async #leave(player, room) {
     const sql = this.ctx.storage.sql;
 
     if (room.phase === 'lobby') {
-      // Lobby: remove the player entirely.
       sql.exec('DELETE FROM players WHERE id = ?', player.id);
 
-      // If the room is now empty, destroy it. This prevents orphaned
-      // rooms that a stranger could join but never start.
       const remaining = sql
         .exec('SELECT COUNT(*) AS n FROM players')
         .one().n;
@@ -505,19 +600,12 @@ export class HostSporcle extends DurableObject {
         return { ok: true, version: 0 };
       }
 
-      // If the host left and someone else is present, promote the
-      // earliest-joined remaining player.
       if (player.is_host) {
         this.#promoteNextHost();
       }
     } else {
-      // In-game: mark as left. `locked` is NOT touched — the "all
-      // answered" queries already filter by `left = 0`, so a left
-      // player is naturally excluded. Setting `locked = 1` here would
-      // break rejoin-mid-question.
       sql.exec('UPDATE players SET left = 1 WHERE id = ?', player.id);
 
-      // If the host left mid-game, demote them and transfer host status.
       if (player.is_host) {
         sql.exec('UPDATE players SET is_host = 0 WHERE id = ?', player.id);
         this.#promoteNextHost();
@@ -527,8 +615,6 @@ export class HostSporcle extends DurableObject {
     this.#touchExpiry();
     const version = this.#bumpVersion();
 
-    // In Mode 2, if leaving ended the last unanswered player, close the
-    // question so the round doesn't stall.
     if (room.phase === 'question') {
       const total = sql
         .exec('SELECT COUNT(*) AS n FROM players WHERE left = 0')
@@ -549,26 +635,9 @@ export class HostSporcle extends DurableObject {
     return { ok: true, version };
   }
 
-    /* ── rejoin ───────────────────────────────────────────── */
-
-  /**
-   * Re-activate a player who was marked `left` (via tab close beacon,
-   * network blip, or accidental navigation). The player keeps their
-   * identity, score, and history.
-   *
-   * `locked` is reset based on whether the player already answered the
-   * current question:
-   *   - No answer yet → `locked = 0` — they can answer.
-   *   - Already answered → `locked = 1` — the client shows "Locked in"
-   *     and blocks further attempts.
-   *
-   * This makes the client's `isLocked` hint match the server state.
-   */
   async #rejoin(player, room) {
     if (!player.left) return { ok: true, version: room.version };
 
-    // Check whether this player already answered the current question.
-    // Only relevant if we're mid-question.
     const inQuestion = room.phase === 'question';
     const existingAnswer = inQuestion
       ? this.ctx.storage.sql
@@ -580,8 +649,6 @@ export class HostSporcle extends DurableObject {
       : [];
     const hasAnsweredCurrent = existingAnswer.length > 0;
 
-    // If another player is currently an active host, clear our stale
-    // host flag on rejoin. Prevents "two hosts" after a promotion.
     const activeHost = this.ctx.storage.sql
       .exec('SELECT id FROM players WHERE is_host = 1 AND left = 0 LIMIT 1')
       .toArray();
@@ -610,28 +677,17 @@ export class HostSporcle extends DurableObject {
     const version = this.#bumpVersion();
     return { ok: true, version };
   }
-  /* ── promoteNextHost ──────────────────────────────────── */
 
-  /**
-   * Promote the earliest-joined active player to host.
-   * Called when the current host leaves (lobby or in-game).
-   *
-   * No-op if the player table is empty or a host already exists.
-   */
   #promoteNextHost() {
     const sql = this.ctx.storage.sql;
 
-    // If an active host exists, do nothing (defensive).
     const alreadyHost = sql
       .exec('SELECT id FROM players WHERE is_host = 1 AND left = 0 LIMIT 1')
       .toArray();
     if (alreadyHost.length > 0) return;
 
-    // Clear any stale is_host flags on left/active players.
-    // Prevents "two hosts" if the leaving host was never demoted.
     sql.exec('UPDATE players SET is_host = 0 WHERE is_host = 1');
 
-    // Pick the earliest-joined active player.
     const next = sql
       .exec('SELECT id FROM players WHERE left = 0 ORDER BY rowid ASC LIMIT 1')
       .toArray();
@@ -639,8 +695,6 @@ export class HostSporcle extends DurableObject {
       sql.exec('UPDATE players SET is_host = 1 WHERE id = ?', next[0].id);
     }
   }
-
-  /* ── reset ────────────────────────────────────────────── */
 
   async #reset(player, room) {
     if (!player.is_host) return { ok: false, error: 'Host only' };
@@ -659,6 +713,7 @@ export class HostSporcle extends DurableObject {
               q_deadline = NULL,
               started_at = NULL,
               last_error = NULL,
+              tie_breaker = 0,
               version = version + 1
         WHERE id = 1`
     );
@@ -669,8 +724,6 @@ export class HostSporcle extends DurableObject {
     return { ok: true, version };
   }
 
-  /* ── alarm ────────────────────────────────────────────── */
-
   async alarm() {
     const room = this.#getRoom();
     if (!room) return;
@@ -680,10 +733,7 @@ export class HostSporcle extends DurableObject {
       return;
     }
 
-    // While loading, the fetch runs in waitUntil; the alarm shouldn't be
-    // armed during this phase. Defensive: keep it armed.
     if (room.phase === 'loading') {
-      // No-op. #loadQuestionsAndCountdown will arm the countdown alarm.
       return;
     }
 
@@ -704,11 +754,64 @@ export class HostSporcle extends DurableObject {
     }
 
     if (room.phase === 'reveal') {
-      const total = this.ctx.storage.sql
-        .exec('SELECT COUNT(*) AS n FROM questions').one().n;
+      const total = this.ctx.storage.sql.exec('SELECT COUNT(*) AS n FROM questions').one().n;
       const next = room.q_index + 1;
 
+      // ── TIE-BREAKER ALARM ──
+      if (room.tie_breaker === 1) {
+        const topRow = this.ctx.storage.sql.exec(
+          'SELECT MAX(score) AS m FROM players WHERE left = 0'
+        ).one();
+        const topScore = topRow?.m ?? 0;
+        const tied = this.ctx.storage.sql.exec(
+          'SELECT id FROM players WHERE left = 0 AND score = ?', topScore
+        ).toArray();
+
+        if (tied.length === 1) {
+          this.ctx.storage.sql.exec(
+            'UPDATE room SET phase = ?, q_deadline = NULL WHERE id = 1',
+            'finished'
+          );
+          this.#touchExpiry();
+          this.#bumpVersion();
+          return;
+        }
+
+        if (next < total) {
+          this.ctx.storage.sql.exec(
+            'UPDATE room SET phase = ?, q_index = ?, q_deadline = ? WHERE id = 1',
+            'question',
+            next,
+            this.#now() + TIE_BREAKER_TIMER_SECONDS * 1000
+          );
+          const placeholders = tied.map(() => '?').join(',');
+          this.ctx.storage.sql.exec(
+            `UPDATE players SET locked = CASE WHEN id IN (${placeholders}) THEN 0 ELSE 1 END WHERE left = 0`,
+            ...tied.map(p => p.id)
+          );
+          this.#touchExpiry();
+          this.#bumpVersion();
+          await this.ctx.storage.setAlarm(this.#now() + TIE_BREAKER_TIMER_SECONDS * 1000);
+          return;
+        }
+
+        const stillTied = await this.#checkTieBreaker(room);
+        if (stillTied) return;
+
+        this.ctx.storage.sql.exec(
+          'UPDATE room SET phase = ?, q_deadline = NULL WHERE id = 1',
+          'finished'
+        );
+        this.#touchExpiry();
+        this.#bumpVersion();
+        return;
+      }
+
+      // ── NORMAL GAME ALARM ──
       if (next >= total) {
+        const isTie = await this.#checkTieBreaker(room);
+        if (isTie) return;
+
         this.ctx.storage.sql.exec(
           'UPDATE room SET phase = ?, q_deadline = NULL WHERE id = 1',
           'finished'
@@ -745,13 +848,12 @@ export class HostSporcle extends DurableObject {
     }
   }
 
-  /* ── shared: end question + score ─────────────────────── */
-
   async #endQuestion() {
     const room = this.#getRoom();
     const sql = this.ctx.storage.sql;
+    const isTieBreaker = room.tie_breaker === 1;
 
-    if (room.mode === 'speed') {
+    if (room.mode === 'speed' || isTieBreaker) {
       const first = sql.exec(
         `SELECT player_id FROM answers
           WHERE q_idx = ? AND correct = 1
@@ -787,8 +889,6 @@ export class HostSporcle extends DurableObject {
 
     return version;
   }
-
-  /* ── debug ────────────────────────────────────────────── */
 
   async debugCurrentQuestion() {
     const room = this.#getRoom();

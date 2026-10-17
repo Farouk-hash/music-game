@@ -1,25 +1,30 @@
 // game/src/components/domain/Setup/Years/StrictModeToggle.jsx
-import { Toggle } from '../../../ui/Toggle.jsx';
+import { IconStrict } from '../../../../lib/icons.jsx';
 
 /**
- * Strict mode for the year filter.
- *
- * When ON: selecting years narrows the artist grid — artists with no
- * albums in the selected years are hidden and removed from selection.
- * When OFF: years are informational only; the artist grid is unaffected.
- *
- * Disabled when no years are selected, since strict mode is inert
- * without a year filter.
+ * Strict years toggle — pill style with a funnel icon.
  */
 export function StrictModeToggle({ value, onChange, disabled = false }) {
   return (
-    <Toggle
-      checked={value}
-      onChange={onChange}
-      label="Strict years"
+    <button
+      type="button"
+      role="switch"
+      aria-checked={value}
       disabled={disabled}
-      title="Hide artists with no albums in the selected years"
-      disabledTitle="Pick at least one year to enable strict mode"
-    />
+      onClick={() => onChange(!value)}
+      title={value ? 'Strict years ON' : 'Strict years OFF'}
+      className={[
+        'inline-flex items-center justify-center gap-2 shrink-0',
+        'h-9 px-3 rounded-md border text-sm transition-colors',
+        'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+        disabled && 'opacity-40 cursor-not-allowed',
+        value
+          ? 'bg-accent text-bg border-accent hover:bg-accent-2'
+          : 'bg-surface-2 text-ink-muted border-border hover:border-accent-2 hover:text-ink',
+      ].join(' ')}
+    >
+      <IconStrict className="w-4 h-4 shrink-0" />
+      <span className="hidden sm:inline">Strict</span>
+    </button>
   );
 }

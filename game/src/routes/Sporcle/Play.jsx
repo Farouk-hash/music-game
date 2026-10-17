@@ -17,18 +17,6 @@ import { useRoundReversal } from '../../hooks/rounds/useRoundReversal.js';
 import { sporcleApi } from '../../lib/sporcleApi.js';
 import { useRoomProfiles } from '../../hooks/sporcle/useRoomProfiles.js';
 
-/**
- * The single Sporcle game route.
- *
- * Phase-driven:
- *   - no identity    → modal 'join'
- *   - lobby          → modal 'room'  (roster + ready + start)
- *   - loading        → modal 'room'  (RoomPanel renders <LoadingOverlay inline>)
- *   - countdown      → modal 'room'  (RoomPanel renders <CountdownOverlay inline>)
- *   - question       → modal closed; Q1 renders (PlayerRoster visible)
- *   - reveal         → modal closed; reveal view renders (SporcleProgress visible)
- *   - finished       → navigate to /sporcle/result/:code
- */
 export default function SporclePlay() {
   const { code } = useParams();
   const navigate = useNavigate();
@@ -42,7 +30,6 @@ export default function SporclePlay() {
   const profilesById = useRoomProfiles(state?.players ?? []);
 
   const myId = identity?.playerId ?? null;
-  const avatarStyle = state?.avatarStyle ?? undefined;
 
   /* ── Modal management ─────────────────────────────────── */
   const [modalOpen, setModalOpen] = useState(true);
@@ -78,26 +65,19 @@ export default function SporclePlay() {
     }
   }, [state?.phase, navigate, normalizedCode]);
 
+  // Hide the global header while the player is actually in a round.
+  useEffect(() => {
+    const inGame =
+      state?.phase === 'question' ||
+      state?.phase === 'reveal';
 
-    // Hide the global header while the player is actually in a round.
-    // Lobby/loading/countdown/finished keep the header; question and
-    // reveal are focus moments where chrome should disappear.
-    useEffect(() => {
-      const inGame =
-        state?.phase === 'question' ||
-        state?.phase === 'reveal';
+    if (inGame) document.body.classList.add('hide-header');
+    else        document.body.classList.remove('hide-header');
 
-      if (inGame) document.body.classList.add('hide-header');
-      else        document.body.classList.remove('hide-header');
-
-      return () => document.body.classList.remove('hide-header');
-    }, [state?.phase]);
+    return () => document.body.classList.remove('hide-header');
+  }, [state?.phase]);
     
-  /* ── Auto-rejoin ─────────────────────────────────────────
-     If the local player is present in the room but marked `left`
-     (from a tab close, refresh, or network blip), silently reactivate.
-     Fires once per (playerId, room) — ref-guarded to avoid spam.
-  ──────────────────────────────────────────────────────── */
+  /* ── Auto-rejoin ───────────────────────────────────────── */
   const rejoinedRef = useRef(false);
 
   useEffect(() => {
@@ -105,12 +85,11 @@ export default function SporclePlay() {
     if (!myId || !state?.players) return;
 
     const me = state.players.find((p) => p.id === myId);
-    if (!me) return;          // not in this room — never joined, or wrong room
-    if (!me.left) return;     // already active — nothing to do
+    if (!me) return;
+    if (!me.left) return;
 
     rejoinedRef.current = true;
     actions.rejoin(myId).catch(() => {
-      // If rejoin fails, allow a retry on the next state change.
       rejoinedRef.current = false;
     });
   }, [myId, state?.players, actions]);
@@ -229,6 +208,9 @@ export default function SporclePlay() {
   const inQuestion = state.phase === 'question';
   const inReveal = state.phase === 'reveal';
 
+  // Sudden Death timer is 15s. Normal is 20s.
+  const timerSeconds = state.isTieBreaker ? 15 : 20;
+
   async function handlePick(value) {
     if (!inQuestion || myPick != null) return;
     setMyPick(value);
@@ -256,9 +238,18 @@ export default function SporclePlay() {
         </span>
       </div>
 
-      {/* In-game progress:
-          - question phase → PlayerRoster (shows who's locked in yet)
-          - reveal phase   → SporcleProgress (shows correctness history) */}
+      {/* SUDDEN DEATH BANNER */}
+      {state.isTieBreaker && (
+        <div className="rounded-md border border-wrong bg-wrong-soft px-4 py-3 text-center">
+          <p className="text-sm font-bold text-wrong uppercase tracking-wider">
+            Sudden Death
+          </p>
+          <p className="text-xs text-ink-muted mt-1">
+            First to answer correctly wins.
+          </p>
+        </div>
+      )}
+
       {inQuestion && (
         <PlayerRoster
           players={state?.players ?? []}
@@ -286,7 +277,7 @@ export default function SporclePlay() {
           )}
 
           {inQuestion && (
-            <SporcleTimer deadline={state.deadline} totalSeconds={20} />
+            <SporcleTimer deadline={state.deadline} totalSeconds={timerSeconds} />
           )}
 
           <QuestionPanel
@@ -312,7 +303,9 @@ export default function SporclePlay() {
             {actions.pending === 'advance'
               ? 'Advancing…'
               : state.qIndex + 1 >= state.totalQuestions
-              ? 'See final scores'
+              ? state.isTieBreaker 
+                ? 'Show final winner'
+                : 'See final scores'
               : 'Next question →'}
           </Button>
         </div>

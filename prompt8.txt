@@ -1,4 +1,4 @@
-Here's the v57 handoff. Supersedes v56.
+Here's the v61 handoff. Supersedes v60.
 
 ---
 
@@ -21,7 +21,7 @@ The game does **not** go through Express. It fetches `music-game-wrangler` direc
 
 **GitHub:** `https://github.com/Farouk-hash/music-game` (private, monorepo)
 **Local repo root:** `E:\matb3aa-game\.git`
-**Last committed state:** v28 (initial commit `c2a9ad3`). Work from v29–v57 is **uncommitted**.
+**Last committed state:** v28 (initial commit `c2a9ad3`). Work from v29–v61 is **uncommitted**.
 
 **`.gitignore`** covers `node_modules/`, `dist/`, `.env`, `.env.local`, `.env.*.local`, `.env.development`, `.env.development.local`, `.env.production.local`, `.wrangler/`, `.dev.vars`, `*.log`, `venv/`, `__pycache__/`, `*.pyc`, `server/instrumental-output/`, `test-vocals/`.
 
@@ -46,6 +46,7 @@ VITE_SPORCLE_BASE=https://host-sporcle-wrangler.abdulrahman-muhammad2090.workers
 | Game (deployed) | Pages | — | `https://music-game-9vn.pages.dev` |
 | Worker (music) | `music-game-wrangler/` | 8787 | `https://music-game-wrangler.abdulrahman-muhammad2090.workers.dev` |
 | Worker (Sporcle) | `host-sporcle-wrangler/` | 8788 | `https://host-sporcle-wrangler.abdulrahman-muhammad2090.workers.dev` |
+| ACE-Step API | `tools/ACE-Step-1.5/` | 8001 | `http://127.0.0.1:8001` |
 
 ## Deployment
 
@@ -76,13 +77,13 @@ npx wrangler d1 execute music-game-db --remote --file=./migrations/0009_room_inv
 
 **Deploy order:** migrations → `music-game-wrangler` → `host-sporcle-wrangler` → Pages.
 
-**CRITICAL:** After editing any DO class, **Ctrl+C and restart `wrangler dev`**. DO module code is NOT hot-reloaded.
+**CRITICAL:** After editing any DO class, **Ctrl+C and restart `wrangler dev`**. Route-layer files (`router.js`, `routes/*.js`, `lib/*.js`) DO hot-reload in `wrangler dev`, but a full restart is safest.
 
 **Windows env gotchas:**
 - `npm`/`npx` occasionally fail with "The system cannot execute the specified program" or OOM.
 - Mitigations: clear `NODE_OPTIONS` (`set NODE_OPTIONS=`), use `node --max-old-space-size=4096 "...wrangler.js" ...`.
-- **Express does not hot-reload.** Every `server/` code change needs a Ctrl+C restart.
-- **`esbuild spawn UNKNOWN`** can occur when Windows Defender quarantines the esbuild binary. Fix: whitelist `node_modules\esbuild` in Defender, or `rmdir /S /Q node_modules\esbuild && npm install`.
+- **Express does not hot-reload.**
+- **`esbuild spawn UNKNOWN`** — whitelist `node_modules\esbuild` in Defender, or `rmdir /S /Q node_modules\esbuild && npm install`.
 
 ## Local Dev — Two Workers, Two Terminals
 
@@ -98,9 +99,15 @@ cd E:\matb3aa-game\host-sporcle-wrangler
 npx wrangler dev --port 8788
 ```
 
-**Binding resolution:** Terminal 2's banner must show `env.MUSIC_GAME (music-game-wrangler) Worker local [connected]`.
+**Bindings** (both workers use remote D1/R2 — `"remote": true` on every binding in `wrangler.jsonc`):
+```
+env.DB            (music-game-db)          D1 [remote]
+env.AUDIO         (music-game-audio)       R2 [remote]
+env.HOST_SPORCLE  (HostSporcle)            DO
+env.MUSIC_GAME    (music-game-wrangler)    Service Binding
+```
 
-**Vite dev proxy (`game/vite.config.js`).** All `/api/*` dev requests are proxied to the **deployed** worker (`CF_BASE = https://music-game-wrangler.…workers.dev`). Entries:
+**Vite dev proxy (`game/vite.config.js`).** All `/api/*` dev requests proxy to the **deployed** worker (`CF_BASE = https://music-game-wrangler.…workers.dev`). Entries:
 
 ```js
 proxy: {
@@ -111,11 +118,11 @@ proxy: {
 }
 ```
 
-**Why this matters:** on `npm run dev`, `VITE_API_BASE0` is **undefined** (Vite only loads `.env.production` at build time). So `profileApi.js`, `followApi.js`, and `inviteApi.js` fall back to `RAW_BASE = '/api/game'`, `.replace(/\/game\/?$/, '')` → `BASE = '/api'`. Requests look like `/api/invites/...` and the proxy rewrites + forwards. **Any new API prefix must be added to this proxy table or localhost dev will 404.**
+**Why this matters:** on `npm run dev`, `VITE_API_BASE0` is **undefined** (Vite only loads `.env.production` at build time). So the api clients fall back to `BASE = '/api'`. Requests look like `/api/invites/...` and the proxy rewrites + forwards. **Any new API prefix must be added to this proxy table or localhost dev will 404.**
 
-**Vite config changes require a dev-server restart** — `vite.config.js` is not hot-reloaded.
+**Vite config changes require a dev-server restart.**
 
-**StrictMode + provider tree:** all top-level providers live in `main.jsx`, NOT `App.jsx`. The tree is:
+**StrictMode + provider tree:** all top-level providers live in `main.jsx`, NOT `App.jsx`:
 
 ```
 StrictMode
@@ -130,7 +137,7 @@ StrictMode
                         └── ToastHost
 ```
 
-`App.jsx` contains only routes + `<Shell>` + `<ToastHost />`. **Do not re-wrap `ProfileProvider` or `ToastProvider` in `App.jsx`** — they're already in `main.jsx`.
+`App.jsx` contains only routes + `<Shell>` + `<ToastHost />`. **Do not re-wrap `ProfileProvider` or `ToastProvider` in `App.jsx`.**
 
 ## Styling System
 
@@ -143,7 +150,7 @@ StrictMode
 
 **Opacity modifiers (`/40`, `/10`) DO NOT WORK** on token-mapped classes.
 
-**Responsive action buttons.** Icon-only at `<sm`, icon+label at `sm:+` via `<span className="hidden sm:inline">Label</span>`. Applied to: `All genres`, `Select all artists` / `Clear artists` (Setup), `Restore` (ProfileModal), `FollowButton`, `FriendsListTab`'s `Unfollow`, `RequestsTab`'s `Accept`/`Decline`/`Cancel`, `InvitesTab`'s `Join`.
+**Responsive action buttons.** Icon-only at `<sm`, icon+label at `sm:+` via `<span className="hidden sm:inline">Label</span>`. Standard height `h-9`.
 
 **Header hide (mid-game).** `Play.jsx` toggles `document.body.classList.add('hide-header')` during `phase === 'question' || phase === 'reveal'`. Rule in `tokens.css`:
 
@@ -153,7 +160,13 @@ body.hide-header header.app-header {
 }
 ```
 
-The `app-header` class is on the `<header>` in `Header.jsx`. Cleanup removes the class on unmount.
+## Icons (`game/src/lib/icons.jsx`)
+
+All inline SVGs, `stroke="currentColor"`, `strokeWidth="2"`, `strokeLinecap="round"`, exported as `Icon*` functions taking `{ className }`.
+
+**Existing set (v61):** `IconGenres` (music note), `IconArtists`, `IconTracks`, `IconClips`, `IconAlbums`, `IconLyrics`, `IconReversed`, `IconEye`, `IconEyeOff`, `IconInstruments`, `IconGrid`, `IconList`, `IconDense`, `IconStrict` (funnel), `IconSelectAll`, `IconCalendar`, `IconX`.
+
+**Rule:** any new inline SVG that appears in more than one place goes here.
 
 ## Button component (`game/src/components/ui/Button.jsx`)
 
@@ -173,57 +186,81 @@ const SIZES = {
 };
 ```
 
-**`Button` has no `gap`.** Icon+label children must be wrapped in an inner `<span className="inline-flex items-center gap-1.5">`.
+**`Button` has no `gap`.** Icon+label children must be wrapped in `<span className="inline-flex items-center gap-1.5">`.
 
-## D1 Schema (music-game-wrangler)
+## Loading — Loader, Spinner, Skeleton
 
-Existing: `genres`, `artists`, `tracks` (~17,414 rows), `lyrics`, `album_years`, `instruments`, `profiles`, `profile_favorites`, `follows`, `room_invites`.
+Three primitives in `game/src/components/ui/`:
 
-**Migrations:** `0003_sporcle.sql`, `0004_instruments.sql`, `0005_drop_source_url.sql`, `0006_instruments_index.sql`, `0007_profiles.sql`, `0008_follows.sql`, `0009_room_invites.sql` (all applied).
+**`Skeleton.jsx`** — one shimmering block.
 
-**Legacy:** `sporcle_rooms`, `sporcle_players`, `sporcle_answers` (D1-based Sporcle, superseded). Leave in place.
+**`Spinner.jsx`** — ring (default) or icon. Exports `Spinner` and `SpinnerMusicNote`.
 
-## D1 Parameter Limit — CRITICAL
+**`Loader.jsx`** — three variants. **Default icon is `SpinnerMusicNote`.**
+- `inline` — note + label
+- `page` — centered full-page
+- `skeleton` — N stacked Skeletons
+- Pass `icon={null}` for the ring.
 
-**D1 hard-caps bound parameters at 100 per statement.** Chunk arrays to ≤90. Helper at `music-game-wrangler/src/utilities/chunkedIn.js`.
+**`SkeletonRow.jsx`** — mimic of a player list row. Exports `SkeletonRow` and `SkeletonRowList`. Used in the three friends/invites tabs and `InviteFriendsModal`.
 
-## Question Types
+**`StatGrid` skeleton.** When `isLoading`, `StatGrid.jsx` renders 8 shimmering ghost cards. `StatCard.jsx` always renders real values.
 
-**Audio (5):** `name-track`, `name-artist`, `name-album`, `name-featured`, `name-position`
-**Lyrics (3):** `lyrics-track`, `lyrics-artist`, `lyrics-album`
+## Setup — Grid/List/Dense View Toggle
 
-Sets in `music-game-wrangler/src/controllers/game/rounds-methods/scope-helpers.js`:
-```js
-export const AUDIO_TYPES = new Set(['name-track','name-artist','name-album','name-featured','name-position']);
-export const LYRICS_TYPES = new Set(['lyrics-track','lyrics-artist','lyrics-album']);
-export const VALID_TYPES = [...AUDIO_TYPES, ...LYRICS_TYPES];
-```
+Per-section view toggle for Genres and Artists. **Not** applied to Release years.
 
-## Round shapes
+| Mode | Icon | Layout |
+|---|---|---|
+| `grid` | ⊞ `IconGrid` | 2–5 cols, 4:3 tiles |
+| `dense` | ▦ `IconDense` | `grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2`, 1:1 tiles |
+| `list` | ☰ `IconList` | Full-width horizontal rows |
 
-**L1 audio:** `{ slotId, type, clip: { r2_key, serveUrl, position }, question: { prompt, options, correctValue } }`
-**L1 lyrics:** `{ slotId, type, lyrics, revealClip: { r2_key, serveUrl } | null, question }`
-**L1 instrumental:** `{ slotId, type, source: 'instrumental', clip: {...}, question }`
-**L2:** wrap question(s) into `questions[]`.
+**Persistence:** `localStorage['game.genresView']` and `localStorage['game.artistsView']`. Values: `'grid'` (default), `'dense'`, `'list'`.
 
-## Instrumental Rounds
+**`Tile.jsx`** — three render paths:
+- `'grid'` — 4:3, image + gradient + heart top-left + selection top-right + title bottom.
+- `'dense'` — 1:1, lighter gradient, truncated title, heart `scale-90`, selection `w-5 h-5`.
+- `'list'` — horizontal row: 48px thumbnail, title + subtitle, heart + selection.
 
-- `buildingInstrumental.js` exports `buildInstrumentalRound` (L1/L3) and `buildInstrumentalRoundMulti` (L2).
-- **`lyrics-track` options use snippet text as `value` AND `correctValue`** — not `opt-N`.
-- Anti-skew round-robin in `instruments-slots.js`. **Deployed but unverified.**
-- Same skew may still exist in traditional audio (`slots.js`, `fetchFeaturedSlots`).
+## Setup — Section header layout
+
+`CollapsibleSection.jsx` accepts:
+- `title`, `icon`, `meta`, `open`, `onToggle`, `children`
+- **`secondaryActions`** and **`actions`** — both rendered in one right-aligned group inside a `flex flex-wrap items-center gap-1.5 sm:gap-2 ml-auto`.
+
+**Mobile mode:** the title collapses to just the icon (from the `icon` prop) + the meta count. The text title is hidden. This prevents the header from wrapping on narrow screens.
+
+**Section action buttons:**
+- **Genres** — `<ViewToggle>`, `<StrictGenreToggle>`, `<All genres button>`
+- **Artists** — `<ViewToggle>`, `<Select all artists button>`
+- **Release years** — `<Range button>` (opens `YearRangeModal`), `<StrictModeToggle>`, `<Clear button>` (`IconX`, `text-wrong`)
+
+## Strict toggles — pill style
+
+`StrictGenreToggle.jsx` and `StrictModeToggle.jsx` are pill buttons.
+- Icon: `IconStrict` (funnel).
+- Label: `Strict` (hidden at `<sm`).
+- Off: `bg-surface-2 text-ink-muted border-border`.
+- On: `bg-accent text-bg border-accent`.
+
+## RELEASE YEARS — Range Picker + Drag Select
+
+**`YearRangeModal.jsx`** — two `<select>` dropdowns (From / To). Apply unions the range into `selectedYears`.
+
+**Drag selection** in `YearTileGrid.jsx`:
+- `isDragging` ref + `dragAction` ref (`'select'` | `'deselect'`).
+- `onMouseDown` / `onTouchStart` → start drag.
+- `onMouseEnter` / `onTouchMove` → toggle matching the drag action.
+- Global `mouseup` / `touchend` → clear drag state.
+- `onClick` guard prevents trailing click.
+- `touch-none` class on buttons prevents scroll-during-drag.
 
 ## PROFILE SYSTEM — COMPLETE
 
-**Identity:** anonymous UUID, no auth. Cross-device via 8-char recovery code. UUID stored in `localStorage['music-game:profile:id']` — **raw UUID string, NOT JSON**. Silent creation via `useProfile`.
+**Identity:** anonymous UUID. Cross-device via 8-char recovery code. UUID stored in `localStorage['music-game:profile:id']` — **raw UUID string, NOT JSON**.
 
-**Restore deletes the old profile:** `recoverProfile(code)` switches id, then best-effort `DELETE /profiles/<oldId>` (swallowed errors).
-
-**Schema:** `profiles(id, nickname, recovery_code, avatar_kind, avatar_style, avatar_seed, avatar_r2_key, created_at, updated_at)` and `profile_favorites(profile_id, kind, value, created_at)`.
-
-**Caps:** 100 favourites/kind, 300 total; 24-char nickname; 8-char recovery code; 256 KB avatar; JPEG/PNG/WebP only.
-
-**R2 storage:** reuses `AUDIO` bucket, `avatars/<profile_id>/avatar-<timestamp>.<ext>`.
+**Restore deletes the old profile:** `recoverProfile(code)` switches id, then best-effort `DELETE /profiles/<oldId>`.
 
 **Response shape (CANONICAL):**
 ```json
@@ -237,238 +274,65 @@ export const VALID_TYPES = [...AUDIO_TYPES, ...LYRICS_TYPES];
 }
 ```
 
-**Key facts:** `avatar` is **nested** and **camelCase**. `profileApi.get(id)` returns `{ profile }`.
-
 ## FOLLOW SYSTEM — COMPLETE
 
 **Model:** M2 — two-way with accept. Pending = one row `status='pending'`. Friendship = two rows `status='accepted'`.
 
-**Schema — `0008_follows.sql`:**
-```sql
-CREATE TABLE IF NOT EXISTS follows (
-  follower_id TEXT NOT NULL, followee_id TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending',
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  accepted_at TEXT,
-  PRIMARY KEY (follower_id, followee_id)
-);
-```
-
-**Routes (all take `?as=<me>`):**
-```
-POST   /follows?as=<me>            body { followeeId }  → { ok, status }
-POST   /follows/accept?as=<me>     body { followerId }  → { ok, status: 'friends' }
-POST   /follows/decline?as=<me>    body { followerId }  → { ok }
-DELETE /follows?as=<me>&other=<id>                       → { ok }
-GET    /follows/friends?as=<me>                          → { ok, friends: [...] }
-GET    /follows/pending?as=<me>                          → { ok, incoming: [...], outgoing: [...] }
-GET    /follows/status?as=<me>&target=<id>               → { ok, status }
-```
-
 **Status enum:** `self`, `none`, `requested`, `incoming`, `friends`, `following`.
 
-**Player shape in lists:** `{ id, nickname, avatar: { kind, style, seed, url } }`.
+**`FollowButton`** — `none` / `requested` / `incoming` / `friends` / `following`. **`friendsOnly="hidden"`** hides it once friends.
 
-**`acceptRequest`** flips their→me to accepted AND inserts me→their accepted, in one `env.DB.batch()` (mutual handoff).
-
-**`sendRequest`** auto-accepts if a reverse pending exists.
-
-**Client hooks — `useFollows.js`:** `useFriends`, `usePending`, `useFollowStatus`, `useSendRequest`, `useAcceptRequest`, `useDeclineRequest`, `useUnfollow`. Query keys: `['follows','friends',me]`, `['follows','pending',me]`, `['follows','status',me,target]`.
-
-**FollowButton** states:
-
-| Status | Wide (`sm:+`) | Small (`<sm`) | Action |
-|---|---|---|---|
-| `none` | `+ Follow` | `+` | sendRequest |
-| `requested` | `Requested` + `×` | `×` | unfollow (cancel) |
-| `incoming` | `✓ Accept` | `✓` | acceptRequest |
-| `friends` / `following` | `✓ Friends` + `×` | `✓` + `×` | unfollow |
-
-**`friendsOnly="hidden"`** prop — hides the button once friends (ring signals it).
-
-**Optimistic** — local state flips immediately, clears when server matches, rolls back on error.
-
-**FollowRing** — wraps `PlayerAvatar`:
-
-| Status | Visual |
-|---|---|
-| `friends` / `following` | 2px **green** (`ring-correct`) ring on a padded wrapper |
-| `incoming` | 2px **accent** ring + small accent dot (bottom-right) |
-| others | plain |
-
-**Caller `ring` prop wins** — no double rings.
-
-**Used in:** `PlayerRoster.jsx`, `SporcleProgress.jsx`, `Result.jsx` standings rows.
+**`FollowRing`** — `friends` → 2px **green** (`ring-correct`); `incoming` → 2px **accent** + dot.
 
 ## ROOM INVITES — COMPLETE
 
-**Model:** persistent invite list in D1. Host selects followers → friends see invites → click Join → navigate to `/sporcle/play/<code>`.
+**Schema — `0009_room_invites.sql`:** `room_invites(id, profile_id, room_code, invited_by, created_at, seen_at)`, UNIQUE on `(profile_id, room_code)`.
 
-**Schema — `0009_room_invites.sql`:**
-```sql
-CREATE TABLE IF NOT EXISTS room_invites (
-  id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  profile_id   TEXT NOT NULL,
-  room_code    TEXT NOT NULL,
-  invited_by   TEXT NOT NULL,
-  created_at   TEXT NOT NULL DEFAULT (datetime('now')),
-  seen_at      TEXT,
-  UNIQUE(profile_id, room_code)
-);
-CREATE INDEX IF NOT EXISTS idx_invites_profile_pending ON room_invites(profile_id, seen_at);
-CREATE INDEX IF NOT EXISTS idx_invites_code            ON room_invites(room_code);
-```
+**Client:** `usePendingInvites` (15s poll), `useRoomInvites`, `useSendInvites`, `useDismissInvite`.
 
-**Routes (all take `?as=<me>`):**
-```
-POST   /invites?as=<me>            body { roomCode, friendIds, revokedIds }  → { ok, sent, revoked }
-POST   /invites/dismiss?as=<me>    body { inviteId }                          → { ok }
-GET    /invites/pending?as=<me>                                               → { ok, invites: [...] }
-GET    /invites/room?as=<me>&code=<CODE>                                      → { ok, invitedIds: [...] }
-```
+**Toast dismiss flow:** ✕ → row hidden → 30s toast (green→gold→red bar) with Undo → expiry fires hard-delete OR Undo un-hides.
 
-**Controller — `music-game-wrangler/src/controllers/invites.js`:**
+**`InvitesTab` does NOT dismiss on join.**
 
-- `sendInvites` — **upserts** `friendIds` (resets `seen_at = NULL`) and **deletes** `revokedIds` (only rows `invited_by = me AND room_code = code`). Verifies mutual friendship for each invited target; rejects with 403 if any are not friends. Runs all statements in one `env.DB.batch()`.
-- `listPendingInvites` — unread invites for the actor, **filters `created_at > datetime('now', '-2 hours')`** so stale invites auto-hide. Joins inviter profile.
-- `listRoomInvites` — host's own invite list for a room; used to pre-check the picker.
-- `dismissInvite` — **hard delete.** `DELETE FROM room_invites WHERE id = ? AND profile_id = ?`. The row is gone. (The `seen_at` column is now vestigial — harmless, left in place.)
+## ROOM-DEATH INVITE CLEANUP — COMPLETE
 
-**Player shape:** same as follows — `{ id, nickname, avatar: { kind, style, seed, url } }`.
+When the DO destroys itself (`version: 0`), the route layer calls `execCtx.waitUntil(notifyRoomDestroyed(env, code))` → POSTs to `music-game-wrangler` `/invites/cleanup-room` → deletes all invite rows for that room code.
 
-**Re-invite semantics:** allowed. `ON CONFLICT DO UPDATE` resets `seen_at = NULL` and bumps `created_at`.
+**⚠️ CRITICAL LESSON (v58):** Any fire-and-forget HTTP call from a Worker/DO **must** be wrapped in `execCtx.waitUntil(...)`.
 
-**Revoke semantics:** `sendInvites` with `revokedIds` removes those rows.
+## TOAST SYSTEM
 
-**Client files:**
-```
-game/src/lib/inviteApi.js                              # pending, roomInvites, send, dismiss
-game/src/hooks/invites/useInvites.js                   # usePendingInvites, useRoomInvites,
-                                                       # useSendInvites, useDismissInvite
-game/src/components/domain/Follow/InviteFriendsModal.jsx   # host picker; pre-check + revoke
-game/src/components/domain/Follow/InvitesTab.jsx           # invitee list; Join + ✕ dismiss
-```
+**File:** `game/src/hooks/ui/useToast.jsx` (`.jsx`).
 
-**Query keys:** `['invites','pending',me]`, `['invites','room',me,code]`.
+**Dismiss reasons:** `'cancel'` (fires `onAction` only), `'expire'` (fires `onDismiss`), replacement (fires neither).
 
-**Polling:** `usePendingInvites` uses `refetchInterval: 15000`. The header/mobile dot updates within 15s of a new invite.
+**`ToastHost`** — top-center, progress bar (`bg-correct` >66%, `bg-highlight` 33–66%, `bg-wrong` <33%).
 
-**`InvitesTab` does NOT dismiss on join.** Clicking Join navigates but leaves the invite pending, so the user can back out and re-join. Only the `✕` or the toast's expiry removes it.
-
-**`InviteFriendsModal`:** host-only. Single effect resets on close, pre-checks on open+data via `useRoomInvites`. `initialRef` tracks the pre-checked set; submit computes `revoked = initial - selected`. Button is disabled unless the selection is dirty. Button label: "Save (N)".
-
-## TOAST SYSTEM — NEW (v57)
-
-**File:** `game/src/hooks/ui/useToast.jsx` (**`.jsx` — must have the JSX extension**).
-
-**Three exports:**
-- `ToastProvider` — context provider. Mounted in `main.jsx` wrapping `<BrowserRouter>`.
-- `useToast()` — returns `{ toast, show, dismiss }`.
-- `ToastHost` — renders the current toast. Mounted in `App.jsx` as a sibling of `<Shell>`.
-
-**`show(config)` config shape:**
-```js
-{
-  message,               // string
-  actionLabel,           // optional — e.g. 'Undo'
-  onAction,              // called when the action button is clicked
-  onDismiss,             // called when the toast expires WITHOUT the action
-  durationMs,            // default 6000
-}
-```
-
-**Dismiss reasons — CRITICAL:**
-- `'cancel'` — user clicked the action button (Undo). Fires `onAction`, **does NOT fire `onDismiss`**.
-- `'expire'` — timer ran out OR user clicked the `✕` on the toast. Fires `onDismiss`.
-- Replacement by a new toast — `show()` calls `clearTimer()` + `setToast(new)` — **fires neither**.
-
-**`ToastHost` UI:**
-- Positioned top-center, `fixed top-4 inset-x-0 z-[70]`.
-- Card: rounded, bordered, `bg-surface`, `flex-col` with a progress bar as the bottom sibling.
-- Row: message · action label (accent) · ✕ button.
-- **Progress bar** (`ToastProgressBar`): drains 100% → 0% via `requestAnimationFrame` over `durationMs`. Three-tier color: `bg-correct` (>66%), `bg-highlight` (33–66%), `bg-wrong` (<33%). 200ms `transition-colors` between tiers.
-
-**Known limitation:** single-toast system. Showing a new toast replaces the current one and **does not fire the replaced toast's `onDismiss`**. So if a user dismisses invite A, then dismisses invite B before A's window expires, invite A's server delete never fires. Acceptable for v1.
-
-**`InvitesTab` uses the toast:**
-
-```js
-function handleDismiss(inv) {
-  setHidden((prev) => new Set(prev).add(inv.id));       // hide locally
-  show({
-    message: 'Invitation removed',
-    actionLabel: 'Undo',
-    durationMs: 30_000,
-    onAction: () => { /* unhide locally — no server call */ },
-    onDismiss: () => { dismiss.mutate(inv.id, { onSettled: /* unhide */ }); },
-  });
-}
-```
-
-**Flow:** click ✕ → row hidden → toast appears (30s, green→gold→red bar) → Undo un-hides (no server call) OR expiry fires `POST /invites/dismiss` (hard delete).
+**Known limitation:** single-toast system.
 
 ## Follow/Invite UI surface
 
-**Desktop (≥ `sm`):** `Header.jsx` renders `<FriendsEntry>` pill (with pending dot for incoming requests AND invites) + `<ProfileChip>`.
+**Desktop:** `<FriendsEntry>` (dot for requests AND invites) + `<ProfileChip>`.
+**Mobile:** burger → `<MobileUserMenu>` dropdown.
 
-**Mobile (< `sm`):** `Header.jsx` renders a single burger that toggles `<MobileUserMenu>` — absolutely-positioned dropdown anchored under the burger via a `relative` wrapper. Rows: Profile (avatar + nickname + "Profile" label) and Friends (icon + "Friends" + dot). Burger toggles — click-outside handler must exclude the burger.
+**`FriendsModal`** — 3 tabs: `Friends` / `Requests` / `Invites`. `SkeletonRowList` while loading.
 
-**`FriendsModal.jsx`** — 3 tabs: `Friends` (list + Unfollow), `Requests` (incoming + outgoing), `Invites` (pending room invites with Join/dismiss). Each tab has a badge when non-empty.
-
-**`RoomPanel.jsx`** — host sees `Invite friends` (accent button) next to `Copy code` / `Copy invite link`. Non-hosts do not. Clicking opens `<InviteFriendsModal open onClose roomCode={code} />`.
+**`RoomPanel`** — host sees `Invite friends` next to Copy code / Copy invite link.
 
 ## Sporcle Client — avatar + follow threading (GOTCHA)
 
-```
-Play.jsx
-  useRoomProfiles(state?.players)         → Map<profileId, profile>
-  → <SporcleModal profilesById={map} onIdentitySet={saveForCode} />
-       → <RoomPanel profilesById={map} />
-            → <PlayerRoster profilesById={map} />
-                 → <FollowRing profileId={p.profileId} avatar={map.get(p.profileId)} />
-```
+`Play.jsx` → `useRoomProfiles` → `SporcleModal profilesById` → `RoomPanel profilesById` → `PlayerRoster profilesById` → `FollowRing`.
 
-**⚠️ Two documented gotchas:**
+**Two gotchas:**
 
-1. `profilesById` must reach the **live** `<RoomPanel>` render **inside `<Modal>`** in `SporcleModal.jsx`. A dead-code duplicated block above the `return` once silently swallowed the prop.
-
-2. **Joining from an invite does not remount Play.** The identity hook's `useEffect` deps are `[playerIdKey, nameKey]` — derived from `code`, which doesn't change. So a localStorage write from within the modal does NOT trigger `identity` to update, and the Join modal stays stuck.
-
-   **Fix (applied):** `SporcleModal` takes an `onIdentitySet(code, playerId, name)` prop. `Play.jsx` passes `saveForCode` from `useHostSporcleIdentity`. `SporcleModal.handleCreate` and `handleJoin` call `onIdentitySet` (falling back to direct localStorage writes if absent). `saveForCode` writes localStorage AND calls `setIdentity` when `targetCode === normalizedCode`. Plus a `storage` event listener in the hook for cross-tab sync.
-
-   **Do not revert.**
+1. `profilesById` must reach the **live** `<RoomPanel>` render **inside `<Modal>`** in `SporcleModal.jsx`.
+2. **Joining from an invite does not remount Play.** Fix: `onIdentitySet` prop. **Do not revert.**
 
 ## host-sporcle-wrangler — Durable Object
 
-**Schema:**
-```sql
-room (id INTEGER PRIMARY KEY CHECK (id = 1), phase, mode, config, auto_advance_seconds,
-      version, q_index, q_deadline, expires_at, created_at, started_at, last_error)
+**Schema:** `room`, `players` (with `profile_id`), `questions`, `answers`.
 
-players (id TEXT PRIMARY KEY, name TEXT NOT NULL, is_host INTEGER DEFAULT 0,
-         ready INTEGER DEFAULT 0, score INTEGER DEFAULT 0, locked INTEGER DEFAULT 0,
-         left INTEGER DEFAULT 0, profile_id TEXT)
-
-questions (idx INTEGER PK, payload TEXT)
-answers (player_id TEXT, q_idx INTEGER, correct INTEGER, typed TEXT, answered_at INTEGER,
-         PRIMARY KEY (player_id, q_idx))
-```
-
-**The DO carries `profile_id` only.** No avatar or follow fields.
-
-**`players.rowid` reflects join order.** `#promoteNextHost()` uses `rowid ASC`.
-
-**API:**
-```
-POST /host-sporcle/create                     body { hostName, mode, config, autoAdvanceSeconds, profileId }
-POST /host-sporcle/:code/join                 body { name, profileId }
-GET  /host-sporcle/:code/state?since=N
-POST /host-sporcle/:code/action
-POST /host-sporcle/:code/leave?playerId=…     (sendBeacon endpoint)
-GET  /host-sporcle/:code/debug                (LOCAL-ONLY)
-```
-
-**`#buildState` players rows:** `{ id, name, profileId, isHost, ready, score, locked, left }`.
+**API:** `create`, `join`, `state`, `action`, `leave`, `debug`.
 
 **`#shapeFinished` standings — camelCase:**
 ```js
@@ -479,58 +343,24 @@ standings: players.map(p => ({
   name: p.name,
 })),
 ```
-**Do not revert to `profile_id`.**
 
 **Action types:** `ready`, `start`, `answer`, `advance`, `leave`, `reset`, `rejoin`.
 
-**Leave behaviour (mode-agnostic):** lobby → DELETE player, empty → deleteAll, host-left → promote. In-game → `UPDATE players SET left = 1`, host-left → demote + promote.
+**Leave behaviour:** lobby + last player → `deleteAll()` + `{ ok, version: 0 }`. lobby + others → promote. In-game → `left = 1`, host-left → demote + promote.
 
-**Phase flow:**
-```
-lobby ──start()──► loading ──fetch complete──► countdown ──alarm(10s)──► question
-                                                                            │
-                                    speed: first correct ───────────────────┤
-                                    collect: all answered ──────────────────┤
-                                    alarm(20s) ─────────────────────────────┤
-                                                                            ▼
-                                                                         reveal
-                                                                            │
-                                  advance() or alarm(autoAdvanceSeconds) ───┴──► next question
-                                                                            │
-                                                                            └──► finished
-```
-
-**Constants:** `MIN_PLAYERS = 2`, `COUNTDOWN_MS = 10000`, `SPORCLE_TIMER_SECONDS = 20`, `AUTO_ADVANCE_MS_LYRICS = 10000`, `ROOM_EXPIRY_MS = 2 * 60 * 60 * 1000`.
-
-**Correctness:**
-```js
-function normalize(s) { return String(s ?? '').trim().toLowerCase(); }
-function isCorrect(q, typed) {
-  if (typed == null || typed === '') return false;
-  if (q.type === 'name-position') return canonicalPosition(typed) === canonicalPosition(q.correctValue);
-  return normalize(typed) === normalize(q.correctValue);
-}
-```
+**Phase flow:** `lobby → loading → countdown → question → reveal → (next or finished)`. Constants: `MIN_PLAYERS = 2`, `COUNTDOWN_MS = 10000`, `SPORCLE_TIMER_SECONDS = 20`, `AUTO_ADVANCE_MS_LYRICS = 10000`, `ROOM_EXPIRY_MS = 2 * 60 * 60 * 1000`.
 
 ## OptionsGrid — three visual states
 
 | State | Picked | Others | Disabled? |
 |---|---|---|---|
 | Idle | default | default | no |
-| Locked in (picked, not revealed) | `bg-accent text-bg border-accent` | `opacity-40` dimmed | yes |
+| Locked in | `bg-accent text-bg border-accent` | `opacity-40` | yes |
 | Revealed | correct green / wrong pick red | correct green, rest `opacity-60` | yes |
-
-`const locked = picked != null && !revealed;` — **timing-specific, not mode-specific.**
-
-## Layout / CollapsibleSection
-
-`CollapsibleSection.jsx` accepts `secondaryActions` (after title) and `actions` (flush right via `ml-auto`).
 
 ## Game Client — Phase 2 & 3
 
-**Phase 2:** `GameSettingsContext` has `instruments`. `SharedGameSettings.jsx` Instruments section. `usePlayParams` parses `instruments`. `useRoundMulti` forwards. `Setup.jsx`'s `buildBaseParams()` includes it.
-
-**Phase 3:** `QuestionCard.jsx` accepts `source`. `Play.jsx`, `Play2.jsx`, `PlayMulti.jsx` pass it. `buildSuddenDeathUrl` forwards `instruments`.
+**Phase 2:** `GameSettingsContext` has `instruments`. **Phase 3:** `QuestionCard.jsx` accepts `source`.
 
 **`Play3.jsx` NOT updated** — L3 modal still sets `allowInstruments={false}`.
 
@@ -542,28 +372,120 @@ GET /game/round / round-multi / round-set / round-multiplayer
 ```
 All accept `?instruments=none|mixed|all`.
 
-**Instruments / Instrumentals:**
+**Instruments / Instrumentals:** full CRUD + bulk upload.
+
+## STYLE TRANSFER PIPELINE — IN PROGRESS (v61)
+
+**Goal:** Take a source track → isolate the instrumental stem → regenerate it in a new style (jazz, rock, etc.).
+
+**Location:** `server/scripts/style-transfer/style_cover.py`
+
+**Pipeline:**
+1. **Demucs** `htdemucs --two-stems=vocals` → produces `no_vocals.mp3` → renamed to `instrumental.mp3`.
+2. **ACE-Step** running as a local API on `http://127.0.0.1:8001` → receives `instrumental.mp3` → generates `cover-<style>.mp3`.
+
+**Output:** `E:\matb3aa-game\server\style-transfer-output\<slug>\`
+
 ```
-GET    /instruments?artist_id=…&position=…&search=…&limit=&offset=
-POST   /instruments/bulk
-POST   /instruments/check-duplicates
-DELETE /instruments/artist/:artistId
-DELETE /instruments/:id
-PUT /instrumentals/upload?key=instrumentals/…
-GET /instrumentals/serve?key=instrumentals/…
+├── instrumental.mp3         (Step 1 output)
+├── cover-<style>.mp3        (Step 2 output)
+├── meta.json
+└── htdemucs\
+    └── <track>\
+        ├── vocals.mp3
+        └── no_vocals.mp3
 ```
+
+### Environment setup (v61) — CRITICAL
+
+**Python venv:** `E:\matb3aa-game\venv` — Python 3.14, but the specific packages matter:
+- **torch `2.11.0+cpu`** and **torchaudio `2.11.0+cpu`** — **must be same major.minor** or Demucs segfaults with `0xC0000005`.
+- **`torchcodec`** — required by `torchaudio` 2.11+ for audio loading.
+- **`demucs`** — installed.
+- **`requests`** — required by the style_cover script.
+
+**FFmpeg:** `C:\Tools\ffmpeg\bin` — **must be the "full-shared" build** (has `.dll` files, not just `.exe`). A static build causes `libtorchcodec_core*.dll` errors. Get it from https://www.gyan.dev/ffmpeg/builds/ → `ffmpeg-release-full-shared.7z`.
+
+**Python DLL registration:** Python 3.8+ on Windows ignores PATH for DLL loading. `style_cover.py` calls `os.add_dll_directory(r'C:\Tools\ffmpeg\bin')` at the top.
+
+**ACE-Step install:**
+```cmd
+cd E:\matb3aa-game
+mkdir tools
+cd tools
+git clone https://github.com/ACE-Step/ACE-Step-1.5.git
+cd ACE-Step-1.5
+uv sync    # creates .venv inside, uses Python 3.12
+```
+
+**ACE-Step server:**
+```cmd
+cd E:\matb3aa-game\tools\ACE-Step-1.5
+uv run python -m acestep.api_server
+```
+Starts on `http://127.0.0.1:8001`. First request lazy-loads the model (~4 GB from Hugging Face).
+
+### ACE-Step API — key findings (v61)
+
+**Available endpoints discovered:**
+- `POST /v1/init` — initialize the DiT model. Body `{ "model": "acestep-v15-base", "init_llm": false }`.
+- `POST /release_task` — submit a job. Body is `GenerateMusicRequest`.
+- `POST /query_result` — poll a task. Body `{ "task_id": "..." }`.
+- `GET /v1/audio` — fetch the result.
+- `POST /v1/create_sample` — sample mode (unused for covers).
+
+**`GenerateMusicRequest` fields (relevant for cover):**
+- `prompt` — style description.
+- `lyrics` — `"[instrumental]"` for no vocals.
+- `src_audio_path` — path to the instrumental stem. Backslash-escape needed.
+- `task_type` — `"cover"`.
+- `audio_cover_strength` — 0.0 to 1.0. Higher = more like the original. Default 1.0. **Use 0.7.**
+- `cover_noise_strength` — 0.0 to 1.0. Higher = more like the source. Default 0.0. **Use 0.5.**
+- `inference_steps` — default 8. **Use 60** for quality.
+- `audio_format` — `"mp3"` | `"flac"` | `"wav"` etc.
+- `guidance_scale` — default 7.0.
+- `model` — optional, defaults to whatever's loaded.
+
+**Model name:** `acestep-v15-base` is the current tier1 target. Available models shown in `GET /v1/model_inventory`. **Not yet confirmed which loads correctly** — first run with `acestep-v15-base` still needs to be tested.
+
+**GPU:** Not detected — the API server logs `GPU NOT DETECTED`, so it runs CPU-only. Expect 5–20 minutes per generation for a 3-minute input.
+
+### Current state (as of v61 end)
+
+**Working:**
+- ✅ Demucs vocal separation (`baba.wav` → `instrumental.mp3`) — completed in 268.9s.
+- ✅ FFmpeg full-shared build installed.
+- ✅ torch 2.11.0 + torchaudio 2.11.0 + torchcodec.
+- ✅ ACE-Step installed via `uv sync`.
+- ✅ ACE-Step API server running on port 8001.
+
+**Blocked:**
+- ⏳ The `render_cover()` function in `style_cover.py` is fully written but not yet successfully run. Just installed `requests` and about to test.
+
+**Next diagnostic step:** run `python server\scripts\style-transfer\style_cover.py --input "C:\Users\Desktop\Downloads\baba.wav" --style jazz` and paste the output. Expected outcomes:
+- `Model init failed` → fix the model name.
+- `Could not extract task_id` → adjust response parsing.
+- Successful generation.
+
+**Important note about the script:** Running it end-to-end re-runs Demucs (5 min). To test only Step 2 (ACE-Step), temporarily replace `instrumental = extract_instrumental(...)` in `main()` with a hardcoded path to `E:\matb3aa-game\server\style-transfer-output\baba\instrumental.mp3`.
 
 ## Environment
 
 - **Windows.** `cmd` for wrangler, PowerShell for test scripts.
 - Node 18+. Express uses ESM.
-- Python 3.14.8. Virtual env at `E:\matb3aa-game\venv\`.
+- **Python 3.14** at `C:\Users\Desktop\AppData\Local\Programs\Python\Python314\`. **Python 3.12** for ACE-Step (via `uv`).
+- Virtual env at `E:\matb3aa-game\venv\`.
 - **Never pass Arabic inline through `cmd` `curl -d`.**
 - **`jq` is not installed.**
 - **After `wrangler deploy`, verification curls may hit a stale edge for ~30s.**
 - **`curl` in `cmd`:** `&` terminates the command. Wrap URLs in `"…"`.
 - **`localStorage['music-game:profile:id']`** is a raw UUID string, NOT JSON.
-- **JSX files must use the `.jsx` extension.** Vite parses `.js` as plain JavaScript — JSX syntax errors out. `useToast.jsx`, every component file, and any hook that returns JSX must be `.jsx`.
+- **JSX files must use the `.jsx` extension.** Vite parses `.js` as plain JavaScript.
+- **PowerShell scripts saved as UTF-8 without BOM mangle box-drawing/arrow/checkmark chars.** Use pure ASCII in `.ps1` files, or save as UTF-8 **with BOM**.
+- **Fire-and-forget fetches in Workers/DOs must use `execCtx.waitUntil(...)`**.
+- **Deployed worker stale-code gotcha:** if the deployed worker returns `X is not defined` where X clearly exists locally, run `npx wrangler deploy`.
+- **Torch/torchaudio version match:** torch `2.11.0+cpu` requires torchaudio `2.11.0+cpu`. Mismatched majors cause `0xC0000005` segfaults in Demucs.
+- **FFmpeg needs full-shared, not static, for `torchcodec`.** Check `dir C:\Tools\ffmpeg\bin` for `avcodec-*.dll`.
 
 ## Commands
 
@@ -582,9 +504,14 @@ cd E:\matb3aa-game\host-sporcle-wrangler
 npx wrangler dev --port 8788
 npx wrangler deploy
 
-:: Migrations
-cd E:\matb3aa-game\music-game-wrangler
-npx wrangler d1 execute music-game-db --remote --file=./migrations/0009_room_invites.sql
+:: ACE-Step API
+cd E:\matb3aa-game\tools\ACE-Step-1.5
+uv run python -m acestep.api_server
+
+:: Style transfer (with Demucs + ACE-Step)
+cd E:\matb3aa-game
+venv\Scripts\activate
+python server\scripts\style-transfer\style_cover.py --input "path\to\audio.wav" --style jazz
 
 :: Deploy game
 cd E:\matb3aa-game\game
@@ -598,47 +525,57 @@ git commit -m "…"
 git push
 ```
 
+## Test scripts
+
+`host-sporcle-wrangler/src/tests/test-invite-cleanup.ps1` — pure ASCII, end-to-end invite/cleanup test.
+
+```powershell
+cd E:\matb3aa-game\host-sporcle-wrangler\src\tests
+powershell -ExecutionPolicy Bypass -File .\test-invite-cleanup.ps1
+```
+
 ## Known Open / Broken
 
-### 1. **Anti-skew round-robin — unverified**
+### 1. **Style transfer — final API call untested**
+The `render_cover()` in `style_cover.py` uses `POST /release_task` and `POST /query_result`. Not yet verified against a running server. Expected errors when first run: model name mismatch, response shape mismatch, or `audio_url` field missing. All fixable by inspecting the actual response and adjusting the parser.
+
+### 2. **Anti-skew round-robin — unverified**
 `instruments-slots.js` round-robins across artists. Deployed but no 5× curl verification.
 
-### 2. **Same skew may exist in traditional audio**
+### 3. **Same skew may exist in traditional audio**
 `slots.js` and `fetchFeaturedSlots` still use `ORDER BY RANDOM() LIMIT N`.
 
-### 3. **Sporcle host-promotion in collect mode — reported, not reproduced**
-Console output showed correct promotion. Hypothesis: same visual-lag illusion as OptionsGrid. **Not a confirmed bug.**
+### 4. **Sporcle host-promotion in collect mode — reported, not reproduced**
 
-### 4. **Enable L3 instruments**
+### 5. **Enable L3 instruments**
 `Level3Modal` sets `allowInstruments={false}`. `Play3.jsx` lacks `source`.
 
-### 5. **No `PublishedInstruments.jsx` admin page**
+### 6. **No `PublishedInstruments.jsx` admin page**
 
-### 6. **Client rendition chain incomplete**
+### 7. **Client rendition chain incomplete**
 `useRoundMultiplayer.js` — no `rendition`. `PlayMulti.jsx` — doesn't pass it.
 
-### 7. **Favourite counts cap on the client**
+### 8. **Favourite counts cap on the client**
 Server caps at 100/kind, 300 total. Client doesn't surface a message.
 
-### 8. **Orphaned profiles**
-Every device creates a profile with a placeholder nickname. Consider a periodic sweep.
+### 9. **Orphaned profiles**
+Every device creates a profile with a placeholder nickname.
 
-### 9. **Mobile tab-close doesn't reliably mark players as `left`**
-`beforeunload`/`sendBeacon` unreliable on mobile Safari. Needs heartbeat + staleness sweep.
+### 10. **Mobile tab-close doesn't reliably mark players as `left`**
 
-### 10. **Dead `avatarStyle` variable in `Play.jsx`**
-`const avatarStyle = state?.avatarStyle ?? undefined;` — leftover, never used.
+### 11. **Dead `avatarStyle` variable in `Play.jsx`**
 
-### 11. **Toast replacement drops the pending `onDismiss`**
-Single-toast system. If toast A is on screen and toast B is shown, A's `onDismiss` never fires. Known limitation — accept, or queue toasts.
+### 12. **Toast replacement drops the pending `onDismiss`**
 
-### 12. **Leaderboard — spec locked in, not built**
-Design shelved. Locked-in decisions: **Sporcle Hall of Fame only** (product A), **DO writes at `finished` via service binding** (W1), **one row per player per game**, **G1 score-over-time graph** (hand-rolled SVG), **guests excluded**, **Header link entry point**.
+### 13. **Leaderboard — spec locked in, not built**
+Locked-in decisions: **Sporcle Hall of Fame only**, **DO writes at `finished` via service binding**, **one row per player per game**, **G1 score-over-time graph**, **guests excluded**, **Header link entry point**.
 
-### 13. **Invite cleanup sweep**
-The 2h auto-hide filter is client-visible only — rows accumulate in D1 forever. Consider a periodic `DELETE FROM room_invites WHERE created_at < datetime('now', '-7 days')`. Options: opportunistic delete in `listPendingInvites`, or a daily cron.
+### 14. **Invite cleanup on room-expiry gap**
+`alarm()` on 2h expiry calls `deleteAll()` but doesn't fire the cleanup POST.
 
-### 14–25. Carried over
+### 15. **`YearRangeModal` doesn't reset visually when reopening after an explicit range application**
+
+### 16–27. Carried over
 - `handoff-*.md` and `prompt*.txt` tracked in repo
 - Duplicate controller at `music-game-wrangler/src/controllers/admin/tracks.js`
 - Punctuation-only lines in lyric snippets
@@ -673,23 +610,25 @@ The 2h auto-hide filter is client-visible only — rows accumulate in D1 forever
 
 **In priority order:**
 
-1. **Anti-skew round-robin verification** — 5× L1 curl with `instruments=all`, count slugs.
+1. **Finish the style transfer pipeline** — run `style_cover.py` with `--skip-cover` disabled, paste output, fix whatever API mismatch surfaces.
 
-2. **Enable L3 instruments** — flip `allowInstruments={true}`, add `source` to `Play3.jsx`.
+2. **Anti-skew round-robin verification** — 5× L1 curl with `instruments=all`, count slugs.
 
-3. **Build `PublishedInstruments.jsx`** — browse/delete uploaded instruments.
+3. **Enable L3 instruments** — flip `allowInstruments={true}`, add `source` to `Play3.jsx`.
 
-4. **Invite cleanup sweep** — opportunistic `DELETE` or daily cron.
+4. **Build `PublishedInstruments.jsx`** — browse/delete uploaded instruments.
 
-5. **Finish the client rendition chain** — `useRoundMultiplayer.js` + `PlayMulti.jsx`.
+5. **Invite cleanup on room-expiry** — store `room_code` on the DO and call cleanup from `alarm()`.
 
-6. **Favourite cap feedback.**
+6. **Finish the client rendition chain** — `useRoundMultiplayer.js` + `PlayMulti.jsx`.
 
-7. **Mobile heartbeat / staleness sweep.**
+7. **Favourite cap feedback.**
 
-8. **Leaderboard** — spec locked (see Known Open #12), not started.
+8. **Mobile heartbeat / staleness sweep.**
 
-**Recommended next step:** item 4 — a 4-line opportunistic cleanup inside `listPendingInvites`. It closes the last gap in the invite system. Then commit.
+9. **Leaderboard** — spec locked.
+
+**Recommended next step:** item 1 — finish the ACE-Step integration. The Demucs half is proven; the ACE-Step API call is the last unknown.
 
 Ask what the user wants to work on next.
 
@@ -697,58 +636,60 @@ Ask what the user wants to work on next.
 
 ## END OF PROMPT
 
-Save this as `E:\matb3aa-game\handoff-v57.md`. Paste it as the first message of your next session.
+Save this as `E:\matb3aa-game\handoff-v61.md`. Paste it as the first message of your next session.
 ```
 
 ---
 
-## What's new in v57
+## What's new in v61
 
 | Section | Change |
 |---|---|
-| **TOAST SYSTEM** | New full section — provider, host, three dismiss reasons, progress bar, known limitation. |
-| **Provider tree** | Documented that all providers live in `main.jsx`, not `App.jsx`. |
-| **`InvitesTab`** | Updated: hard-delete via dismiss, 30s toast, undo flow. |
-| **`.jsx` rule** | Documented in Environment — Vite parses `.js` as plain JS. |
-| **`dismissInvite`** | Now documented as hard delete. |
-| **Known Open** | Toast replacement limitation, invite cleanup sweep. |
-| **Most Likely Next Tasks** | Reordered — invite cleanup is #4. |
+| **STYLE TRANSFER PIPELINE** | New full section — the whole Demucs + ACE-Step flow, environment setup, API endpoints, `GenerateMusicRequest` fields, current state. |
+| **Architecture** | Added ACE-Step API at port 8001. |
+| **Environment** | Added torch/torchaudio version match rule, FFmpeg full-shared rule, ACE-Step setup, `requests` dependency. |
+| **Commands** | Added `uv run python -m acestep.api_server` and `style_cover.py`. |
+| **Known Open** | Style transfer API call untested as #1. |
+| **Most Likely Next Tasks** | Style transfer is now #1. |
 
 The document is self-contained. A fresh model knows:
-- The toast system's shape and the three-reason dismiss contract
-- The invite system end-to-end with undo
-- The provider tree lives in `main.jsx`
-- The `.jsx` extension rule
-- Exactly what remains: skew verification, L3, PublishedInstruments, invite cleanup, rendition chain, cap feedback, heartbeat, leaderboard
+- The full profile / follow / invite system
+- The 3-mode view toggle and Release years range+drag
+- The loading primitives (`Spinner`, `Loader`, `Skeleton`)
+- The style transfer pipeline's setup and the specific FFmpeg / torch / torchcodec version traps
+- The ACE-Step API shape
+- Exactly what remains: ACE-Step final call, skew verification, L3, PublishedInstruments, expiry cleanup, rendition chain, cap feedback, heartbeat, leaderboard
 
 ## Before you close
 
-**Commit.** Substantial work since the last commit:
+**Commit.** Substantial work since v60:
 
 ```cmd
 cd E:\matb3aa-game
 git add .
-git commit -m "v57: toast system — provider in main.jsx, progress bar, invite undo flow with hard-delete on expiry"
+git commit -m "v61: view toggle (grid/list/dense), section header icons, release-year range picker + drag select, style transfer pipeline scaffold with ACE-Step API integration"
 git push
 ```
 
-Then run the last remaining small cleanup — the **invite sweep** — as a quick close:
+**Test the final ACE-Step call** — one command:
 
-```js
-// Add to listPendingInvites, before the SELECT:
-await env.DB.prepare(
-  "DELETE FROM room_invites WHERE created_at < datetime('now', '-7 days')"
-).run();
+```cmd
+cd E:\matb3aa-game
+venv\Scripts\activate
+pip install requests
+python server\scripts\style-transfer\style_cover.py ^
+  --input "C:\Users\Desktop\Downloads\baba.wav" ^
+  --style jazz
 ```
 
-That's a 3-line addition that closes the invite system entirely. Then the whole follow+invite feature is done.
+Paste the output. If it works: you have a jazz cover of "Baba". If it errors on the API call: paste the response and we adjust the parser — one small fix away.
 
-**What's next?** Options:
+**What's next?**
 
-- **Anti-skew round-robin verification** — 30-second curl.
+- **Finish style transfer** — one API fix away from working.
 - **L3 instruments** — small, closes a gap.
 - **Admin `PublishedInstruments.jsx`** — admin-side progress.
+- **Skew verification** — 30-second curl.
 - **Leaderboard** — spec ready.
-- **Something else.**
 
 Say which and we start.

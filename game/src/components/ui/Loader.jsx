@@ -1,58 +1,25 @@
 // game/src/components/ui/Loader.jsx
 import { Skeleton } from './Skeleton.jsx';
+import { Spinner, SpinnerMusicNote } from './Spinner.jsx';
 
-const SPINNER_SIZES = {
-  sm: 'w-4 h-4 border-2',
-  md: 'w-6 h-6 border-2',
-  lg: 'w-10 h-10 border-[3px]',
-};
-
-function Spinner({ size = 'md', className = '' }) {
-  return (
-    <span
-      aria-hidden
-      className={[
-        'inline-block rounded-full',
-        'border-accent/30 border-t-accent',
-        'animate-spin',
-        SPINNER_SIZES[size] ?? SPINNER_SIZES.md,
-        className,
-      ].join(' ')}
-    />
-  );
-}
-
-/**
- * Loading placeholder. Three variants:
- *
- *   <Loader />                              // inline spinner, no label
- *   <Loader label="Loading…" />             // inline spinner + label
- *   <Loader variant="page" label="…" />     // centered, full page
- *   <Loader variant="skeleton" count={4}
- *           skeletonClassName="h-8 w-32" /> // N shimmering blocks
- *
- * The `skeleton` variant renders a grid of identical Skeleton blocks.
- * For finer control, compose `<Skeleton>` directly instead.
- */
 export function Loader({
-  variant = 'inline',      // 'inline' | 'page' | 'skeleton'
-  size = 'md',             // 'sm' | 'md' | 'lg'
+  variant = 'inline',
+  size = 'md',
   label,
-  count = 3,               // for skeleton variant
+  icon = <SpinnerMusicNote />,  // <-- Default is now the SVG note
+  count = 3,
   skeletonClassName = 'h-6 w-full',
   className = '',
 }) {
-  // ── Inline ────────────────────────────────────────────
   if (variant === 'inline') {
     return (
       <div className={`flex items-center gap-2 text-ink-muted text-sm ${className}`}>
-        <Spinner size={size} />
+        <Spinner size={size} icon={icon} />
         {label && <span>{label}</span>}
       </div>
     );
   }
 
-  // ── Page ──────────────────────────────────────────────
   if (variant === 'page') {
     return (
       <div
@@ -63,13 +30,12 @@ export function Loader({
           className,
         ].join(' ')}
       >
-        <Spinner size="lg" />
+        <Spinner size="lg" icon={icon} />
         {label && <span>{label}</span>}
       </div>
     );
   }
 
-  // ── Skeleton ──────────────────────────────────────────
   if (variant === 'skeleton') {
     return (
       <div className={`space-y-2 ${className}`}>

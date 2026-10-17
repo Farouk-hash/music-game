@@ -8,6 +8,7 @@ import {
   useDismissInvite,
 } from '../../../hooks/invites/useInvites.js';
 import { useToast } from '../../../hooks/ui/useToast';
+import { SkeletonRowList } from '../../ui/SkeletonRow.jsx';
 
 export function InvitesTab() {
   const navigate = useNavigate();
@@ -18,7 +19,7 @@ export function InvitesTab() {
   const [hidden, setHidden] = useState(() => new Set());
 
   if (isLoading) {
-    return <p className="text-sm text-ink-muted py-8 text-center">Loading…</p>;
+    return <SkeletonRowList count={3} />;
   }
 
   if (error) {

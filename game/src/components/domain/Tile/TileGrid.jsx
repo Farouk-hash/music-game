@@ -18,6 +18,7 @@ export function TileGrid({
   initialCount,
   resetKey,
   renderHeart,
+  view = 'grid',
 }) {
   const [visibleCount, setVisibleCount] = useState(
     typeof initialCount === 'number' ? initialCount : Infinity
@@ -47,9 +48,16 @@ export function TileGrid({
     setVisibleCount(initialCount);
   }
 
+    const containerClass =
+    view === 'list'
+      ? 'flex flex-col gap-2'
+      : view === 'dense'
+      ? 'grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-1.5 sm:gap-2'
+      : 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4';
+
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
+      <div className={containerClass}>
         {items.map((item, i) => {
           const key = getKey(item);
           const selected = allSelected || selectedIds.has(key);
@@ -66,6 +74,7 @@ export function TileGrid({
                 disabled={disabled}
                 onToggle={() => onToggle(key)}
                 heart={renderHeart ? renderHeart(item) : null}
+                view={view}
               />
             </div>
           );

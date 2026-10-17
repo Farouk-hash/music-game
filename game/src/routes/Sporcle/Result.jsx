@@ -23,10 +23,6 @@ export default function SporcleResult() {
 
   const myId = identity?.playerId ?? null;
 
-  // Fetch profile records for every player in the room so we can
-  // render real avatars in the standings. `state.players` carries
-  // `profileId`; standings carries `playerId`. We key by profileId
-  // here and index into the map by looking up the player.
   const profilesById = useRoomProfiles(state?.players ?? []);
 
   // If we somehow land here before the game is done, route to Play.
@@ -97,9 +93,16 @@ export default function SporcleResult() {
         ) : (
           <div className="text-5xl">🤝</div>
         )}
-        <h1 className="text-2xl font-bold text-ink">
-          {winner ? `${winner.name} wins!` : "It's a tie!"}
-        </h1>
+        <div>
+          <h1 className="text-2xl font-bold text-ink">
+            {winner ? `${winner.name} wins!` : "It's a tie!"}
+          </h1>
+          {state.isTieBreaker && (
+            <p className="text-xs font-semibold text-wrong uppercase tracking-widest mt-1">
+              Won by Sudden Death
+            </p>
+          )}
+        </div>
         <p className="text-sm text-ink-muted">
           {standings.length} players · {finished.perQuestion.length} questions
         </p>
@@ -153,8 +156,6 @@ export default function SporcleResult() {
                   {s.score}
                 </span>
 
-                {/* Follow / Accept / Requested — hidden once friends
-                    (the avatar ring signals that state instead). */}
                 {!isMe && s.profileId && (
                   <FollowButton
                     profileId={s.profileId}

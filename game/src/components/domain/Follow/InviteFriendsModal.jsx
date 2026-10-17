@@ -5,6 +5,7 @@ import { Button } from '../../ui/Button.jsx';
 import { PlayerAvatar } from '../../Avatar/PlayerAvatar.jsx';
 import { useFriends } from '../../../hooks/follows/useFollows.js';
 import { useSendInvites, useRoomInvites } from '../../../hooks/invites/useInvites.js';
+import { SkeletonRowList } from '../../ui/SkeletonRow.jsx';
 
 /**
  * Host-only modal: pick friends to invite to the current room.
@@ -104,9 +105,7 @@ export function InviteFriendsModal({ open, onClose, roomCode }) {
           </button>
         </header>
 
-        {loading && (
-          <p className="text-sm text-ink-muted py-8 text-center">Loading…</p>
-        )}
+        {loading && <SkeletonRowList count={3} />}
 
         {!loading && friends.length === 0 && (
           <p className="text-sm text-ink-subtle py-8 text-center border border-dashed border-border rounded-md">

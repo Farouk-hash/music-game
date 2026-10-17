@@ -1,45 +1,28 @@
 // game/src/components/layout/CollapsibleSection.jsx
 import { BorderContainer } from './BorderContainer.jsx';
 
-/**
- * A bordered section with a clickable header that toggles visibility
- * of its body. Replaces the raw <BorderContainer border="all" className="p-8">
- * pattern for sections that should be collapsible.
- *
- *   <CollapsibleSection
- *     open={genresOpen}
- *     onToggle={() => setGenresOpen(o => !o)}
- *     title="Genres"
- *     meta={genreMode === 'some' ? `(${selectedGenres.size})` : null}
- *     secondaryActions={<StrictGenreToggle ... />}
- *     actions={<button>All genres</button>}
- *   >
- *     <GenreTileGrid ... />
- *   </CollapsibleSection>
- *
- * Layout:
- *   [▾ TITLE (meta)]  [secondaryActions]  ........  [actions]
- *   - title sits left
- *   - secondaryActions sits immediately after the title (optional)
- *   - actions are pushed to the far right via ml-auto (optional)
- */
 export function CollapsibleSection({
   open,
   onToggle,
   title,
+  icon,
   meta,
   actions,
   secondaryActions,
   children,
 }) {
+  const hasActions = Boolean(secondaryActions || actions);
+
   return (
-    <BorderContainer border="all" className="p-8 space-y-4">
-      <div className="flex items-baseline gap-4 flex-wrap">
+    <BorderContainer border="all" className="p-3 sm:p-8 space-y-3 sm:space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 sm:gap-4">
+        
+        {/* Title */}
         <button
           type="button"
           onClick={onToggle}
           aria-expanded={open}
-          className="flex items-center gap-2 text-left group"
+          className="flex items-center gap-1.5 sm:gap-2 text-left group shrink-0"
         >
           <svg
             viewBox="0 0 16 16"
@@ -58,7 +41,15 @@ export function CollapsibleSection({
               strokeLinejoin="round"
             />
           </svg>
-          <h2 className="text-xs font-semibold text-highlight uppercase tracking-[0.2em] group-hover:text-ink transition-colors">
+
+          {/* Mobile: Icon + Meta */}
+          <span className="sm:hidden flex items-center gap-1.5">
+            {icon && <span className="text-highlight shrink-0">{icon}</span>}
+            {meta && <span className="text-xs text-ink-subtle font-normal">{meta}</span>}
+          </span>
+
+          {/* Desktop: Title + Meta */}
+          <h2 className="hidden sm:flex items-center text-xs font-semibold text-highlight uppercase tracking-[0.2em] group-hover:text-ink transition-colors">
             {title}
             {meta && (
               <span className="text-xs text-ink-subtle normal-case tracking-normal font-normal ml-1">
@@ -68,24 +59,16 @@ export function CollapsibleSection({
           </h2>
         </button>
 
-        {secondaryActions && (
-          <div className="flex items-center gap-4">
+        {/* Actions */}
+        {hasActions && (
+          <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 ml-auto">
             {secondaryActions}
-          </div>
-        )}
-
-        {actions && (
-          <div className="flex items-center justify-end gap-4 ml-auto">
             {actions}
           </div>
         )}
       </div>
 
-      {open && (
-        <div className="space-y-4">
-          {children}
-        </div>
-      )}
+      {open && <div className="space-y-4">{children}</div>}
     </BorderContainer>
   );
 }

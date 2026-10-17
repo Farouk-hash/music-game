@@ -9,6 +9,7 @@ export function ArtistTileGrid({
   onToggle,
   resetKey,
   onUnfavorited,
+  view = 'grid', 
 }) {
   const { isArtistFavorite, toggleArtist } = useFavoriteToggles();
 
@@ -23,6 +24,7 @@ export function ArtistTileGrid({
       emptyMessage="No artists match the selected genres."
       initialCount={8}
       resetKey={resetKey}
+      view={view}
       renderHeart={(a) => {
         const active = isArtistFavorite(a.id);
         return (

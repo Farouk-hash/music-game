@@ -21,7 +21,17 @@ import { Level2Modal } from '../components/domain/Setup/Modals/Level2Modal.jsx';
 import { Level3Modal } from '../components/domain/Setup/Modals/Level3Modal.jsx';
 import { MultiplayerModal } from '../components/domain/Multiplayer/MultiplayerModal.jsx';
 import { SporcleModal } from '../components/domain/Setup/Modals/SporcleModal.jsx';
-
+import { ViewToggle } from '../components/ui/ViewToggle.jsx';
+import { 
+  
+  IconSelectAll, 
+  IconGenres  , 
+  IconCalendar, 
+  IconX ,
+  IconArtists,
+  IconDice
+} from '../lib/icons.jsx';
+import { YearRangeModal } from '../components/domain/Setup/Years/YearRangeModal.jsx';
 
 function matchesGenres(artist, selectedGenresSet, strictGenre) {
   const ids = Array.isArray(artist.genre_ids) ? artist.genre_ids : [];
@@ -59,6 +69,8 @@ export default function Setup() {
   const [artistsOpen, setArtistsOpen] = useState(true);
   const [yearsOpen,   setYearsOpen]   = useState(true);
 
+  const [yearRangeOpen, setYearRangeOpen] = useState(false);
+
   // ── Strict toggles ──
   const [strictYears,  setStrictYears]  = useState(() =>
     localStorage.getItem('game.strictYears') === '1'
@@ -66,6 +78,36 @@ export default function Setup() {
   const [strictGenres, setStrictGenres] = useState(() =>
     localStorage.getItem('game.strictGenres') === '1'
   );
+  
+  // ── View mode (per section) ──
+  const [genresView, setGenresView] = useState(() => {
+    const v = localStorage.getItem('game.genresView');
+    return v === 'list' || v === 'dense' ? v : 'grid';
+  });
+
+  const [artistsView, setArtistsView] = useState(() => {
+    const v = localStorage.getItem('game.artistsView');
+    return v === 'list' || v === 'dense' ? v : 'grid';
+  });
+
+  const changeGenresView = useCallback((v) => {
+    setGenresView(v);
+    localStorage.setItem('game.genresView', v);
+  }, []);
+
+  const changeArtistsView = useCallback((v) => {
+    setArtistsView(v);
+    localStorage.setItem('game.artistsView', v);
+  }, []);
+
+  const handleApplyYearRange = useCallback((yearsToSelect) => {
+    // Add all years in the range to the current selection
+    setSelectedYears((prev) => {
+      const next = new Set(prev);
+      for (const y of yearsToSelect) next.add(y);
+      return next;
+    });
+  }, []);
 
   // ── Modal state ──
   const [level1Open, setLevel1Open] = useState(false);
@@ -386,6 +428,41 @@ export default function Setup() {
     return out;
   }
 
+  
+  const randomizeSelection = useCallback(() => {
+    if (!genres || !artists) return;
+
+    // 1. Pick a random number of genres (between 1 and 3)
+    const numGenres = Math.floor(Math.random() * 3) + 1; // 1, 2, or 3
+    
+    // Shuffle genres and pick the first N
+    const shuffledGenres = [...genres].sort(() => 0.5 - Math.random());
+    const pickedGenres = shuffledGenres.slice(0, numGenres);
+    
+    // 2. Set genre mode and selection
+    setGenreMode('some');
+    setSelectedGenres(new Set(pickedGenres.map(g => g.id)));
+
+    // 3. Find all artists matching ANY of the picked genres
+    const validArtists = artists.filter(a => 
+      pickedGenres.some(g => a.genre_ids?.includes(g.id))
+    );
+
+    // 4. Pick a random number of artists (between 2 and 8, capped by how many exist)
+    const maxArtists = Math.min(8, validArtists.length);
+    const numArtists = Math.floor(Math.random() * (maxArtists - 2 + 1)) + 2;
+    
+    // Shuffle valid artists and pick the first N
+    const shuffledArtists = [...validArtists].sort(() => 0.5 - Math.random());
+    const pickedArtists = shuffledArtists.slice(0, numArtists);
+
+    setSelectedArtists(new Set(pickedArtists.map(a => a.id)));
+    
+    // 5. Clear other filters
+    setSelectedYears(new Set());
+    setArtistQuery('');
+  }, [genres, artists]);
+
   return (
     <div className="space-y-10 pb-32">
       {/* Header */}
@@ -419,44 +496,59 @@ export default function Setup() {
         <>
           {/* Genres */}
           <CollapsibleSection
-  open={genresOpen}
-  onToggle={() => setGenresOpen(o => !o)}
-  title="Genres"
-  meta={genreMode === 'some' ? `(${selectedGenres.size})` : null}
-  secondaryActions={
-    <StrictGenreToggle
-      value={strictGenres}
-      onChange={toggleStrictGenres}
-      disabled={genreMode !== 'some' || selectedGenres.size < 2}
-    />
-  }
-  actions={
-    <button
-        type="button"
-        onClick={chooseAllGenres}
-        aria-pressed={genreMode === 'all'}
-        aria-label="All genres"
-        title="All genres"
-        className={[
-          'inline-flex items-center gap-2 px-4 h-9 rounded-md border text-sm transition-colors',
-          genreMode === 'all'
-            ? 'bg-accent text-bg border-accent'
-            : 'bg-surface-2 text-ink-muted border-border hover:border-accent-2 hover:text-ink',
-        ].join(' ')}
-      >
-        <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="none">
-          <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        </svg>
-        <span className="hidden sm:inline">All genres</span>
-      </button>
-  }
->
+            open={genresOpen}
+            onToggle={() => setGenresOpen(o => !o)}
+            title="Genres"
+            icon={<IconGenres className="w-5 h-5" />}
+            meta={genreMode === 'some' ? `(${selectedGenres.size})` : null}
+            secondaryActions={
+              <>
+                <button
+                  type="button"
+                  onClick={randomizeSelection}
+                  aria-label="Randomize selection"
+                  title="Surprise me!"
+                  className="inline-flex items-center justify-center px-3 h-9 rounded-md border text-sm transition-colors shrink-0 bg-surface-2 text-ink-muted border-border hover:border-accent-2 hover:text-ink"
+                >
+                  <IconDice className="w-4 h-4 shrink-0" />
+                </button>
+                <ViewToggle value={genresView} onChange={changeGenresView} />
+                <StrictGenreToggle
+                  value={strictGenres}
+                  onChange={toggleStrictGenres}
+                  disabled={genreMode !== 'some' || selectedGenres.size < 2}
+                />
+              </>
+            }
+            actions={
+              <button
+                type="button"
+                onClick={chooseAllGenres}
+                aria-pressed={genreMode === 'all'}
+                aria-label="All genres"
+                title="All genres"
+                className={[
+                  // Changed px-3 to px-2 on mobile to save space
+                  'inline-flex items-center justify-center gap-1.5 px-2 sm:px-3 h-9 rounded-md border text-sm transition-colors shrink-0',
+                  genreMode === 'all'
+                    ? 'bg-accent text-bg border-accent'
+                    : 'bg-surface-2 text-ink-muted border-border hover:border-accent-2 hover:text-ink',
+                ].join(' ')}
+              >
+                {/* Changed to a simpler icon for mobile if needed, but IconSelectAll is fine. */}
+                <IconSelectAll className="w-4 h-4 shrink-0" />
+                <span className="hidden sm:inline">All genres</span>
+              </button>
+            }
+            
+          >
             <GenreTileGrid
               genres={genres}
               selectedIds={selectedGenres}
               onToggle={toggleGenre}
               allSelected={genreMode === 'all'}
               onUnfavorited={handleGenreUnfavorited}
+              view={genresView}
             />
           </CollapsibleSection>
 
@@ -484,27 +576,42 @@ export default function Setup() {
             </div>
           </BorderContainer>
 
-          {/* Release years */}
+         {/* Release years */}
           {showArtists && (
             <CollapsibleSection
               open={yearsOpen}
               onToggle={() => setYearsOpen(o => !o)}
               title="Release years"
+              icon={<IconCalendar className="w-5 h-5" />}
               meta={effectiveSelectedYears.size > 0 ? `(${effectiveSelectedYears.size})` : null}
-              actions={
+              secondaryActions={
                 <>
+                  <button
+                    type="button"
+                    onClick={() => setYearRangeOpen(true)}
+                    className="inline-flex items-center justify-center gap-2 px-3 h-9 rounded-md border text-sm transition-colors shrink-0 bg-surface-2 text-ink-muted border-border hover:border-accent-2 hover:text-ink"
+                    title="Select Range"
+                    aria-label="Select Range"
+                  >
+                    <IconCalendar className="w-4 h-4 shrink-0" />
+                    <span className="hidden sm:inline">Range</span>
+                  </button>
+
                   <StrictModeToggle
                     value={strictYears}
                     onChange={toggleStrictMode}
                     disabled={effectiveSelectedYears.size === 0}
                   />
+                  
                   {effectiveSelectedYears.size > 0 && (
                     <button
                       type="button"
                       onClick={() => setSelectedYears(new Set())}
-                      className="text-xs text-ink-muted hover:text-ink"
+                      className="inline-flex items-center justify-center px-3 h-9 rounded-md border text-sm transition-colors shrink-0 bg-surface-2 text-wrong border-border hover:border-wrong"
+                      title="Clear all"
+                      aria-label="Clear all"
                     >
-                      Clear
+                      <IconX className="w-4 h-4 shrink-0" />
                     </button>
                   )}
                 </>
@@ -526,75 +633,78 @@ export default function Setup() {
           )}
 
          {/* Artists */}
-{showArtists ? (
-  <CollapsibleSection
-    open={artistsOpen}
-    onToggle={() => setArtistsOpen(o => !o)}
-    title="Artists"
-    meta={effectiveSelectedArtists.size > 0 ? `${effectiveSelectedArtists.size} selected` : null}
-    actions={
-      <button
-        type="button"
-        onClick={toggleSelectAllArtists}
-        disabled={visibleArtists.length === 0}
-        aria-pressed={allVisibleSelected}
-        aria-label={allVisibleSelected ? 'Clear artists' : 'Select all artists'}
-        title={allVisibleSelected ? 'Clear artists' : 'Select all artists'}
-        className={[
-          'inline-flex items-center gap-2 px-4 h-9 rounded-md border text-sm transition-colors',
-          'disabled:opacity-40 disabled:cursor-not-allowed',
-          allVisibleSelected
-            ? 'bg-accent text-bg border-accent'
-            : 'bg-surface-2 text-ink-muted border-border hover:border-accent-2 hover:text-ink',
-        ].join(' ')}
-      >
-        <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="none">
-          <path d="M3 8.5 L6.5 12 L13 4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-        <span className="hidden sm:inline">
-          {allVisibleSelected ? 'Clear artists' : 'Select all artists'}
-        </span>
-      </button>
-    }
-  >
-    <div className="space-y-1">
-      <SearchBar
-        value={artistQuery}
-        onChange={setArtistQuery}
-        placeholder="Filter artists…"
-      />
-      {artistQuery && (
-        <p className="text-xs text-ink-subtle">
-          {visibleArtists.length} of {yearFilteredArtists.length} match
-        </p>
-      )}
-    </div>
+          {showArtists ? (
+            <CollapsibleSection
+              open={artistsOpen}
+              onToggle={() => setArtistsOpen(o => !o)}
+              title="Artists"
+              icon={<IconArtists className="w-5 h-5" />}
+              secondaryActions={
+                <ViewToggle value={artistsView} onChange={changeArtistsView} />
+              }
+              meta={effectiveSelectedArtists.size > 0 ? `(${effectiveSelectedArtists.size})` : null}
+              actions={
+                <button
+                  type="button"
+                  onClick={toggleSelectAllArtists}
+                  disabled={visibleArtists.length === 0}
+                  aria-pressed={allVisibleSelected}
+                  aria-label={allVisibleSelected ? 'Clear artists' : 'Select all artists'}
+                  title={allVisibleSelected ? 'Clear artists' : 'Select all artists'}
+                  className={[
+                    'inline-flex items-center justify-center gap-2 px-3 h-9 rounded-md border text-sm transition-colors shrink-0',
+                    'disabled:opacity-40 disabled:cursor-not-allowed',
+                    allVisibleSelected
+                      ? 'bg-accent text-bg border-accent'
+                      : 'bg-surface-2 text-ink-muted border-border hover:border-accent-2 hover:text-ink',
+                  ].join(' ')}
+                >
+                  <IconSelectAll className="w-4 h-4 shrink-0" />
+                  <span className="hidden sm:inline">
+                    {allVisibleSelected ? 'Clear' : 'Select all'}
+                  </span>
+              </button>
+              }
+            >
+              <div className="space-y-1">
+                <SearchBar
+                  value={artistQuery}
+                  onChange={setArtistQuery}
+                  placeholder="Filter artists…"
+                />
+                {artistQuery && (
+                  <p className="text-xs text-ink-subtle">
+                    {visibleArtists.length} of {yearFilteredArtists.length} match
+                  </p>
+                )}
+              </div>
 
-    {visibleArtists.length === 0 ? (
-      <p className="text-sm text-ink-subtle text-center py-6 border border-dashed border-border rounded-md">
-        {artistQuery
-          ? `No artists match "${artistQuery}"`
-          : strictGenres && selectedGenres.size >= 2
-            ? 'No artists have all the selected genres. Try turning off strict genres.'
-            : 'No artists match the current filters.'}
-      </p>
-    ) : (
-      <ArtistTileGrid
-        artists={visibleArtists}
-        selectedIds={effectiveSelectedArtists}
-        onToggle={toggleArtist}
-        resetKey={`${genreMode}:${[...selectedGenres].sort().join(',')}`}
-        onUnfavorited={handleArtistUnfavorited}
-      />
-    )}
-  </CollapsibleSection>
-) : (
-  <BorderContainer border="all" className="p-8">
-    <p className="text-sm text-ink-subtle text-center py-6 border border-dashed border-border rounded-md">
-      Pick a genre — or choose “All genres” — to see the artists.
-    </p>
-  </BorderContainer>
-)}
+              {visibleArtists.length === 0 ? (
+                <p className="text-sm text-ink-subtle text-center py-6 border border-dashed border-border rounded-md">
+                  {artistQuery
+                    ? `No artists match "${artistQuery}"`
+                    : strictGenres && selectedGenres.size >= 2
+                      ? 'No artists have all the selected genres. Try turning off strict genres.'
+                      : 'No artists match the current filters.'}
+                </p>
+              ) : (
+                <ArtistTileGrid
+                  artists={visibleArtists}
+                  selectedIds={effectiveSelectedArtists}
+                  onToggle={toggleArtist}
+                  resetKey={`${genreMode}:${[...selectedGenres].sort().join(',')}`}
+                  onUnfavorited={handleArtistUnfavorited}
+                  view={artistsView}
+                />
+              )}
+            </CollapsibleSection>
+          ) : (
+            <BorderContainer border="all" className="p-8">
+              <p className="text-sm text-ink-subtle text-center py-6 border border-dashed border-border rounded-md">
+                Pick a genre — or choose “All genres” — to see the artists.
+              </p>
+            </BorderContainer>
+          )}
         </>
       )}
 
@@ -700,6 +810,12 @@ export default function Setup() {
         canHost={canStart}
         disabledTypes={disabledTypes}
         reversedClipsCount={reversedClipsCount}
+      />
+      <YearRangeModal
+        open={yearRangeOpen}
+        onClose={() => setYearRangeOpen(false)}
+        years={years}
+        onApply={handleApplyYearRange}
       />
     </div>
   );

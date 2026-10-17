@@ -17,6 +17,7 @@ export function YearTileGrid({
   onToggle,
   initialCount = 12,
   resetKey,
+  
 }) {
   const [visibleCount, setVisibleCount] = useState(initialCount);
 
