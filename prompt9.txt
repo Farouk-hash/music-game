@@ -1,0 +1,503 @@
+Here's the consolidated v72 handoff. It supersedes v70 and folds in everything from this session — the Sporcle heartbeat/lobby-wait work, the `force_close` action, the `AutoCloseBar`, and the matb3aa URL migration fix.
+
+---
+
+```
+You are continuing a working project. **Do not re-derive the setup or re-verify anything below.** Everything here is confirmed working unless explicitly marked broken. Read it in full before proposing anything.
+
+## The Project
+
+Six pieces, plus a data pipeline:
+
+1. **`admin/`** — build tool for curating audio clips, lyrics, artists, album years. Port 5173.
+2. **`game/`** — the player-facing quiz app. Port 5174 locally; deployed to Cloudflare Pages.
+3. **`server/`** — local Express + orchestration. Port 3001.
+4. **`music-game-wrangler/`** — Cloudflare Worker holding D1 + R2 (tracks, artists, lyrics, instruments, profiles, follows, invites).
+5. **`host-sporcle-wrangler/`** — Durable Object service for Sporcle multiplayer.
+6. **`tools/ACE-Step-1.5/`** — Local AI model for style-transfer.
+
+The game does **not** go through Express. It fetches `music-game-wrangler` directly for solo/co-op, profiles, follows, and invites, and `host-sporcle-wrangler` for Sporcle.
+
+## Repository
+
+**GitHub:** `https://github.com/Farouk-hash/music-game` (private, monorepo)
+**Local repo root:** `E:\matb3aa-game\.git`
+**Last committed state:** v28 (initial commit `c2a9ad3`). Work from v29–v72 is **uncommitted**.
+
+**`.gitignore`:** Ignores `tools/`, `server/style-transfer-output/`, `server/instrumental-output/`, `*.mp3`, `*.wav`, `venv/`, `.venv/`, Python caches, `server/tmp-preview-test/`.
+
+**`.env.production` is TRACKED** and contains `VITE_API_BASE0`, `VITE_API_BASE`, `VITE_SPORCLE_BASE`.
+
+## Architecture & Ports
+
+| Piece | Location | Local port | URL |
+|---|---|---|---|
+| Express server | `server/` | 3001 | `http://localhost:3001` |
+| Admin app | `admin/` | 5173 | `http://localhost:5173` |
+| Game (local) | `game/` | 5174 | `http://localhost:5174` |
+| Game (deployed) | Pages | — | `https://music-game-9vn.pages.dev` |
+| Worker (music) | `music-game-wrangler/` | 8787 | `https://music-game-wrangler…workers.dev` |
+| Worker (Sporcle) | `host-sporcle-wrangler/` | 8788 | `https://host-sporcle-wrangler…workers.dev` |
+| ACE-Step API | `tools/ACE-Step-1.5/` | 8001 | `http://127.0.0.1:8001` |
+
+## Styling System
+
+- `game/src/styles/tokens.css` — the ONE file with hex values.
+- `game/tailwind.config.js` — maps utility classes to CSS variables.
+- **Valid tokens:** `bg-bg`, `bg-surface`, `bg-surface-2`, `text-ink`, `text-accent`, `text-wrong`, `ring-accent`, etc. Opacity modifiers (`/40`) DO NOT WORK on token-mapped classes.
+- **Standard heights:** `h-9` for section action buttons.
+
+## Layout
+
+- `html, body, #root` uses `min-height: 100%` (not `height: 100%`) to allow native window scrolling.
+- `Shell.jsx` uses `flex-1 flex flex-col` on `<main>` and `flex-1` on the inner route wrapper.
+- `Play.jsx` and `Result.jsx` do **not** use `h-[calc(100vh)]` or inner `overflow-y-auto`. They rely on native window scroll with `pb-24` bottom padding.
+- `ChatModal` and `ReplaySettingsModal` are **always siblings** of the main route container so their `fixed` layouts don't interfere with page scrolling.
+
+## Icons (`game/src/lib/icons.jsx`)
+
+All inline SVGs, `stroke="currentColor"`, `strokeWidth="2"`. Current set: `IconGenres`, `IconArtists`, `IconTracks`, `IconClips`, `IconAlbums`, `IconLyrics`, `IconReversed`, `IconEye`, `IconEyeOff`, `IconInstruments`, `IconGrid`, `IconList`, `IconDense`, `IconStrict`, `IconSelectAll`, `IconCalendar`, `IconX`, `IconDice`.
+
+## Setup View Toggle & Layout
+
+- **3 modes per section (Genres, Artists):** Grid / Dense / List. Persisted in `localStorage`.
+- **CollapsibleSection:** Accepts `title`, `icon`, `meta`, `secondaryActions`, `actions`.
+- **Randomize Button:** Added to Genres section (`IconDice`).
+
+## Release Years
+
+Includes a Range Modal (`YearRangeModal.jsx`), and a drag-select mechanism in `YearTileGrid.jsx`.
+
+## PROFILE / FOLLOW / INVITE SYSTEMS
+
+- **Profile:** Anonymous UUID, recovery code, silent creation, `restore` deletes old profile.
+- **Follow:** M2 model (two-way). `FollowButton` and `FollowRing` handle states.
+- **Room Invites:** `room_invites` table. `usePendingInvites` (15s poll). Toast dismiss flow: hide row → 30s undo → hard delete or undo.
+- **Room-Death Cleanup:** DO `#leave` returns `version: 0` → route layer calls `execCtx.waitUntil(notifyRoomDestroyed(env, code))` → POSTs to `/invites/cleanup-room`.
+- **⚠️ CRITICAL:** Any fire-and-forget HTTP call from a Worker/DO **must** be wrapped in `execCtx.waitUntil(...)`.
+
+## TOAST SYSTEM
+
+`useToast.jsx`. Dismiss reasons: `cancel` (fires action), `expire` (fires onDismiss).
+
+## Sporcle Client (GOTCHA)
+
+`Play.jsx` → `useRoomProfiles` → `SporcleModal profilesById` → `RoomPanel profilesById` → `PlayerRoster profilesById` → `FollowRing`.
+**Gotchas:** `profilesById` must reach the live `<RoomPanel>`. Joining from an invite does NOT remount Play — use `onIdentitySet`.
+
+## SPORCLE — TIE BREAKER + ALL-ANSWERED FIX
+
+### Tie Breaker (implemented)
+
+**Server-side:**
+- `tie_breaker INTEGER NOT NULL DEFAULT 0` on `room` table.
+- `#checkTieBreaker(room)` fetches 3 questions. If tied, it locks non-tied players, sets `tie_breaker = 1`.
+- `#advance` and `alarm` handle the loop. If exhausted, fetch a new batch.
+- `#endQuestion` and `#answer` force speed-mode scoring (first correct wins).
+
+**Client-side:**
+- Red "Sudden Death" banner when `state.isTieBreaker`.
+- Timer switches to 15s. Host button text changes.
+- `Result.jsx` shows "Won by Sudden Death".
+
+### All-Answered Fix (implemented)
+
+**Bug:** In speed mode, all players answering wrong waited for the 20s timer.
+**Fix:** The `if (answered >= total)` check runs outside the `if (room.mode === 'collect')` block, so it fires in both modes.
+
+## SPORCLE — CHAT (v68/v69 - COMPLETE)
+
+### Model
+
+Chat lives entirely in the **room's Durable Object**. No `music-game-wrangler` involvement. It dies when the room dies.
+
+### DO Schema — `messages` table
+
+```sql
+CREATE TABLE IF NOT EXISTS messages (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  player_id   TEXT NOT NULL,
+  text        TEXT NOT NULL,
+  created_at  INTEGER NOT NULL
+);
+```
+
+### Server-side — `host-sporcle-wrangler/src/controllers/chat.js`
+
+Exports `chatInsert(sql, player, text, now)` and `chatList(sql)`.
+- `chatInsert` trims text to 200 chars, rejects empty, prunes to max 200 messages per room.
+- `chatList` joins `players` for `author_name` and `profile_id`.
+
+### Client files
+
+```
+game/src/
+├── lib/
+│   └── chatReadState.js          # getLastReadId, setLastReadId, countUnread
+└── components/domain/Sporcle/
+    ├── ChatButton.jsx            # icon + unread badge (h-9)
+    └── ChatModal.jsx             # modal with messages + input
+```
+
+### Chat button behaviour
+
+- Unread count only counts messages from **other** players.
+- `lastReadId` persisted per room in `localStorage['sporcle:<code>:chat:lastReadId']`.
+- Style: `h-9 px-3` — matches utility buttons.
+
+### Chat placement
+
+| Screen | Location |
+|---|---|
+| **RoomPanel (lobby)** | Inline with Copy code / Copy invite link / Invite friends |
+| **Play.jsx (mid-game)** | **Top-right**, next to `Q X / Y`. Always visible. |
+| **Result.jsx** | In the "Final result" header row, right-aligned |
+
+### Chat rules
+
+- Available in **all phases**.
+- Message cap: 200 per room. Message length cap: 200 chars.
+- Messages persist across `#reset` / play-again. Messages die with the room.
+
+## SPORCLE — PLAY AGAIN WITH SETTINGS (v70)
+
+### Server-side: DO action `start_again`
+
+Host-only, from `finished`:
+1. Merges `action.config` into existing room config.
+2. Resets `score = 0, ready = 0, locked = 0` for all active players.
+3. Deletes all `questions` and `answers`.
+4. Sets `phase = 'loading'`, resets `q_index = 0`, `tie_breaker = 0`, bumps version.
+5. Calls `ctx.waitUntil(this.#loadQuestionsAndCountdown())`.
+
+### `#buildState` exposes `roomConfig: config`
+
+### Client-side `ReplaySettingsModal.jsx`
+
+- **Mode:** Speed / Collect.
+- **Count:** 5 / 10 / 15 / 20.
+- **Genres:** dense grid (3 cols mobile, 4 desktop).
+- **Artists:** searchable, dense grid.
+- **Years:** draggable-selectable.
+- Pre-populated from `state.roomConfig`.
+- Modal: `flex flex-col h-[85vh]` (fixed height), body `flex-1 overflow-y-auto`, header/footer `shrink-0`. **No nested `max-h` scroll areas**.
+
+## SPORCLE — HEARTBEAT + LOBBY-WAIT TIMERS (v71/v72)
+
+### The problem solved
+
+1. Mid-game roster wasn't updating when a player left.
+2. Result screen didn't reflect host leaves.
+3. Mobile tab-close is unreliable → needs server-side sweep.
+4. Rooms sat idle forever (host alone / nobody ready / host not starting) → wasted DO requests.
+
+### The full design
+
+**Players have `left` values:**
+
+| Value | Meaning |
+|---|---|
+| `0` | present |
+| `1` | explicit leave (button / tab-close beacon) — never auto-rejoined |
+| `2` | timed out (heartbeat) — auto-rejoins on next poll / ping |
+
+**Heartbeat = existing long-poll.** No separate heartbeat hook. Every `GET /state?since=N&playerId=X` updates X's `last_seen`. The DO sweeps stale players every 5s (SWEEP_INTERVAL_MS).
+
+### DO schema additions
+
+```sql
+players.last_seen INTEGER NOT NULL DEFAULT 0
+
+room.lobby_wait_started_at INTEGER
+room.lobby_wait_reason     TEXT   -- 'alone' | 'no-ready' | 'host-idle' | NULL
+```
+
+Both are `ALTER TABLE`-migrated in the constructor with try/catch.
+
+### Constants
+
+```js
+const HEARTBEAT_TIMEOUT_MS       = 30000;   // 30s → mark left=2
+const LOBBY_HEARTBEAT_TIMEOUT_MS = 2*60000; // 2min in lobby (share code = slow)
+const SWEEP_INTERVAL_MS          = 5000;
+const ALONE_TIMEOUT_MS           = 60000;   // client — alone window
+const NO_READY_TIMEOUT_MS        = 60000;   // client — nobody-ready window
+const HOST_IDLE_TIMEOUT_MS       = 60000;   // client — all ready, host not starting
+```
+
+### Lobby-wait reasons (server-side, `#refreshLobbyWaitWindow`)
+
+Called after every player-list or ready-flag change:
+- `init`, `join`, `#leave`, `#rejoin`, `#ready`
+
+Logic:
+- **`'alone'`** — `activeCount === 1 && hostCount === 1`
+- **`'no-ready'`** — `nonHostActive > 0 && readyNonHost === 0`
+- **`'host-idle'`** — `nonHostActive > 0 && readyNonHost === nonHostActive` (all non-hosts ready, host hasn't started)
+- **`null`** — all other cases
+
+**If reason is unchanged, timer is preserved.** If reason changes, `lobby_wait_started_at` resets to `now`.
+
+The reason + timestamp are exposed in state as:
+```js
+lobbyWaitStartedAt: room.lobby_wait_started_at ?? null,
+lobbyWaitReason:    room.lobby_wait_reason     ?? null,
+```
+
+### `force_close` action
+
+Host-only, destroys the room:
+```js
+async #forceClose(player, room) {
+  if (!player.is_host) return { ok: false, error: 'Host only' };
+  await this.ctx.storage.deleteAll();
+  return { ok: true, version: 0 };
+}
+```
+
+Used by `no-ready` and `host-idle` expiry. `alone` uses `leave` (which naturally destroys when the host is the last player).
+
+### `handleAction` idempotency (v72)
+
+When the room is already gone or the player row was hard-deleted, `leave` / `ping` / `rejoin` / `force_close` return `{ ok: true, version: 0 }` instead of `400`. This silences the `POST /action 400` that happened when a client's beacon raced with room destruction.
+
+### Client-side: `AutoCloseBar.jsx`
+
+```jsx
+<AutoCloseBar
+  startedAt={waitStartedAt}
+  durationMs={waitDurationMs}
+  onExpire={handleWaitExpired}
+  label={waitLabel}
+  sublabel={waitSublabel}
+/>
+```
+
+- Green > 50%, yellow 20–50%, red < 20%.
+- Fires `onExpire` once when `remainingMs <= 0`.
+
+### Client-side: `RoomPanel.jsx`
+
+Reads `state.lobbyWaitStartedAt` + `state.lobbyWaitReason`, renders `AutoCloseBar` when both are set and phase is `lobby`. Only the **host** triggers the destroy (`leave` for `'alone'`, `forceClose` for `'no-ready'` / `'host-idle'`). Non-hosts rely on the resulting `404` from their next poll.
+
+### Client-side: `Play.jsx`
+
+Added:
+```jsx
+useEffect(() => {
+  if (error?.status === 404) {
+    setModalOpen(false);
+    navigate('/setup');
+  }
+}, [error, navigate]);
+```
+
+Non-host clients close their modal when the host destroys the room.
+
+### Client-side: `useSporclePresence.js`
+
+- **1. Instant leave** — beacon on `beforeunload` / `pagehide` → `left = 1`.
+- **2. Heartbeat fallback** — ping every 10s (skipped when tab hidden).
+- **3. Comeback** — auto-rejoin on `left === 2` unless the player explicitly left (`intentionalRef`).
+
+`leaveBeaconRaw(code, playerId)` in `sporcleApi.js` sends `text/plain` (no CORS preflight) with `keepalive: true` fallback.
+
+### `useHostSporcle.js` — passes `playerId` into state poll
+
+```js
+const next = await sporcleApi.state(code, sinceRef.current, {
+  signal: controller.signal,
+  playerId: playerIdRef.current,
+});
+```
+
+`playerIdRef` (not in effect deps) so late-arriving identity doesn't restart the loop.
+
+### `sporcleApi.state` — sends `playerId` in query string
+
+```js
+state: (code, since = 0, { signal, playerId } = {}) => {
+  const qs = new URLSearchParams({ since: String(since) });
+  if (playerId) qs.set('playerId', playerId);
+  return request(`/host-sporcle/${code}/state?${qs.toString()}`, { signal });
+},
+```
+
+### Route layer — `routes/state.js` uses `(ctx)` signature
+
+```js
+export async function handleState(ctx) {
+  const { env, url, code } = ctx;
+  const since = Number(url.searchParams.get('since') ?? '0');
+  const playerId = url.searchParams.get('playerId') ?? null;
+  const stub = getStub(env, code);
+  return json(await stub.getState(since, playerId));
+}
+```
+
+**⚠️ Router passes `ctx = { request, env, url, code, action, execCtx }` as a single arg.** Handler signatures must be `(ctx)`.
+
+### Behaviour matrix
+
+| Situation | `lobby_wait_reason` | Bar label | Destroy path |
+|---|---|---|---|
+| Host alone | `'alone'` | "Waiting for players…" | `leave` (deletes room when last player) |
+| ≥2 players, none ready | `'no-ready'` | "Waiting for everyone to ready up…" | `force_close` |
+| ≥2 players, all ready, host hasn't started | `'host-idle'` | "Everyone is ready…" | `force_close` |
+| Host clicks Start before 60s | cleared | bar disappears | game starts |
+| Player joins while `'alone'` | → `'no-ready'` | label changes | timer resets |
+| Player readies while `'no-ready'` | → `'host-idle'` | label changes | timer resets |
+| Player un-readies while `'host-idle'` | → `'no-ready'` | label changes | timer resets |
+
+**Every reason transition resets the 60s window.**
+
+### Client files summary
+
+```
+game/src/
+├── components/domain/Sporcle/
+│   ├── AutoCloseBar.jsx         # NEW v71
+│   ├── RoomPanel.jsx            # updated
+│   └── ... (unchanged)
+├── hooks/sporcle/
+│   ├── useHostSporcle.js        # updated — passes playerId
+│   ├── useHostSporcleActions.js # updated — forceClose
+│   └── useSporclePresence.js    # updated — beacon + ping + rejoin
+└── lib/
+    └── sporcleApi.js            # updated — state w/ playerId, leaveBeaconRaw
+```
+
+## MATB3AA MEDIA URL MIGRATION (v72)
+
+### The bug
+
+matb3aa migrated from `/media/<file>.mp3` to **`/storage/media/<file>.mp3`** when they moved to a BeMusic-powered SPA. Old URLs return `200 text/html` (SPA shell), so `download()` in `server/scripts/instrumental/batch.js` silently saved HTML to `source.mp3`. `ffprobe` failed with "Failed to find two consecutive MPEG audio frames."
+
+### The fix
+
+`absolutizeSrc()` in `batch.js` **normalizes any input** to `https://www.matb3aa.com/storage/media/<file>`:
+
+```js
+function absolutizeSrc(src) {
+  if (!src) return null;
+  const base = (MATB3AA_AUDIO_BASE || 'https://www.matb3aa.com').replace(/\/$/, '');
+  if (/^https?:\/\//i.test(src)) {
+    const filename = src.replace(/^https?:\/\/[^/]+\//i, '');
+    const pathOnly = filename.replace(/^(storage\/)?media\//i, '');
+    return `${base}/storage/media/${encodeURIComponent(decodeURIComponent(pathOnly))}`;
+  }
+  const filename = src.replace(/^(storage\/)?media\//i, '').replace(/^\//, '');
+  return `${base}/storage/media/${encodeURIComponent(decodeURIComponent(filename))}`;
+}
+```
+
+### Strict audio validation in `download()`
+
+Now rejects non-audio BEFORE saving:
+- Size `< 200_000` bytes → throw with preview
+- Magic bytes not MP3 (`0xFF 0xE0..`) / ID3 / MP4 (`ftyp`) → throw with preview
+
+Silent HTML-to-MP3 corruption is no longer possible.
+
+### Confirmed working
+
+```
+HTTP 200, Content-Type: audio/mpeg, Content-Length: 2523993
+```
+
+Downloaded correctly through `batch.js` → demucs → segment output.
+
+### What to remember for future pipelines
+
+**Any new pipeline that reads matb3aa media must use `/storage/media/`.** The API's `src` field still returns `/media/` (legacy) for backward compat. `src_local: true` in the API response is a hint that matb3aa's own frontend would rewrite the URL client-side.
+
+## ENVIRONMENT — SETUP TRAPS
+
+- **Vite proxies:** `/api/game`, `/api/profiles`, `/api/follows`, `/api/invites`. Any new prefix needs an entry.
+- **JSX extension:** `.jsx` mandatory.
+- **PowerShell encoding:** ASCII-only, or save as UTF-8 with BOM.
+- **PowerShell + Arabic:** use `-Body ([System.Text.Encoding]::UTF8.GetBytes($json))` OR `[System.Uri]::EscapeDataString(...)` before building the URL. **Never pass Arabic inline through `cmd` curl.**
+- **`curl -I` with Arabic URLs** returns `400 Bad Request` (encoding error). Use `Invoke-WebRequest -UseBasicParsing` or open in a browser.
+- **`Invoke-WebRequest` needs `-UseBasicParsing`** on this system (IE engine unavailable).
+- **Windows pagefile:** Set to 32 GB, restart, for ACE-Step model loading.
+- **Node 18+**, Python 3.14 (venv), Python 3.12 (ACE-Step uv env).
+- **`yt-dlp.exe` at `C:\Tools\yt-dlp.exe`**, **ffmpeg.exe + ffprobe.exe at `C:\Tools\ffmpeg\bin\`**.
+- **`host-sporcle-wrangler` route handlers take `(ctx)`, not `(request, env, { code })`.** Router passes `ctx = { request, env, url, code, action, execCtx }`.
+
+## STYLE TRANSFER PIPELINE
+
+Status: **working** with 20-second clips and `inference_steps: 10`. Full pipeline documented in v67. Known issues:
+- VAE decode OOMs on 3-minute clips (use 20-second clips).
+- `/query_result` returns empty `data: []` even after success (file exists at `tools/ACE-Step-1.5/.cache/acestep/tmp/api_audio/<uuid>.mp3`). The script currently hangs here.
+- Fix needed: poll the filesystem for the newest `.mp3` after submission.
+
+## Environment & Known Open
+
+- **`wmic`** reports ~15 GB free RAM. Close dev servers before heavy CPU tasks.
+- **Arabic in curl:** Never via `cmd -d`. See PowerShell gotchas above.
+- **Leaderboard, L3 instruments, PublishedInstruments, Rendition chain:** Carried over, not built.
+
+## Commands
+
+```cmd
+:: Local dev
+cd E:\matb3aa-game && npm run dev
+cd E:\matb3aa-game\game && npm run dev
+
+:: Workers (dev)
+cd E:\matb3aa-game\music-game-wrangler && npx wrangler dev --port 8787
+cd E:\matb3aa-game\host-sporcle-wrangler && npx wrangler dev --port 8788
+
+:: Deploy (order: music → sporcle → pages)
+cd E:\matb3aa-game\music-game-wrangler && npx wrangler deploy
+cd E:\matb3aa-game\host-sporcle-wrangler && npx wrangler deploy
+
+cd E:\matb3aa-game\game
+npm run build
+npx wrangler pages deploy dist --project-name=music-game --branch=production
+
+:: Instrumental pipeline
+cd E:\matb3aa-game\server\scripts\instrumental
+node batch.js --tracks-file=<path>
+node upload.js --tracks-file=<path>
+```
+
+## Most Likely Next Tasks
+
+1. **Fix the style-transfer polling** — patch `style_cover.py` to detect the generated MP3 in `.cache/acestep/tmp/api_audio/` when `/query_result` returns empty.
+2. **Anti-skew round-robin verification** — 5× L1 curl with `instruments=all`, count artist slugs.
+3. **Enable L3 instruments** — flip `allowInstruments={true}` on `Level3Modal`, add `source` to `Play3.jsx`'s `QuestionCard`.
+4. **Build `PublishedInstruments.jsx`** — browse/delete uploaded instruments.
+5. **Favourite cap feedback** — toast on 100/kind, 300 total limits.
+
+**Recommended next step:** item 1 — fix the style-transfer polling script so it doesn't hang when the API doesn't report the final file path.
+
+Ask what the user wants to work on next.
+
+---
+
+## END OF PROMPT
+
+Save this as `E:\matb3aa-game\handoff-v72.md`. Paste it as the first message of your next session.
+```
+
+---
+
+## What's new in v72 (vs v70)
+
+| Section | Change |
+|---|---|
+| **SPORCLE — HEARTBEAT + LOBBY-WAIT TIMERS** | New full section — `last_seen` + `left=2` semantics, `lobby_wait_started_at` + `lobby_wait_reason` with three reasons (`alone` / `no-ready` / `host-idle`), `force_close` action, `AutoCloseBar` component, `RoomPanel` integration, `Play.jsx` 404 close, `useHostSporcle` `playerId` plumbing, `state.js` `(ctx)` signature, `handleAction` idempotency |
+| **MATB3AA MEDIA URL MIGRATION** | New section — `/media/` → `/storage/media/` migration, `absolutizeSrc` normalization, strict audio validation in `download()` |
+| **ENVIRONMENT — SETUP TRAPS** | Added PowerShell `-UseBasicParsing`, `EscapeDataString`, curl `400` on Arabic, route `(ctx)` signature |
+| **Most Likely Next Tasks** | Unchanged — still #1 style-transfer polling |
+| **Repository** | "Work from v29–v72 is uncommitted" |
+
+The document is self-contained. A fresh model knows:
+- The full Sporcle heartbeat + lobby-wait timer system (three reasons, four actions, six files)
+- The DO schema (players.last_seen, room.lobby_wait_*)
+- matb3aa media lives at `/storage/media/`, not `/media/`
+- The `download()` function rejects non-audio before saving
+- Route handlers in `host-sporcle-wrangler` take `(ctx)`
+- PowerShell `Invoke-WebRequest` needs `-UseBasicParsing`
+- Exactly what remains: style-transfer polling fix, anti-skew verification, L3 instruments, PublishedInstruments, favourite cap feedback

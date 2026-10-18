@@ -91,10 +91,31 @@ function emit(obj) {
 }
 
 /* ── Helpers ───────────────────────────────────────────── */
+/**
+ * Rewrite a matb3aa `src` into a working absolute URL.
+ *
+ *   API says:  "https://www.matb3aa.com/media/<file>"  (dead)
+ *              "storage/media/<file>"                  (relative, may work)
+ *              "/media/<file>"                         (dead)
+ *
+ *   Reality:   "https://www.matb3aa.com/storage/media/<file>"  ← the live path
+ *
+ * So: take the filename, always put it under storage/media/.
+ */
 function absolutizeSrc(src) {
   if (!src) return null;
-  if (/^https?:\/\//i.test(src)) return src;
-  return `${MATB3AA_AUDIO_BASE.replace(/\/$/, '')}/${src.replace(/^\//, '')}`;
+  const base = (MATB3AA_AUDIO_BASE || 'https://www.matb3aa.com').replace(/\/$/, '');
+
+  // Already an absolute URL → rewrite its path to storage/media/<file>
+  if (/^https?:\/\//i.test(src)) {
+    const filename = src.replace(/^https?:\/\/[^/]+\//i, '');   // strip origin
+    const pathOnly = filename.replace(/^(storage\/)?media\//i, ''); // strip media prefix
+    return `${base}/storage/media/${encodeURIComponent(decodeURIComponent(pathOnly))}`;
+  }
+
+  // Relative → same rewrite
+  const filename = src.replace(/^(storage\/)?media\//i, '').replace(/^\//, '');
+  return `${base}/storage/media/${encodeURIComponent(decodeURIComponent(filename))}`;
 }
 
 function run(cmd, argsArr, opts = {}) {
@@ -115,18 +136,47 @@ function run(cmd, argsArr, opts = {}) {
   });
 }
 
+
+
 async function download(rawUrl, destPath) {
   const url = absolutizeSrc(rawUrl);
+  if (!url) throw new Error('No src for download');
+
   const res = await fetch(url, {
     headers: {
       'User-Agent': USER_AGENT,
       'Referer': `${MATB3AA_AUDIO_BASE.replace(/\/$/, '')}/`,
+      'Accept': 'audio/mpeg,audio/*;q=0.9,*/*;q=0.8',
     },
+    redirect: 'follow',
   });
+
   if (!res.ok) {
     throw new Error(`Download failed (${res.status}) for ${url}`);
   }
-  await pipeline(Readable.fromWeb(res.body), createWriteStream(destPath));
+
+  const contentType = res.headers.get('content-type') ?? '';
+  const buf = Buffer.from(await res.arrayBuffer());
+
+  // Reject non-audio silently saved as .mp3
+  if (buf.length < 200_000) {
+    const preview = buf.slice(0, 200).toString('utf8').replace(/\s+/g, ' ').trim();
+    throw new Error(
+      `Response too small (${buf.length}b, CT=${contentType}) for ${url}. Preview: ${preview}`
+    );
+  }
+  const b0 = buf[0], b1 = buf[1], b2 = buf[2];
+  const isMp3Sync = b0 === 0xFF && (b1 & 0xE0) === 0xE0;
+  const isId3Tag  = b0 === 0x49 && b1 === 0x44 && b2 === 0x33;
+  const isMp4Box  = b0 === 0x00 && b1 === 0x00 && buf.subarray(4, 8).toString('ascii') === 'ftyp';
+  if (!isMp3Sync && !isId3Tag && !isMp4Box) {
+    const preview = buf.slice(0, 200).toString('utf8').replace(/\s+/g, ' ').trim();
+    throw new Error(
+      `Not audio (CT=${contentType}, ${buf.length}b) for ${url}. Preview: ${preview}`
+    );
+  }
+
+  await pipeline(Readable.from(buf), createWriteStream(destPath));
   return destPath;
 }
 
