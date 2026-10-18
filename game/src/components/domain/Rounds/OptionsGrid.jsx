@@ -41,7 +41,7 @@ export function OptionsGrid({
   const locked = picked != null && !revealed;
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+    <div className="grid grid-cols-2 gap-2 sm:gap-3">
       {options.map((option) => {
         const isPicked = picked === option.value;
         const isCorrect = option.value === correctValue;

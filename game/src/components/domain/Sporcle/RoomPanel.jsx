@@ -5,35 +5,73 @@ import { Button } from '../../ui/Button.jsx';
 import { PlayerRoster } from './PlayerRoster.jsx';
 import { LoadingOverlay } from './LoadingOverlay.jsx';
 import { CountdownOverlay } from './CountdownOverlay.jsx';
+import { ChatButton } from './ChatButton.jsx';
+import { ChatModal } from './ChatModal.jsx';
+import { AutoCloseBar } from './AutoCloseBar.jsx';
 import { InviteFriendsModal } from '../Follow/InviteFriendsModal.jsx';
-/**
- * The Sporcle room panel — the modal's 'room' content.
- *
- * Renders by phase:
- *   - lobby      → room code, copy/share buttons, roster, ready/start
- *   - loading    → <LoadingOverlay inline>
- *   - countdown  → <CountdownOverlay inline>
- *
- * Presentational: receives `state`, `actions`, `myId` from the parent.
- * Does not poll — the Play route owns the polling loop.
- */
-export function RoomPanel({ code, onClose, state, actions, myId, profilesById = new Map()  }) {
+import { getLastReadId, countUnread } from '../../../lib/chatReadState.js';
+
+const ALONE_TIMEOUT_MS     = 60_000;
+const NO_READY_TIMEOUT_MS  = 60_000;
+const HOST_IDLE_TIMEOUT_MS = 60_000;
+
+export function RoomPanel({ code, onClose, state, actions, myId, profilesById = new Map() }) {
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [copied, setCopied] = useState(null);
+
   const me = state?.players?.find((p) => p.id === myId) ?? null;
   const isHost = !!me?.isHost;
+  const lastReadId = getLastReadId(code);
+  const unreadChatCount = countUnread(state?.messages ?? [], myId, lastReadId);
 
   const activePlayers = state?.players?.filter((p) => !p.left) ?? [];
   const nonHostActive = activePlayers.filter((p) => !p.isHost);
-  const allReady = nonHostActive.length > 0 && nonHostActive.every((p) => p.ready);
-  const canStart = isHost && activePlayers.length >= 2 && allReady;
-  const inLobby = state?.phase === 'lobby';
-  const inLoading = state?.phase === 'loading';
-  const inCountdown = state?.phase === 'countdown';
+  const allReady      = nonHostActive.length > 0 && nonHostActive.every((p) => p.ready);
+  const canStart      = isHost && activePlayers.length >= 2 && allReady;
+  const inLobby       = state?.phase === 'lobby';
+  const inLoading     = state?.phase === 'loading';
+  const inCountdown   = state?.phase === 'countdown';
 
-  const [copied, setCopied] = useState(null);
+  // Server-driven wait window (visible to ALL players).
+  const waitStartedAt = state?.lobbyWaitStartedAt ?? null;
+  const waitReason    = state?.lobbyWaitReason    ?? null;
+  const showWaitBar   = inLobby && waitStartedAt != null && waitReason != null;
 
-  // Tick while counting down so the "expired but server hasn't flipped"
-  // fallback re-renders without waiting for the next long-poll cycle.
+  const waitDurationMs =
+    waitReason === 'alone'     ? ALONE_TIMEOUT_MS :
+    waitReason === 'no-ready'  ? NO_READY_TIMEOUT_MS :
+    waitReason === 'host-idle' ? HOST_IDLE_TIMEOUT_MS :
+    0;
+
+  const waitLabel =
+    waitReason === 'alone'     ? 'Waiting for players…' :
+    waitReason === 'no-ready'  ? 'Waiting for everyone to ready up…' :
+    waitReason === 'host-idle' ? 'Everyone is ready…' :
+    '';
+
+  const waitSublabel =
+    waitReason === 'alone'     ? 'Room closes if nobody joins.' :
+    waitReason === 'no-ready'  ? 'Room closes if nobody readies.' :
+    waitReason === 'host-idle' ? "Room closes if the host doesn't start." :
+    '';
+
+  // Only the host triggers the destroy. Non-hosts rely on the 404 broadcast.
+  async function handleWaitExpired() {
+    if (!isHost) return;
+
+    try {
+      if (waitReason === 'alone') {
+        if (myId && actions) await actions.leave(myId);
+      } else if (waitReason === 'no-ready' || waitReason === 'host-idle') {
+        if (myId && actions) await actions.forceClose(myId);
+      }
+    } catch {}
+
+    onClose?.();
+  }
+
+  /* ── Countdown ticker ─────────────────────────────────── */
   const [, forceTick] = useState(0);
   useEffect(() => {
     if (!inCountdown) return;
@@ -68,7 +106,11 @@ export function RoomPanel({ code, onClose, state, actions, myId, profilesById = 
     try { await actions.start(myId); } catch {}
   }
 
-  /* ── No state yet ──────────────────────────────────────── */
+  async function handleSendChat(text) {
+    if (!myId || !actions) return;
+    return actions.chat(myId, text);
+  }
+
   if (!state) {
     return (
       <div className="py-12 text-center">
@@ -77,12 +119,8 @@ export function RoomPanel({ code, onClose, state, actions, myId, profilesById = 
     );
   }
 
-  /* ── Loading ───────────────────────────────────────────── */
-  if (inLoading) {
-    return <LoadingOverlay inline />;
-  }
+  if (inLoading) return <LoadingOverlay inline />;
 
-  /* ── Countdown ─────────────────────────────────────────── */
   if (inCountdown) {
     const stillCounting =
       typeof state.countdownEndsAt === 'number' &&
@@ -90,14 +128,9 @@ export function RoomPanel({ code, onClose, state, actions, myId, profilesById = 
 
     if (stillCounting) {
       return (
-        <CountdownOverlay
-          inline
-          endsAt={state.countdownEndsAt}
-          totalMs={10000}
-        />
+        <CountdownOverlay inline endsAt={state.countdownEndsAt} totalMs={10000} />
       );
     }
-
     return (
       <div className="py-12 text-center space-y-3">
         <div className="flex justify-center">
@@ -108,10 +141,8 @@ export function RoomPanel({ code, onClose, state, actions, myId, profilesById = 
     );
   }
 
-  /* ── Lobby ─────────────────────────────────────────────── */
   return (
     <>
-      {/* Room code + share */}
       <BorderContainer border="all" className="p-6">
         <div className="flex flex-col items-center gap-3">
           <p className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">
@@ -136,6 +167,10 @@ export function RoomPanel({ code, onClose, state, actions, myId, profilesById = 
             >
               {copied === 'link' ? '✓ Copied' : 'Copy invite link'}
             </button>
+            <ChatButton
+              unreadCount={unreadChatCount}
+              onClick={() => setChatOpen(true)}
+            />
             {isHost && (
               <button
                 type="button"
@@ -146,11 +181,19 @@ export function RoomPanel({ code, onClose, state, actions, myId, profilesById = 
               </button>
             )}
           </div>
-
         </div>
       </BorderContainer>
 
-      {/* Roster */}
+      {showWaitBar && (
+        <AutoCloseBar
+          startedAt={waitStartedAt}
+          durationMs={waitDurationMs}
+          onExpire={handleWaitExpired}
+          label={waitLabel}
+          sublabel={waitSublabel}
+        />
+      )}
+
       <section className="space-y-3">
         <h3 className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">
           Players
@@ -222,12 +265,21 @@ export function RoomPanel({ code, onClose, state, actions, myId, profilesById = 
         </button>
       </footer>
 
-
       <InviteFriendsModal
-          open={inviteOpen}
-          onClose={() => setInviteOpen(false)}
-          roomCode={code}
-        />
+        open={inviteOpen}
+        onClose={() => setInviteOpen(false)}
+        roomCode={code}
+      />
+
+      <ChatModal
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        messages={state.messages ?? []}
+        myId={myId}
+        onSend={handleSendChat}
+        players={state.players ?? []}
+        roomCode={code}
+      />
     </>
   );
 }

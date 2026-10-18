@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { sporcleApi } from '../../lib/sporcleApi.js';
 
-export function useHostSporcle(code, { enabled = true } = {}) {
+export function useHostSporcle(code, { enabled = true, playerId = null } = {}) {
   const [state, setState] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -11,8 +11,11 @@ export function useHostSporcle(code, { enabled = true } = {}) {
   const sinceRef = useRef(0);
   const stateRef = useRef(null);
   const abortRef = useRef(null);
+  // Kept in a ref so a late-arriving identity doesn't restart the poll loop.
+  const playerIdRef = useRef(playerId);
 
   useEffect(() => { stateRef.current = state; }, [state]);
+  useEffect(() => { playerIdRef.current = playerId; }, [playerId]);
 
   const refresh = useCallback(() => {
     sinceRef.current = 0;
@@ -43,8 +46,10 @@ export function useHostSporcle(code, { enabled = true } = {}) {
         abortRef.current = controller;
 
         try {
+          // playerId makes every poll double as a server-side heartbeat.
           const next = await sporcleApi.state(code, sinceRef.current, {
             signal: controller.signal,
+            playerId: playerIdRef.current,
           });
           if (cancelledRef.current) return;
 
@@ -55,6 +60,10 @@ export function useHostSporcle(code, { enabled = true } = {}) {
             break;
           }
 
+          if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+            await new Promise(r => setTimeout(r, 1000));
+            continue;
+          }
           setState(next);
           sinceRef.current = next.version ?? 0;
           setLoading(false);

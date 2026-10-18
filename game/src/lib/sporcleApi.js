@@ -46,7 +46,6 @@ async function request(path, options = {}) {
   }
 
   // 2xx but the payload reports a failure → also throw.
-  // This catches servers that don't set the status correctly.
   if (body && typeof body === 'object' && body.ok === false) {
     const err = new Error(body.error ?? 'Request failed');
     err.status = res.status;
@@ -56,6 +55,7 @@ async function request(path, options = {}) {
 
   return body;
 }
+
 export const sporcleApi = {
   // ── Room lifecycle ───────────────────────────────────────
   create: ({ hostName, mode, config, autoAdvanceSeconds = 0, profileId = null }) =>
@@ -71,9 +71,15 @@ export const sporcleApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, profileId }),
     }),
+
   // ── State (long-poll) — accepts an AbortSignal ───────────
-  state: (code, since = 0, { signal } = {}) =>
-    request(`/host-sporcle/${code}/state?since=${since}`, { signal }),
+  // `playerId` doubles as the heartbeat: the server refreshes last_seen
+  // on every poll and marks silent players as left.
+  state: (code, since = 0, { signal, playerId } = {}) => {
+    const qs = new URLSearchParams({ since: String(since) });
+    if (playerId) qs.set('playerId', playerId);
+    return request(`/host-sporcle/${code}/state?${qs.toString()}`, { signal });
+  },
 
   // ── Actions ──────────────────────────────────────────────
   action: (code, body) =>
@@ -83,10 +89,18 @@ export const sporcleApi = {
       body: JSON.stringify(body),
     }),
 
+  // ── Heartbeat ping (no React state, safe to call on an interval) ──
+  ping: (code, playerId) =>
+    request(`/host-sporcle/${code}/action`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'ping', playerId }),
+    }),
+
   // ── Debug (local only — guarded server-side) ─────────────
   debug: (code) => request(`/host-sporcle/${code}/debug`),
 
-  // ── Fire-and-forget leave (used with navigator.sendBeacon) ──
+  // ── Legacy beacon (kept for backward-compat) ─────────────
   leaveBeacon: (code, playerId) => {
     if (typeof navigator === 'undefined' || !navigator.sendBeacon) return false;
     const url = `${BASE}/host-sporcle/${code}/leave?playerId=${encodeURIComponent(playerId)}`;
@@ -97,5 +111,36 @@ export const sporcleApi = {
     }
   },
 };
+
+// ── Robust fire-and-forget leave ─────────────────────────
+// Uses `sendBeacon` when available, falling back to `fetch` with
+// `keepalive: true`. The body is sent as text/plain (a "simple" content
+// type) so the browser skips the CORS preflight, which is unreliable
+// during page unload. The server parses it with request.json().
+export function leaveBeaconRaw(code, playerId) {
+  if (!code || !playerId) return;
+  const url = `${BASE}/host-sporcle/${code}/action`;
+  const payload = JSON.stringify({ type: 'leave', playerId, beacon: true });
+
+  if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+    try {
+      const blob = new Blob([payload], { type: 'text/plain;charset=UTF-8' });
+      if (navigator.sendBeacon(url, blob)) return;
+    } catch {
+      // fall through to fetch
+    }
+  }
+
+  try {
+    fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+      body: payload,
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    // give up silently
+  }
+}
 
 export const SPORCLE_BASE = BASE;

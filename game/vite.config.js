@@ -6,6 +6,9 @@ const CF_BASE = 'https://music-game-wrangler.abdulrahman-muhammad2090.workers.de
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    chunkSizeWarningLimit: 800,
+  },
   server: {
     host: '0.0.0.0',
     port: 5174,

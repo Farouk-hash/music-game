@@ -1,5 +1,5 @@
 // game/src/components/Modal/Modal.jsx
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
 const SIZE_CLASS = {
@@ -16,12 +16,16 @@ export function Modal({
   closeOnBackdrop = true,
   size = 'md',
 }) {
+  // Always call the latest onClose without re-running the effect below
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!open) return;
 
-    function onKey(e) {
-      if (e.key === 'Escape') onClose?.();
-    }
+    const onKey = (e) => {
+      if (e.key === 'Escape') onCloseRef.current?.();
+    };
     document.addEventListener('keydown', onKey);
 
     const prevOverflow = document.body.style.overflow;
@@ -31,7 +35,7 @@ export function Modal({
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

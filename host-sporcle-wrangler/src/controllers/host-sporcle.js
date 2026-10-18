@@ -1,15 +1,33 @@
-// E:\matb3aa-game\host-sporcle-wrangler\src\controllers\host-sporcle.js
+// host-sporcle-wrangler/src/controllers/host-sporcle.js
 import { DurableObject } from 'cloudflare:workers';
 import { fetchQuestions } from '../question-fetcher.js';
+import { chatInsert, chatList } from './chat.js';
 
 const MIN_PLAYERS = 2;
 const COUNTDOWN_MS = 10000;
 const SPORCLE_TIMER_SECONDS = 20;
 const TIE_BREAKER_TIMER_SECONDS = 15;
 const AUTO_ADVANCE_MS_LYRICS = 10000;
-const ROOM_EXPIRY_MS = 2 * 60 * 60 * 1000;   // 2 hours
+const ROOM_EXPIRY_MS = 2 * 60 * 60 * 1000; // 2 hours
+
+// Heartbeat: a player silent for this long is marked as left (left = 2).
+// Must stay well above the 3s poll interval + mobile timer throttling.
+const HEARTBEAT_TIMEOUT_MS = 30000;
+const SWEEP_INTERVAL_MS = 5000;
+// Lobby is more forgiving: a timed-out host loses host status, and people
+// often switch apps to share the room code.
+const LOBBY_HEARTBEAT_TIMEOUT_MS = 2 * 60 * 1000;
+
+/*
+  players.left values:
+    0 = present
+    1 = explicit leave (button / tab-close beacon) – never auto-rejoined
+    2 = timed out (heartbeat) – auto-rejoins on next poll / ping
+*/
 
 export class HostSporcle extends DurableObject {
+  #lastSweep = 0;
+
   constructor(ctx, env) {
     super(ctx, env);
 
@@ -28,16 +46,19 @@ export class HostSporcle extends DurableObject {
           created_at            INTEGER NOT NULL,
           started_at            INTEGER,
           last_error            TEXT,
-          tie_breaker           INTEGER NOT NULL DEFAULT 0
+          tie_breaker           INTEGER NOT NULL DEFAULT 0,
+          lobby_wait_started_at INTEGER,
+          lobby_wait_reason     TEXT
         );
         CREATE TABLE IF NOT EXISTS players (
-          id       TEXT PRIMARY KEY,
-          name     TEXT NOT NULL,
-          is_host  INTEGER NOT NULL DEFAULT 0,
-          ready    INTEGER NOT NULL DEFAULT 0,
-          score    INTEGER NOT NULL DEFAULT 0,
-          locked   INTEGER NOT NULL DEFAULT 0,
-          left     INTEGER NOT NULL DEFAULT 0,
+          id         TEXT PRIMARY KEY,
+          name       TEXT NOT NULL,
+          is_host    INTEGER NOT NULL DEFAULT 0,
+          ready      INTEGER NOT NULL DEFAULT 0,
+          score      INTEGER NOT NULL DEFAULT 0,
+          locked     INTEGER NOT NULL DEFAULT 0,
+          left       INTEGER NOT NULL DEFAULT 0,
+          last_seen  INTEGER NOT NULL DEFAULT 0,
           profile_id TEXT
         );
         CREATE TABLE IF NOT EXISTS questions (
@@ -52,7 +73,38 @@ export class HostSporcle extends DurableObject {
           answered_at INTEGER NOT NULL,
           PRIMARY KEY (player_id, q_idx)
         );
+        CREATE TABLE IF NOT EXISTS messages (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          player_id   TEXT NOT NULL,
+          text        TEXT NOT NULL,
+          created_at  INTEGER NOT NULL
+        );
       `);
+
+      // Migration: last_seen (v70)
+      try {
+        ctx.storage.sql.exec(
+          'ALTER TABLE players ADD COLUMN last_seen INTEGER NOT NULL DEFAULT 0'
+        );
+      } catch { /* column already exists */ }
+      try {
+        ctx.storage.sql.exec(
+          'UPDATE players SET last_seen = ? WHERE last_seen = 0',
+          Date.now()
+        );
+      } catch { /* ignore */ }
+
+      // Migration: lobby wait window (v71)
+      try {
+        ctx.storage.sql.exec(
+          'ALTER TABLE room ADD COLUMN lobby_wait_started_at INTEGER'
+        );
+      } catch { /* column already exists */ }
+      try {
+        ctx.storage.sql.exec(
+          'ALTER TABLE room ADD COLUMN lobby_wait_reason TEXT'
+        );
+      } catch { /* column already exists */ }
     });
   }
 
@@ -70,10 +122,15 @@ export class HostSporcle extends DurableObject {
   }
 
   #getPlayer(playerId) {
-    const rows = this.ctx.storage.sql
-      .exec('SELECT * FROM players WHERE id = ?', playerId)
-      .toArray();
-    return rows[0] ?? null;
+    try {
+      const rows = this.ctx.storage.sql
+        .exec('SELECT * FROM players WHERE id = ?', playerId)
+        .toArray();
+      return rows[0] ?? null;
+    } catch {
+      // Tables can vanish if the room was destroyed mid-request.
+      return null;
+    }
   }
 
   #bumpVersion() {
@@ -90,6 +147,134 @@ export class HostSporcle extends DurableObject {
     );
   }
 
+  /* ── Lobby wait window (alone / no-ready / host-idle) ── */
+
+  /**
+   * Recompute the lobby-wait window.
+   *
+   *   'alone'     – host is the only active player
+   *   'no-ready'  – ≥2 active players, none of the non-hosts readied
+   *   'host-idle' – ≥2 active players, ALL non-hosts readied, host hasn't started
+   *   null        – not waiting (game started, or no meaningful wait)
+   *
+   * If the reason changes (e.g. someone joins, or someone readies),
+   * the clock RESETS. If the reason is the same, the clock is preserved.
+   * Only bumps the version when the reason actually changes.
+   */
+  #refreshLobbyWaitWindow() {
+    const room = this.#getRoom();
+    if (!room) return;
+
+    // Not in lobby → no window.
+    if (room.phase !== 'lobby') {
+      if (room.lobby_wait_started_at != null || room.lobby_wait_reason != null) {
+        this.ctx.storage.sql.exec(
+          'UPDATE room SET lobby_wait_started_at = NULL, lobby_wait_reason = NULL WHERE id = 1'
+        );
+        this.#bumpVersion();
+      }
+      return;
+    }
+
+    const activeCount = this.ctx.storage.sql
+      .exec('SELECT COUNT(*) AS n FROM players WHERE left = 0')
+      .one().n;
+    const hostCount = this.ctx.storage.sql
+      .exec('SELECT COUNT(*) AS n FROM players WHERE left = 0 AND is_host = 1')
+      .one().n;
+    const nonHostActive = this.ctx.storage.sql
+      .exec('SELECT COUNT(*) AS n FROM players WHERE left = 0 AND is_host = 0')
+      .one().n;
+    const readyNonHost = this.ctx.storage.sql
+      .exec('SELECT COUNT(*) AS n FROM players WHERE left = 0 AND is_host = 0 AND ready = 1')
+      .one().n;
+
+    let reason = null;
+    if (activeCount === 1 && hostCount === 1) {
+      reason = 'alone';
+    } else if (nonHostActive > 0 && readyNonHost === 0) {
+      reason = 'no-ready';
+    } else if (nonHostActive > 0 && readyNonHost === nonHostActive) {
+      // Everyone except the host is ready — host must start.
+      reason = 'host-idle';
+    }
+
+    if (reason === room.lobby_wait_reason) {
+      // Same reason → keep the existing clock.
+      return;
+    }
+
+    if (reason == null) {
+      this.ctx.storage.sql.exec(
+        'UPDATE room SET lobby_wait_started_at = NULL, lobby_wait_reason = NULL WHERE id = 1'
+      );
+    } else {
+      this.ctx.storage.sql.exec(
+        'UPDATE room SET lobby_wait_started_at = ?, lobby_wait_reason = ? WHERE id = 1',
+        this.#now(), reason
+      );
+    }
+    this.#bumpVersion();
+  }
+
+  /* ── Heartbeat ────────────────────────────────────────── */
+
+  #touchPlayer(playerId) {
+    if (!playerId) return;
+    try {
+      this.ctx.storage.sql.exec(
+        'UPDATE players SET last_seen = ? WHERE id = ?',
+        this.#now(), playerId
+      );
+    } catch { /* room destroyed */ }
+  }
+
+  async #heartbeat(playerId) {
+    try {
+      if (playerId) {
+        const p = this.#getPlayer(playerId);
+        if (p) {
+          this.#touchPlayer(playerId);
+          // Came back after a timeout (not an explicit leave).
+          if (p.left === 2) {
+            const room = this.#getRoom();
+            if (room) await this.#rejoin(p, room);
+          }
+        }
+      }
+      await this.#sweepStale();
+    } catch (e) {
+      console.error('[heartbeat] failed', e);
+    }
+  }
+
+  async #sweepStale() {
+    const now = this.#now();
+    if (now - this.#lastSweep < SWEEP_INTERVAL_MS) return;
+    this.#lastSweep = now;
+
+    const room0 = this.#getRoom();
+    if (!room0) return;
+    const timeout = room0.phase === 'lobby'
+      ? LOBBY_HEARTBEAT_TIMEOUT_MS
+      : HEARTBEAT_TIMEOUT_MS;
+
+    const stale = this.ctx.storage.sql
+      .exec(
+        'SELECT id FROM players WHERE left = 0 AND last_seen > 0 AND last_seen < ?',
+        now - timeout
+      )
+      .toArray();
+
+    for (const row of stale) {
+      const room = this.#getRoom();
+      if (!room) return;
+      const p = this.#getPlayer(row.id);
+      if (!p || p.left) continue;
+      await this.#leave(p, room, 2);
+    }
+  }
+
   /* ── Public RPC methods ───────────────────────────────── */
 
   async init(hostName, config = {}, mode = 'speed', autoAdvanceSeconds = 0, profileId = null) {
@@ -98,7 +283,7 @@ export class HostSporcle extends DurableObject {
 
     sql.exec(
       `INSERT INTO room (id, phase, mode, config, auto_advance_seconds, created_at, expires_at)
-      VALUES (1, 'lobby', ?, ?, ?, ?, ?)`,
+       VALUES (1, 'lobby', ?, ?, ?, ?, ?)`,
       mode,
       JSON.stringify(config ?? {}),
       autoAdvanceSeconds,
@@ -108,13 +293,15 @@ export class HostSporcle extends DurableObject {
 
     const hostId = crypto.randomUUID();
     sql.exec(
-      'INSERT INTO players (id, name, is_host, profile_id) VALUES (?, ?, 1, ?)',
+      'INSERT INTO players (id, name, is_host, profile_id, last_seen) VALUES (?, ?, 1, ?, ?)',
       hostId,
       hostName,
-      profileId
+      profileId,
+      this.#now()
     );
 
     this.#bumpVersion();
+    this.#refreshLobbyWaitWindow();
     await this.ctx.storage.setAlarm(this.#now() + ROOM_EXPIRY_MS);
     return { ok: true, hostId };
   }
@@ -126,24 +313,30 @@ export class HostSporcle extends DurableObject {
 
     const playerId = crypto.randomUUID();
     this.ctx.storage.sql.exec(
-      'INSERT INTO players (id, name, profile_id) VALUES (?, ?, ?)',
+      'INSERT INTO players (id, name, profile_id, last_seen) VALUES (?, ?, ?, ?)',
       playerId,
       name,
-      profileId
+      profileId,
+      this.#now()
     );
     this.#touchExpiry();
     this.#bumpVersion();
+    this.#refreshLobbyWaitWindow();
     return { ok: true, playerId };
   }
 
-  async getState(sinceVersion = 0) {
+  async getState(sinceVersion = 0, playerId = null) {
+    if (!this.#getRoom()) return { ok: false, error: 'Room not found' };
+
+    await this.#heartbeat(playerId);
     const room = this.#getRoom();
     if (!room) return { ok: false, error: 'Room not found' };
 
     if (sinceVersion > 0 && room.version <= sinceVersion) {
       await new Promise(r => setTimeout(r, 3000));
-      const fresh = this.#getRoom();
+      await this.#heartbeat(playerId);
 
+      const fresh = this.#getRoom();
       if (!fresh) return { ok: false, error: 'Room not found' };
 
       if (fresh.version <= sinceVersion) {
@@ -160,10 +353,10 @@ export class HostSporcle extends DurableObject {
   #buildState(room) {
     const sql = this.ctx.storage.sql;
     const players = sql
-      .exec('SELECT id, name, is_host, ready, score, locked, left , profile_id  FROM players')
+      .exec('SELECT id, name, is_host, ready, score, locked, left, profile_id FROM players')
       .toArray();
     const config = JSON.parse(room.config ?? '{}');
-    
+
     const state = {
       ok: true,
       version: room.version,
@@ -179,6 +372,9 @@ export class HostSporcle extends DurableObject {
       rendition: config.rendition ?? 'forward',
       lastError: room.last_error ?? null,
       isTieBreaker: !!room.tie_breaker,
+      roomConfig: config,
+      lobbyWaitStartedAt: room.lobby_wait_started_at ?? null,
+      lobbyWaitReason:    room.lobby_wait_reason     ?? null,
       players: players.map(p => ({
         id: p.id,
         name: p.name,
@@ -202,6 +398,7 @@ export class HostSporcle extends DurableObject {
       state.finished = this.#shapeFinished();
     }
 
+    state.messages = chatList(sql);
     return state;
   }
 
@@ -234,7 +431,7 @@ export class HostSporcle extends DurableObject {
     const sql = this.ctx.storage.sql;
 
     const players = sql
-      .exec('SELECT id, name, score , profile_id FROM players ORDER BY score DESC, name ASC')
+      .exec('SELECT id, name, score, profile_id FROM players ORDER BY score DESC, name ASC')
       .toArray();
 
     const top = players[0]?.score ?? 0;
@@ -260,31 +457,77 @@ export class HostSporcle extends DurableObject {
 
     return {
       winnerId,
-      standings: players.map(p => ({ playerId: p.id, score: p.score, name: p.name , profileId:p.profile_id })),
+      standings: players.map(p => ({
+        playerId: p.id,
+        score: p.score,
+        name: p.name,
+        profileId: p.profile_id,
+      })),
       perQuestion,
     };
   }
 
   async handleAction(playerId, action) {
-    const room = this.#getRoom();
-    if (!room) return { ok: false, error: 'Room not found' };
+     const room = this.#getRoom();
+  if (!room) {
+    // Room already destroyed. `leave`, `ping`, `rejoin`, `force_close` are
+    // safe no-ops — clients might race with a destroy after a broadcast.
+    const type = action?.type;
+    if (
+      type === 'leave' ||
+      type === 'ping' ||
+      type === 'rejoin' ||
+      type === 'force_close'
+    ) {
+      return { ok: true, version: 0 };
+    }
+    return { ok: false, error: 'Room not found' };
+  }
 
-    const player = this.#getPlayer(playerId);
-    if (!player) return { ok: false, error: 'Player not in this room' };
+  const player = this.#getPlayer(playerId);
+    if (!player) {
+      // Player row was already deleted (e.g. hard leave in lobby).
+      // Don't error — the operation is effectively already done.
+      const type = action?.type;
+      if (
+        type === 'leave' ||
+        type === 'ping' ||
+        type === 'force_close'
+      ) {
+        return { ok: true, version: 0 };
+      }
+      return { ok: false, error: 'Player not in this room' };
+    }
 
     const type = action?.type;
 
-    if (type !== 'rejoin' && player.left) {
+    // ping / leave / rejoin must work for players already marked left:
+    //  - ping   → auto-rejoin when left === 2
+    //  - leave  → upgrade a timeout (2) to an explicit leave (1)
+    //  - rejoin → explicit rejoin
+    if (type !== 'rejoin' && type !== 'ping' && type !== 'leave' && player.left) {
       return { ok: false, error: 'Player has left' };
     }
 
-    if (type === 'ready')   return this.#ready(player, room, action);
-    if (type === 'start')   return this.#start(player, room);
-    if (type === 'answer')  return this.#answer(player, room, action);
-    if (type === 'advance') return this.#advance(player, room);
-    if (type === 'leave')   return this.#leave(player, room);
-    if (type === 'reset')   return this.#reset(player, room);
-    if (type === 'rejoin')  return this.#rejoin(player, room);
+    if (type === 'ping') {
+      this.#touchPlayer(playerId);
+      if (player.left === 2) return this.#rejoin(player, room);
+      return { ok: true, version: room.version, left: player.left === 1 };
+    }
+
+    if (type === 'ready')        return this.#ready(player, room, action);
+    if (type === 'start')        return this.#start(player, room);
+    if (type === 'answer')       return this.#answer(player, room, action);
+    if (type === 'advance')      return this.#advance(player, room);
+    // `beacon: true` is sent by the tab-close beacon. In the lobby that must
+    // only MARK the player as left (so a refresh can rejoin). The explicit
+    // Leave button sends no flag and still removes the player from the lobby.
+    if (type === 'leave')        return this.#leave(player, room, 1, { soft: !!action.beacon });
+    if (type === 'reset')        return this.#reset(player, room);
+    if (type === 'rejoin')       return this.#rejoin(player, room);
+    if (type === 'chat')         return this.#chat(player, room, action);
+    if (type === 'start_again')  return this.#startAgain(player, room, action);
+    if (type === 'force_close')  return this.#forceClose(player, room);
 
     return { ok: false, error: `Unknown action: ${type}` };
   }
@@ -300,6 +543,7 @@ export class HostSporcle extends DurableObject {
     );
     this.#touchExpiry();
     const version = this.#bumpVersion();
+    this.#refreshLobbyWaitWindow();
     return { ok: true, version };
   }
 
@@ -322,8 +566,15 @@ export class HostSporcle extends DurableObject {
       return { ok: false, error: `${notReady} player(s) not ready` };
     }
 
+    // Clear the lobby-wait window in the same statement that leaves the lobby.
     sql.exec(
-      'UPDATE room SET phase = ?, started_at = ?, last_error = NULL WHERE id = 1',
+      `UPDATE room
+          SET phase = ?,
+              started_at = ?,
+              last_error = NULL,
+              lobby_wait_started_at = NULL,
+              lobby_wait_reason = NULL
+        WHERE id = 1`,
       'loading',
       this.#now()
     );
@@ -349,6 +600,7 @@ export class HostSporcle extends DurableObject {
         `Could not load questions: ${e.message}`
       );
       this.#bumpVersion();
+      this.#refreshLobbyWaitWindow();
       return;
     }
 
@@ -358,6 +610,7 @@ export class HostSporcle extends DurableObject {
         'No questions available for this scope'
       );
       this.#bumpVersion();
+      this.#refreshLobbyWaitWindow();
       return;
     }
 
@@ -407,15 +660,14 @@ export class HostSporcle extends DurableObject {
     this.#touchExpiry();
 
     const isTieBreaker = room.tie_breaker === 1;
-    
-    // In Speed mode OR Tie-breaker: First correct answer ends the round immediately.
+
+    // Speed mode or tie-breaker: first correct answer ends the round.
     if ((room.mode === 'speed' || isTieBreaker) && correct === 1) {
       await this.#endQuestion();
       return { ok: true, correct: true, ended: true, version: this.#getRoom().version };
     }
 
-    // In BOTH modes: If everyone has answered (correct OR wrong), end the round.
-    // This fixes the "all wrong" stall in speed mode.
+    // Both modes: if everyone has answered (correct or wrong), end the round.
     const total = this.ctx.storage.sql
       .exec('SELECT COUNT(*) AS n FROM players WHERE left = 0')
       .one().n;
@@ -437,15 +689,15 @@ export class HostSporcle extends DurableObject {
     return { ok: true, correct: correct === 1, ended: false, version };
   }
 
-  /* ── tieBreaker check ──────────────────────────────── */
+  /* ── tie-breaker check ────────────────────────────────── */
   async #checkTieBreaker(room) {
     const sql = this.ctx.storage.sql;
-    
+
     const topRow = sql.exec(
       'SELECT MAX(score) AS m FROM players WHERE left = 0'
     ).one();
     const topScore = topRow?.m ?? 0;
-    
+
     const tied = sql.exec(
       'SELECT id FROM players WHERE left = 0 AND score = ?', topScore
     ).toArray();
@@ -454,10 +706,9 @@ export class HostSporcle extends DurableObject {
 
     const config = JSON.parse(room.config ?? '{}');
     config.count = 3;
-    
+
     let questions = [];
     try {
-      const { fetchQuestions } = await import('../question-fetcher.js');
       questions = await fetchQuestions(this.env, config);
     } catch (e) {
       console.error('[tie-breaker] fetch failed', e);
@@ -472,23 +723,23 @@ export class HostSporcle extends DurableObject {
       sql.exec('INSERT INTO questions (idx, payload) VALUES (?, ?)', i, JSON.stringify(questions[i]));
     }
     sql.exec('DELETE FROM answers');
-    
+
     const tiedIds = tied.map(p => p.id);
     const placeholders = tiedIds.map(() => '?').join(',');
-    
+
     // Only tied players can answer. Non-tied players are locked.
     sql.exec(
       `UPDATE players SET locked = CASE WHEN id IN (${placeholders}) THEN 0 ELSE 1 END WHERE left = 0`,
       ...tiedIds
     );
-    
+
     sql.exec(
       'UPDATE room SET phase = ?, q_index = 0, q_deadline = ?, started_at = ?, tie_breaker = 1 WHERE id = 1',
       'question',
       this.#now() + TIE_BREAKER_TIMER_SECONDS * 1000,
       this.#now()
     );
-    
+
     this.#bumpVersion();
     await this.ctx.storage.setAlarm(this.#now() + TIE_BREAKER_TIMER_SECONDS * 1000);
     return true;
@@ -512,7 +763,6 @@ export class HostSporcle extends DurableObject {
       ).toArray();
 
       if (tied.length === 1) {
-        // Tie broken!
         this.ctx.storage.sql.exec(
           'UPDATE room SET phase = ?, q_deadline = NULL WHERE id = 1',
           'finished'
@@ -522,7 +772,6 @@ export class HostSporcle extends DurableObject {
         return { ok: true, finished: true, version };
       }
 
-      // Still tied — try next pre-fetched question
       if (next < total) {
         this.ctx.storage.sql.exec(
           'UPDATE room SET phase = ?, q_index = ?, q_deadline = ? WHERE id = 1',
@@ -541,13 +790,11 @@ export class HostSporcle extends DurableObject {
         return { ok: true, qIndex: next, version };
       }
 
-      // Exhausted tie-breaker questions; fetch a new batch
       const stillTied = await this.#checkTieBreaker(room);
       if (stillTied) {
         return { ok: true, tieBreaker: true, version: this.#getRoom().version };
       }
 
-      // Fallback: finish
       this.ctx.storage.sql.exec(
         'UPDATE room SET phase = ?, q_deadline = NULL WHERE id = 1',
         'finished'
@@ -585,10 +832,32 @@ export class HostSporcle extends DurableObject {
     return { ok: true, qIndex: next, version };
   }
 
-  async #leave(player, room) {
+  /*
+    leftValue: 1 = explicit leave, 2 = heartbeat timeout.
+  */
+  async #leave(player, room, leftValue = 1, { soft = false } = {}) {
     const sql = this.ctx.storage.sql;
 
-    if (room.phase === 'lobby') {
+    // Idempotent: repeated beacons / sweeps are no-ops.
+    if (player.left === 1 || (player.left === 2 && leftValue === 2)) {
+      return { ok: true, version: room.version, alreadyLeft: true };
+    }
+
+    // Timed-out player now leaves explicitly: upgrade so they won't auto-rejoin.
+    if (player.left === 2 && leftValue === 1) {
+      sql.exec('UPDATE players SET left = 1 WHERE id = ?', player.id);
+      const version = this.#bumpVersion();
+      this.#refreshLobbyWaitWindow();
+      return { ok: true, version };
+    }
+
+    // Lobby + deliberate Leave button → remove the row.
+    // Everything else (tab-close beacon, heartbeat timeout, in-game leaves)
+    // → keep the row, mark as left, so the roster shows "left" and the
+    // player can come back.
+    const hardDelete = room.phase === 'lobby' && !soft && leftValue === 1;
+
+    if (hardDelete) {
       sql.exec('DELETE FROM players WHERE id = ?', player.id);
 
       const remaining = sql
@@ -604,8 +873,10 @@ export class HostSporcle extends DurableObject {
         this.#promoteNextHost();
       }
     } else {
-      sql.exec('UPDATE players SET left = 1 WHERE id = ?', player.id);
+      // Mark as left (in-game, or soft leave in the lobby).
+      sql.exec('UPDATE players SET left = ? WHERE id = ?', leftValue, player.id);
 
+      // Host left mid-game: demote and transfer host status.
       if (player.is_host) {
         sql.exec('UPDATE players SET is_host = 0 WHERE id = ?', player.id);
         this.#promoteNextHost();
@@ -614,6 +885,7 @@ export class HostSporcle extends DurableObject {
 
     this.#touchExpiry();
     const version = this.#bumpVersion();
+    this.#refreshLobbyWaitWindow();
 
     if (room.phase === 'question') {
       const total = sql
@@ -663,6 +935,7 @@ export class HostSporcle extends DurableObject {
     const setClauses = [
       'left = 0',
       `locked = ${lockedValue}`,
+      'last_seen = ' + this.#now(),
       shouldClearHostFlag ? 'is_host = 0' : null,
     ]
       .filter(Boolean)
@@ -675,6 +948,7 @@ export class HostSporcle extends DurableObject {
 
     this.#touchExpiry();
     const version = this.#bumpVersion();
+    this.#refreshLobbyWaitWindow();
     return { ok: true, version };
   }
 
@@ -714,14 +988,28 @@ export class HostSporcle extends DurableObject {
               started_at = NULL,
               last_error = NULL,
               tie_breaker = 0,
+              lobby_wait_started_at = NULL,
+              lobby_wait_reason = NULL,
               version = version + 1
         WHERE id = 1`
     );
     this.#touchExpiry();
 
     const version = this.#getRoom().version;
+    this.#refreshLobbyWaitWindow();
     await this.ctx.storage.deleteAlarm();
     return { ok: true, version };
+  }
+
+  /**
+   * Host-only force close: destroys the room immediately.
+   * Used when the lobby has been sitting idle (nobody ready, host not
+   * starting, or host alone for too long).
+   */
+  async #forceClose(player, room) {
+    if (!player.is_host) return { ok: false, error: 'Host only' };
+    await this.ctx.storage.deleteAll();
+    return { ok: true, version: 0 };
   }
 
   async alarm() {
@@ -905,6 +1193,79 @@ export class HostSporcle extends DurableObject {
       .exec('SELECT payload FROM questions WHERE idx = ?', idx)
       .toArray();
     return rows[0] ? JSON.parse(rows[0].payload) : null;
+  }
+
+  async #chat(player, room, action) {
+    const result = chatInsert(
+      this.ctx.storage.sql,
+      player,
+      action.text,
+      this.#now()
+    );
+    if (!result.ok) return result;
+
+    this.#touchExpiry();
+    const version = this.#bumpVersion();
+    return { ok: true, version };
+  }
+
+  /* ── start_again (host only, from finished) ───────────── */
+  async #startAgain(player, room, action) {
+    if (room.phase !== 'finished') {
+      return { ok: false, error: 'Can only start again from finished' };
+    }
+    if (!player.is_host) {
+      return { ok: false, error: 'Host only' };
+    }
+
+    const sql = this.ctx.storage.sql;
+
+    // 1. Merge new config
+    const existingConfig = JSON.parse(room.config ?? '{}');
+    const newConfig = action.config || {};
+
+    if (newConfig.count) existingConfig.count = newConfig.count;
+    if (newConfig.genres !== undefined)  existingConfig.genres = newConfig.genres;
+    if (newConfig.artists !== undefined) existingConfig.artists = newConfig.artists;
+    if (newConfig.years !== undefined)   existingConfig.years = newConfig.years;
+
+    const mode = newConfig.mode === 'collect' ? 'collect' : 'speed';
+
+    sql.exec(
+      'UPDATE room SET config = ?, mode = ?, last_error = NULL WHERE id = 1',
+      JSON.stringify(existingConfig),
+      mode
+    );
+
+    // 2. Reset players (scores, ready, locked)
+    sql.exec('UPDATE players SET score = 0, ready = 0, locked = 0 WHERE left = 0');
+
+    // 3. Clear previous questions and answers
+    sql.exec('DELETE FROM questions');
+    sql.exec('DELETE FROM answers');
+
+    // 4. Reset room state to 'loading'
+    sql.exec(
+      `UPDATE room
+          SET phase = 'loading',
+              started_at = ?,
+              q_index = 0,
+              q_deadline = NULL,
+              tie_breaker = 0,
+              last_error = NULL,
+              lobby_wait_started_at = NULL,
+              lobby_wait_reason = NULL,
+              version = version + 1
+        WHERE id = 1`,
+      this.#now()
+    );
+
+    this.#touchExpiry();
+
+    // 5. Kick off the fetch in the background
+    this.ctx.waitUntil(this.#loadQuestionsAndCountdown());
+
+    return { ok: true, version: this.#getRoom().version };
   }
 }
 

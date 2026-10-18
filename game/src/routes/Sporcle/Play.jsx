@@ -1,5 +1,5 @@
 // game/src/routes/Sporcle/Play.jsx
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { BorderContainer } from '../../components/layout/BorderContainer.jsx';
 import { Button } from '../../components/ui/Button.jsx';
@@ -13,23 +13,45 @@ import { SporcleModal } from '../../components/domain/Setup/Modals/SporcleModal.
 import { useHostSporcle } from '../../hooks/sporcle/useHostSporcle.js';
 import { useHostSporcleIdentity } from '../../hooks/sporcle/useHostSporcleIdentity.js';
 import { useHostSporcleActions } from '../../hooks/sporcle/useHostSporcleActions.js';
+import { useSporclePresence } from '../../hooks/sporcle/useSporclePresence.js';
 import { useRoundReversal } from '../../hooks/rounds/useRoundReversal.js';
-import { sporcleApi } from '../../lib/sporcleApi.js';
 import { useRoomProfiles } from '../../hooks/sporcle/useRoomProfiles.js';
+import { ChatButton } from '../../components/domain/Sporcle/ChatButton.jsx';
+import { ChatModal } from '../../components/domain/Sporcle/ChatModal.jsx';
+import { getLastReadId, countUnread } from '../../lib/chatReadState.js';
 
 export default function SporclePlay() {
   const { code } = useParams();
   const navigate = useNavigate();
   const normalizedCode = (code ?? '').toUpperCase();
 
-  const { identity , saveForCode  } = useHostSporcleIdentity(normalizedCode);
-  const { state, loading, error, refresh } = useHostSporcle(normalizedCode);
+  const { identity, saveForCode } = useHostSporcleIdentity(normalizedCode);
+  const myId = identity?.playerId ?? null;
+
+  // Every poll from this loop refreshes last_seen on the server (heartbeat).
+  const { state, loading, error, refresh } = useHostSporcle(normalizedCode, {
+    playerId: myId,
+  });
   const actions = useHostSporcleActions(normalizedCode, {
     onVersion: () => refresh(),
   });
   const profilesById = useRoomProfiles(state?.players ?? []);
 
-  const myId = identity?.playerId ?? null;
+  /* ── Presence: instant leave beacon + ping + auto-rejoin ──
+     Works in every phase. In the lobby the beacon only marks the player as
+     "left" (the row is kept), so a refresh simply rejoins.
+  */
+  const meLeft = !!state?.players?.find((p) => p.id === myId)?.left;
+
+  useSporclePresence(normalizedCode, myId, {
+    meLeft,
+    onRejoined: refresh,
+  });
+
+  const [chatOpen, setChatOpen] = useState(false);
+
+  const lastReadId = getLastReadId(normalizedCode);
+  const unreadChatCount = countUnread(state?.messages ?? [], myId, lastReadId);
 
   /* ── Modal management ─────────────────────────────────── */
   const [modalOpen, setModalOpen] = useState(true);
@@ -58,6 +80,13 @@ export default function SporclePlay() {
     setModalOpen(false);
   }, [identity, state?.phase, state]);
 
+  useEffect(() => {
+    if (error?.status === 404) {
+      setModalOpen(false);
+      navigate('/setup');
+    }
+  }, [error, navigate]);
+  
   // Redirect to result once finished.
   useEffect(() => {
     if (state?.phase === 'finished') {
@@ -76,34 +105,6 @@ export default function SporclePlay() {
 
     return () => document.body.classList.remove('hide-header');
   }, [state?.phase]);
-    
-  /* ── Auto-rejoin ───────────────────────────────────────── */
-  const rejoinedRef = useRef(false);
-
-  useEffect(() => {
-    if (rejoinedRef.current) return;
-    if (!myId || !state?.players) return;
-
-    const me = state.players.find((p) => p.id === myId);
-    if (!me) return;
-    if (!me.left) return;
-
-    rejoinedRef.current = true;
-    actions.rejoin(myId).catch(() => {
-      rejoinedRef.current = false;
-    });
-  }, [myId, state?.players, actions]);
-
-  // Leave beacon on tab close.
-  const leftRef = useRef(false);
-  useEffect(() => {
-    function handleUnload() {
-      if (leftRef.current || !myId) return;
-      sporcleApi.leaveBeacon(normalizedCode, myId);
-    }
-    window.addEventListener('beforeunload', handleUnload);
-    return () => window.removeEventListener('beforeunload', handleUnload);
-  }, [normalizedCode, myId]);
 
   /* ── Per-question correctness accumulator ────────────── */
   const [answersByQ, setAnswersByQ] = useState({});
@@ -126,10 +127,8 @@ export default function SporclePlay() {
     });
   }, [state?.phase, state?.reveal?.idx, state?.reveal]);
 
-  // Reversal per question.
   const reversal = useRoundReversal(state?.reversed ?? 'no', state?.qIndex ?? 0);
 
-  // Answer state.
   const [myPick, setMyPick] = useState(null);
   useEffect(() => {
     setMyPick(null);
@@ -144,13 +143,10 @@ export default function SporclePlay() {
     ? (myRevealAnswer?.typed ?? null)
     : myPick;
 
-  /* ── Modal close handler ───────────────────────────────── */
   function handleModalClose() {
     setModalOpen(false);
     navigate('/setup');
   }
-
-  /* ── Render ─────────────────────────────────────────────── */
 
   const modal = modalOpen ? (
     <SporcleModal
@@ -193,7 +189,6 @@ export default function SporclePlay() {
 
   if (!state) return modal;
 
-  // Every pre-game phase renders inside the modal.
   if (
     state.phase === 'lobby' ||
     state.phase === 'loading' ||
@@ -208,7 +203,6 @@ export default function SporclePlay() {
   const inQuestion = state.phase === 'question';
   const inReveal = state.phase === 'reveal';
 
-  // Sudden Death timer is 15s. Normal is 20s.
   const timerSeconds = state.isTieBreaker ? 15 : 20;
 
   async function handlePick(value) {
@@ -227,95 +221,121 @@ export default function SporclePlay() {
     } catch {}
   }
 
+  async function handleSendChat(text) {
+    return actions.chat(myId, text);
+  }
+
   return (
-    <div className="space-y-6 max-w-2xl mx-auto pb-24">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <span className="text-xs text-ink-subtle uppercase tracking-[0.2em]">
-          {state.mode === 'speed' ? 'Speed' : 'Collect'}
-        </span>
-        <span className="text-xs text-ink-muted tabular-nums">
-          Q {Math.min(state.qIndex + 1, state.totalQuestions)} / {state.totalQuestions}
-        </span>
-      </div>
+    <>
+      <div className="max-w-2xl mx-auto pb-24 px-1 min-h-screen">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-3 shrink-0">
+            <span className="text-xs text-ink-subtle uppercase tracking-[0.2em]">
+              {state.mode === 'speed' ? 'Speed' : 'Collect'}
+            </span>
 
-      {/* SUDDEN DEATH BANNER */}
-      {state.isTieBreaker && (
-        <div className="rounded-md border border-wrong bg-wrong-soft px-4 py-3 text-center">
-          <p className="text-sm font-bold text-wrong uppercase tracking-wider">
-            Sudden Death
-          </p>
-          <p className="text-xs text-ink-muted mt-1">
-            First to answer correctly wins.
-          </p>
-        </div>
-      )}
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-ink-muted tabular-nums">
+                Q {Math.min(state.qIndex + 1, state.totalQuestions)} / {state.totalQuestions}
+              </span>
+              <ChatButton
+                unreadCount={unreadChatCount}
+                onClick={() => setChatOpen(true)}
+              />
+            </div>
+          </div>
 
-      {inQuestion && (
-        <PlayerRoster
-          players={state?.players ?? []}
-          phase={state?.phase ?? 'lobby'}
-          myId={myId}
-          profilesById={profilesById}
-        />
-      )}
-      {inReveal && (
-        <SporcleProgress
-          players={state?.players ?? []}
-          totalQuestions={state?.totalQuestions ?? 0}
-          qIndex={state?.qIndex ?? 0}
-          phase={state?.phase ?? 'lobby'}
-          answersByQ={answersByQ}
-          myId={myId}
-          profilesById={profilesById}
-        />
-      )}
-
-      {(inQuestion || inReveal) && (
-        <BorderContainer border="all" className="p-6 space-y-6">
-          {inQuestion && (state.question?.clip || state.question?.lyrics) && (
-            <PromptSource round={state.question} />
+          {state.isTieBreaker && (
+            <div className="rounded-md border border-wrong bg-wrong-soft px-4 py-3 text-center">
+              <p className="text-sm font-bold text-wrong uppercase tracking-wider">
+                Sudden Death
+              </p>
+              <p className="text-xs text-ink-muted mt-1">
+                First to answer correctly wins.
+              </p>
+            </div>
           )}
 
           {inQuestion && (
-            <SporcleTimer deadline={state.deadline} totalSeconds={timerSeconds} />
+            <PlayerRoster
+              players={state?.players ?? []}
+              phase={state?.phase ?? 'lobby'}
+              myId={myId}
+              profilesById={profilesById}
+            />
+          )}
+          {inReveal && (
+            <SporcleProgress
+              players={state?.players ?? []}
+              totalQuestions={state?.totalQuestions ?? 0}
+              qIndex={state?.qIndex ?? 0}
+              phase={state?.phase ?? 'lobby'}
+              answersByQ={answersByQ}
+              myId={myId}
+              profilesById={profilesById}
+            />
           )}
 
-          <QuestionPanel
-            question={state.question ?? state.reveal}
-            reveal={state.reveal}
-            phase={state.phase}
-            myId={myId}
-            myPick={effectivePick}
-            onPick={handlePick}
-            reversal={reversal}
-            rendition={state.rendition ?? 'forward'}
-          />
-        </BorderContainer>
-      )}
+          {(inQuestion || inReveal) && (
+            <BorderContainer border="all" className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+              {inQuestion && (state.question?.clip || state.question?.lyrics) && (
+                <div className="max-h-[140px] overflow-y-auto">
+                  <PromptSource round={state.question} />
+                </div>
+              )}
 
-      {inReveal && isHost && (
-        <div className="flex justify-end">
-          <Button
-            variant="primary"
-            onClick={handleAdvance}
-            disabled={actions.pending === 'advance'}
-          >
-            {actions.pending === 'advance'
-              ? 'Advancing…'
-              : state.qIndex + 1 >= state.totalQuestions
-              ? state.isTieBreaker 
-                ? 'Show final winner'
-                : 'See final scores'
-              : 'Next question →'}
-          </Button>
+              {inQuestion && (
+                <SporcleTimer deadline={state.deadline} totalSeconds={timerSeconds} />
+              )}
+
+              <QuestionPanel
+                question={state.question ?? state.reveal}
+                reveal={state.reveal}
+                phase={state.phase}
+                myId={myId}
+                myPick={effectivePick}
+                onPick={handlePick}
+                reversal={reversal}
+                rendition={state.rendition ?? 'forward'}
+              />
+            </BorderContainer>
+          )}
+
+          {inReveal && isHost && (
+            <div className="flex justify-end">
+              <Button
+                variant="primary"
+                onClick={handleAdvance}
+                disabled={actions.pending === 'advance'}
+              >
+                {actions.pending === 'advance'
+                  ? 'Advancing…'
+                  : state.qIndex + 1 >= state.totalQuestions
+                  ? state.isTieBreaker
+                    ? 'Show final winner'
+                    : 'See final scores'
+                  : 'Next question →'}
+              </Button>
+            </div>
+          )}
+
+          {inReveal && !isHost && state.autoAdvanceSeconds > 0 && (
+            <p className="text-center text-xs text-ink-subtle">
+              Next question in a moment…
+            </p>
+          )}
         </div>
-      )}
+      </div>
 
-      {inReveal && !isHost && state.autoAdvanceSeconds > 0 && (
-        <p className="text-center text-xs text-ink-subtle">
-          Next question in a moment…
-        </p>
-      )}
-    </div>
+      <ChatModal
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        messages={state.messages ?? []}
+        myId={myId}
+        onSend={handleSendChat}
+        players={state.players ?? []}
+        roomCode={normalizedCode}
+      />
+    </>
   );
 }
