@@ -1,24 +1,13 @@
 // game/src/components/domain/Setup/QuestionTypePicker/QuestionTypePicker.jsx
-import { HeartButton } from '../../Profile/HeartButton.jsx';
-import { useFavoriteToggles } from '../../../../hooks/setup/useFavoriteToggles.js';
+import { ALL_TYPES } from "@/constants";
+import { HeartButton } from "../../Profile/HeartButton";
+import { useFavoriteToggles } from '@/hooks/setup/useFavoriteToggles.js';
+import { DISABLED_HINTS } from "@/constants/questionTypes";
 
-const ALL_TYPES = [
-  { value: 'name-track',    label: 'Track name',      hint: 'What is the song?' },
-  { value: 'name-artist',   label: 'Artist name',     hint: 'Who made it?' },
-  { value: 'name-album',    label: 'Album name',      hint: 'What album is it from?' },
-  { value: 'name-featured', label: 'Featured artist', hint: 'Who is featured?' },
-  { value: 'name-position', label: 'Clip position',   hint: 'Start, middle, or end?' },
-  { value: 'lyrics-track',  label: 'Lyric → track',   hint: 'Read the lyric, name the song' },
-  { value: 'lyrics-artist', label: 'Lyric → artist',  hint: 'Read the lyric, name the singer' },
-  { value: 'lyrics-album',  label: 'Lyric → album',   hint: 'Read the lyric, name the album' },
-];
 
 const ALL_VALUES = ALL_TYPES.map(t => t.value);
 
-const DISABLED_HINTS = {
-  'name-artist':   'Needs at least 2 selected artists.',
-  'lyrics-artist': 'Needs at least 2 selected artists.',
-};
+
 
 export function QuestionTypePicker({
     value = [],

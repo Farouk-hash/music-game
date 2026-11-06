@@ -3,21 +3,10 @@ import { useMemo, useState } from 'react';
 import { useProfileContext } from '../../../context/ProfileContext.jsx';
 import { useCatalog } from '../../../hooks/setup/useCatalog.js';
 import { FavoritePicker } from './FavoritePicker.jsx';
+import { QUESTION_TYPES } from '../../../constants/questionTypes.js';
+import { IconClose } from '../../../icons/index.js';
 
-/**
- * Question-type options — labels mirror QuestionTypePicker.
- * The `value` is what we store as the favourite.
- */
-const QUESTION_TYPES = [
-  { value: 'name-track',    label: 'Track name' },
-  { value: 'name-artist',   label: 'Artist name' },
-  { value: 'name-album',    label: 'Album name' },
-  { value: 'name-featured', label: 'Featured artist' },
-  { value: 'name-position', label: 'Clip position' },
-  { value: 'lyrics-track',  label: 'Lyric → track' },
-  { value: 'lyrics-artist', label: 'Lyric → artist' },
-  { value: 'lyrics-album',  label: 'Lyric → album' },
-];
+
 
 export function FavoritesTab() {
   const { favorites, addFavorite, removeFavorite } = useProfileContext();
@@ -167,7 +156,7 @@ function Section({
                 className="text-ink-subtle hover:text-wrong"
                 aria-label={`Remove ${renderName(id)}`}
               >
-                ✕
+                <IconClose/>
               </button>
             </li>
           ))}

@@ -2,17 +2,14 @@
 //
 // Round-count selector. Sends the chosen number as `count` to /play.
 
-const OPTIONS = [
-  { value: 5,  label: '5',  hint: 'Quick' },
-  { value: 10, label: '10', hint: 'Standard' },
-  { value: 15, label: '15', hint: 'Long' },
-  { value: 20, label: '20', hint: 'Marathon' },
-];
+import { ROUND_COUNT_OPTIONS } from "@/constants/roundCount";
+
+
 
 export function RoundCountPicker({ value, onChange }) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-      {OPTIONS.map((opt) => {
+      {ROUND_COUNT_OPTIONS.map((opt) => {
         const selected = value === opt.value;
         return (
           <button

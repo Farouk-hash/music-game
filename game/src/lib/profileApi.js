@@ -4,9 +4,9 @@
 // Parallel to sporcleApi.js. Uses the same base URL as api.js
 // (VITE_API_BASE / /api/game), since profiles live in the same Worker.
 
+import { BASE } from "./api";
 
-const RAW_BASE = import.meta.env.VITE_API_BASE0 ?? '/api/game';
-const BASE = RAW_BASE.replace(/\/game\/?$/, '').replace(/\/$/, '');
+
 async function request(path, options = {}) {
   const res = await fetch(BASE + path, {
     headers: { Accept: 'application/json', ...(options.headers ?? {}) },
@@ -41,11 +41,11 @@ export const profileApi = {
       body: JSON.stringify({ nickname }),
     }),
 
-  recover: ({ recoveryCode }) =>
+   recover: ({ recoveryCode, email, phone }) =>
     request('/profiles/recover', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ recoveryCode }),
+      body: JSON.stringify({ recoveryCode, email, phone }),
     }),
 
   get: (id) => request(`/profiles/${id}`),

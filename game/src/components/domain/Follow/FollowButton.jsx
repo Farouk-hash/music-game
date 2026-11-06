@@ -6,12 +6,13 @@ import {
   useAcceptRequest,
   useUnfollow,
 } from '../../../hooks/follows/useFollows.js';
+import { IconCheck, IconClose, IconUserMinus, IconUserPlus } from '../../../icons/index.js';
 
 /**
  * State-aware follow button.
  *
  * At `sm:` and up: text labels ("Follow", "Requested", "Accept", "✓ Friends").
- * Below `sm`:     icon-only (person-plus, ×, ✓, ✓ ×).
+ * Below `sm`:     icon-only.
  *
  * Optimistic: status flips immediately, rolls back on error.
  */
@@ -43,7 +44,7 @@ export function FollowButton({ profileId, size = 'sm', friendsOnly = 'show' }) {
       ? 'h-7 px-2.5 text-xs'
       : 'h-9 px-3 text-sm';
 
-  /* ── Handlers ──────────────────────────────────────── */
+  const iconClass = 'w-3.5 h-3.5 shrink-0';
 
   async function handleFollow() {
     setOptimistic('requested');
@@ -63,30 +64,6 @@ export function FollowButton({ profileId, size = 'sm', friendsOnly = 'show' }) {
     catch { setOptimistic(null); }
   }
 
-  /* ── Icons ─────────────────────────────────────────── */
-
-  const IconFollow = (
-    <svg viewBox="0 0 16 16" className="w-3.5 h-3.5 shrink-0" fill="none" aria-hidden="true">
-      <circle cx="6" cy="5" r="2.5" stroke="currentColor" strokeWidth="1.75" />
-      <path d="M2 14c0-2.2 1.8-4 4-4s4 1.8 4 4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
-      <path d="M12 6v4M10 8h4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
-    </svg>
-  );
-
-  const IconCheck = (
-    <svg viewBox="0 0 16 16" className="w-3.5 h-3.5 shrink-0" fill="none" aria-hidden="true">
-      <path d="M3 8.5 L6.5 12 L13 4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-
-  const IconX = (
-    <svg viewBox="0 0 16 16" className="w-3 h-3 shrink-0" fill="none" aria-hidden="true">
-      <path d="M4 4 L12 12 M12 4 L4 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-
-  /* ── Renders ───────────────────────────────────────── */
-
   if (status === 'none') {
     return (
       <button
@@ -103,7 +80,7 @@ export function FollowButton({ profileId, size = 'sm', friendsOnly = 'show' }) {
           sizeClass,
         ].join(' ')}
       >
-        {IconFollow}
+        <IconUserPlus className={iconClass} />
         <span className="hidden sm:inline">Follow</span>
       </button>
     );
@@ -136,7 +113,7 @@ export function FollowButton({ profileId, size = 'sm', friendsOnly = 'show' }) {
             'disabled:opacity-50 disabled:cursor-not-allowed',
           ].join(' ')}
         >
-          {IconX}
+          <IconClose className="w-3 h-3" />
         </button>
       </span>
     );
@@ -158,7 +135,7 @@ export function FollowButton({ profileId, size = 'sm', friendsOnly = 'show' }) {
           sizeClass,
         ].join(' ')}
       >
-        {IconCheck}
+        <IconCheck className={iconClass} />
         <span className="hidden sm:inline">Accept</span>
       </button>
     );
@@ -176,7 +153,7 @@ export function FollowButton({ profileId, size = 'sm', friendsOnly = 'show' }) {
             'inline-flex items-center gap-1.5 px-2.5',
           ].join(' ')}
         >
-          {IconCheck}
+          <IconCheck className={iconClass} />
           <span className="hidden sm:inline">
             {status === 'friends' ? 'Friends' : 'Following'}
           </span>
@@ -195,7 +172,7 @@ export function FollowButton({ profileId, size = 'sm', friendsOnly = 'show' }) {
             'disabled:opacity-50 disabled:cursor-not-allowed',
           ].join(' ')}
         >
-          {IconX}
+          <IconUserMinus className="w-3 h-3" />
         </button>
       </span>
     );

@@ -1,5 +1,5 @@
 // game/src/components/domain/Setup/Genres/StrictGenreToggle.jsx
-import { IconStrict } from '../../../../lib/icons.jsx';
+import { IconStrict } from "../../../../icons";
 
 /**
  * Strict genres toggle — pill style with a funnel icon.

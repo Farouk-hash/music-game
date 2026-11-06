@@ -3,7 +3,9 @@
 // Thin fetch wrapper. All game data comes from the Cloudflare Worker via
 // the /api/game prefix (proxied in dev by Vite; same-origin in prod).
 
-const PREFIX = import.meta.env.VITE_API_BASE ?? '/api/game';
+export const PREFIX = import.meta.env.VITE_API_BASE ?? '/api/game';
+export const RAW_BASE = import.meta.env.VITE_API_BASE0 ?? '/api/game';
+export const BASE = RAW_BASE.replace(/\/game\/?$/, '').replace(/\/$/, '');
 
 async function request(path, options = {}) {
   const res = await fetch(PREFIX + path, {

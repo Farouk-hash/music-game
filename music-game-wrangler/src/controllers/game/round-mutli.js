@@ -11,7 +11,6 @@ import { buildInstrumentalRoundMulti } from './rounds-methods/buildingInstrument
 import { fetchLyricsPool } from './rounds-methods/instruments-lyrics-pool.js';
 
 import {
-  VALID_TYPES,
   AUDIO_TYPES,
   LYRICS_TYPES,
   emptyTally,
@@ -42,9 +41,10 @@ function featuredQuota(count, activeAudioOrder) {
 }
 
 export async function getRoundMulti(request, env) {
-  const url = new URL(request.url);
+  // ── CHANGED: Read from POST body instead of URL ──
+  const body = await request.json().catch(() => ({}));
 
-  const requestedTypes = parseRequestedTypes(url);
+  const requestedTypes = parseRequestedTypes(body.types);
   const activeAudioOrder = requestedTypes.length > 0
     ? MULTI_ORDER.filter(t => requestedTypes.includes(t))
     : MULTI_ORDER;
@@ -56,18 +56,19 @@ export async function getRoundMulti(request, env) {
     ? true
     : requestedTypes.some(t => LYRICS_TYPES.has(t));
 
-  const count     = clamp(Number(url.searchParams.get('count') ?? 5), 1, MAX_COUNT);
-  const artistIds = parseIdList(url.searchParams.get('artists'));
-  const genreIds  = parseIdList(url.searchParams.get('genres'));
-  const years     = parseIdList(url.searchParams.get('years'));
-  const rendition = url.searchParams.get('rendition') === 'reverse' ? 'reverse' : 'forward';
+  const count     = clamp(Number(body.count ?? 5), 1, MAX_COUNT);
+  const artistIds = parseIdList(body.artists);
+  const genreIds  = parseIdList(body.genres);
+  const years     = parseIdList(body.years);
+  const rendition = body.rendition === 'reverse' ? 'reverse' : 'forward';
 
   /* ── instruments mode ──────────────────────────────────── */
-  const instrumentsParam = url.searchParams.get('instruments');
   const instrumentsMode =
-    instrumentsParam === 'all'   ? 'all'   :
-    instrumentsParam === 'mixed' ? 'mixed' :
+    body.instruments === 'all'   ? 'all'   :
+    body.instruments === 'mixed' ? 'mixed' :
                                    'none';
+
+  // ── THE REST IS EXACTLY AS YOU PROVIDED IT ──
 
   const { ids: scopeArtistIds, tier: scopeTier } = await resolveScope(env, {
     artistIds, genreIds, years,

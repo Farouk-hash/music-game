@@ -1,6 +1,6 @@
 // game/src/components/domain/SuddenDeath/SuddenDeathReveal.jsx
-import { Button } from '../../ui/Button.jsx';
-import { isCorrectForQuestion } from '../../../hooks/sudden-death/useSuddenDeath.js';
+import { Button } from '@/components/ui/Button.jsx';
+import { isCorrectForQuestion } from '@/hooks/sudden-death/useSuddenDeath.js';
 
 const POSITION_LABELS = {
   start: 'البداية',

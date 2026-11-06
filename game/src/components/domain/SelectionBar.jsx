@@ -1,19 +1,7 @@
 // game/src/components/game/SelectionBar.jsx
-//
-// Sticky bottom bar. Renders a summary of the current selection plus an
-// arbitrary list of action buttons.
-//
-//   actions = [
-//     { key: 'play-two', label: 'Play level 2', onClick, variant: 'ghost' },
-//     { key: 'play-one', label: 'Play level 1', onClick, variant: 'primary' },
-//   ]
-//
-// Wide screens (sm+): inline buttons on the right.
-// Small screens: a hamburger icon opens a bottom sheet listing the
-// actions as full-width buttons, primary action at the top.
-
 import { useEffect, useState } from 'react';
-import { Button } from '../ui/Button.jsx';
+import { Button } from '@/components/ui/Button.jsx';
+import { IconBurger } from '@/icons/index.js';
 
 const VARIANT_CLASS = {
   primary:
@@ -26,22 +14,6 @@ const VARIANT_CLASS = {
     'bg-surface-2 text-wrong border-wrong/40 hover:border-wrong',
 };
 
-function MenuIcon({ className = '' }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      aria-hidden="true"
-    >
-      <path d="M4 7h16M4 12h16M4 17h16" />
-    </svg>
-  );
-}
-
 export function SelectionBar({
   count,
   countLabel = 'selected',
@@ -50,7 +22,6 @@ export function SelectionBar({
 }) {
   const [open, setOpen] = useState(false);
 
-  // Escape key closes the sheet.
   useEffect(() => {
     if (!open) return;
     function onKey(e) {
@@ -65,14 +36,10 @@ export function SelectionBar({
     setOpen(false);
   }
 
-  // Primary at top, then the rest as given. The array passed by the
-  // caller has primary last (Setup sends [multiplayer, l3, l2, l1]),
-  // so reverse for the sheet.
   const sheetActions = [...actions].reverse();
 
   return (
     <>
-      {/* Backdrop — only when the sheet is open on small screens */}
       {open && (
         <div
           className="sm:hidden fixed inset-0 z-30 bg-black/60 backdrop-blur-sm"
@@ -81,10 +48,8 @@ export function SelectionBar({
         />
       )}
 
-      {/* Sticky bottom bar */}
       <div className="fixed bottom-0 inset-x-0 z-20 border-t border-border bg-bg/95 backdrop-blur">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-4">
-          {/* Left: count + hint */}
           <div className="flex-1 min-w-0">
             <p className="text-sm text-ink">
               {count > 0 ? (
@@ -103,7 +68,6 @@ export function SelectionBar({
             )}
           </div>
 
-          {/* Right (wide): inline buttons */}
           <div className="hidden sm:flex items-center gap-2 shrink-0">
             {actions.map((action) => (
               <Button
@@ -117,7 +81,6 @@ export function SelectionBar({
             ))}
           </div>
 
-          {/* Right (small): hamburger */}
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
@@ -131,12 +94,11 @@ export function SelectionBar({
               focus:outline-none focus-visible:ring-2 focus-visible:ring-accent
             "
           >
-            <MenuIcon className="w-5 h-5" />
+            <IconBurger className="w-5 h-5" />
           </button>
         </div>
       </div>
 
-      {/* Bottom sheet — small screens only, when open */}
       {open && (
         <div
           className="sm:hidden fixed inset-x-0 bottom-0 z-40"

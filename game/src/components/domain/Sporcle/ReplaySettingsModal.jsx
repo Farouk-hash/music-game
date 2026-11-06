@@ -1,13 +1,13 @@
 // game/src/components/domain/Sporcle/ReplaySettingsModal.jsx
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { Modal } from '../../Modal/Modal.jsx';
-import { Button } from '../../ui/Button.jsx';
-import { SearchBar } from '../../ui/SearchBar.jsx';
-import { Loader } from '../../ui/Loader.jsx';
+import { Modal } from '@/components/Modal/Modal.jsx';
+import { Button } from '@/components/ui/Button.jsx';
+import { SearchBar } from '@/components/ui/SearchBar.jsx';
+import { Loader } from '@/components/ui/Loader.jsx';
 import { GenreTileGrid } from '../Setup/Genres/GenreTileGrid.jsx';
 import { ArtistTileGrid } from '../Setup/Artists/ArtistTileGrid.jsx';
 import { YearTileGrid } from '../Setup/Years/YearTileGrid.jsx';
-import { useCatalog } from '../../../hooks/setup/useCatalog.js';
+import { useCatalog } from '@/hooks/setup/useCatalog.js';
 
 const EMPTY_CONFIG = {};
 

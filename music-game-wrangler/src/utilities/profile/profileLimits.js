@@ -5,6 +5,22 @@ export const FAVORITES_PER_KIND_MAX = 100;
 export const FAVORITES_TOTAL_MAX = 300;
 
 export const VALID_KINDS = new Set(['artist', 'genre', 'track', 'question-type']);
+export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function normalizeEmail(raw) {
+  const s = String(raw ?? '').trim().toLowerCase();
+  if (s.length === 0) return { ok: true, value: null };
+  if (s.length > 100) return { ok: false, error: 'Email too long' };
+  if (!EMAIL_RE.test(s)) return { ok: false, error: 'Invalid email' };
+  return { ok: true, value: s };
+}
+
+export function normalizePhone(raw) {
+  const s = String(raw ?? '').trim().replace(/[\s\-()]/g, '');
+  if (s.length === 0) return { ok: true, value: null };
+  if (!/^\+?\d{7,15}$/.test(s)) return { ok: false, error: 'Invalid phone number' };
+  return { ok: true, value: s };
+}
 
 export function validateNickname(raw) {
   const s = String(raw ?? '').trim();

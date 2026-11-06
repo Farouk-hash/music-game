@@ -7,18 +7,21 @@ export function TileGrid({
   selectedIds,
   allSelected = false,
   onToggle,
+  onTileClick = null,
   getKey    = (item) => item.id,
   getTitle  = (item) => item.name ?? item.display_name,
   getSubtitle,
   getImage  = (item) => item.image,
   getFallbackLetter = (item) =>
     (item.name ?? item.display_name ?? '?').trim().charAt(0).toUpperCase(),
+  getTileClassName, // <-- Added
   emptyMessage = 'Nothing to show.',
   disabled = false,
   initialCount,
   resetKey,
   renderHeart,
   view = 'grid',
+  paginated = false,
 }) {
   const [visibleCount, setVisibleCount] = useState(
     typeof initialCount === 'number' ? initialCount : Infinity
@@ -34,7 +37,7 @@ export function TileGrid({
     );
   }
 
-  const chunked = typeof initialCount === 'number' && items.length > initialCount;
+  const chunked = !paginated && typeof initialCount === 'number' && items.length > initialCount;
   const isFullyExpanded = chunked && visibleCount >= items.length;
   const remaining = chunked ? items.length - visibleCount : 0;
 
@@ -48,7 +51,7 @@ export function TileGrid({
     setVisibleCount(initialCount);
   }
 
-    const containerClass =
+  const containerClass =
     view === 'list'
       ? 'flex flex-col gap-2'
       : view === 'dense'
@@ -62,6 +65,7 @@ export function TileGrid({
           const key = getKey(item);
           const selected = allSelected || selectedIds.has(key);
           const hiddenOnSmall = chunked && i >= visibleCount;
+          const customClass = getTileClassName ? getTileClassName(item) : '';
 
           return (
             <div key={key} className={hiddenOnSmall ? 'hidden sm:block' : ''}>
@@ -72,9 +76,11 @@ export function TileGrid({
                 fallbackLetter={getFallbackLetter(item)}
                 selected={selected}
                 disabled={disabled}
-                onToggle={() => onToggle(key)}
+                onToggle={() => onToggle?.(key)}
+                onTileClick={onTileClick ? () => onTileClick(item) : null}
                 heart={renderHeart ? renderHeart(item) : null}
                 view={view}
+                className={customClass} // <-- Passed down
               />
             </div>
           );

@@ -1,6 +1,7 @@
 // game/src/components/domain/Follow/FriendsListTab.jsx
 import { PlayerAvatar } from '../../Avatar/PlayerAvatar.jsx';
 import { Button } from '../../ui/Button.jsx';
+import { IconUserMinus } from '../../../icons/index.js';
 import { useFriends, useUnfollow } from '../../../hooks/follows/useFollows.js';
 import { SkeletonRowList } from '../../ui/SkeletonRow.jsx';
 
@@ -48,16 +49,7 @@ export function FriendsListTab() {
             title="Unfollow"
           >
             <span className="inline-flex items-center gap-1.5">
-              <svg
-                viewBox="0 0 16 16"
-                className="w-3.5 h-3.5 shrink-0"
-                fill="none"
-                aria-hidden="true"
-              >
-                <circle cx="6" cy="5" r="2.5" stroke="currentColor" strokeWidth="1.75" />
-                <path d="M2 14c0-2.2 1.8-4 4-4s4 1.8 4 4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
-                <path d="M11 6 L15 10 M15 6 L11 10" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
-              </svg>
+              <IconUserMinus className="w-3.5 h-3.5 shrink-0" />
               <span className="hidden sm:inline">Unfollow</span>
             </span>
           </Button>

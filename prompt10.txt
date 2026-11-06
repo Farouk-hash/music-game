@@ -1,0 +1,528 @@
+Here is the consolidated **v76 handoff**. Save as `E:\matb3aa-game\handoff-v76.md`, paste as the first message of the next session. It supersedes v75.
+
+---
+
+```
+You are continuing a working project. **Do not re-derive the setup or re-verify anything below.** Everything here is confirmed working unless explicitly marked broken. Read it in full before proposing anything.
+
+## The Project
+
+Six pieces, plus a data pipeline, plus a card game in design:
+
+1. **`admin/`** — build tool for curating audio clips, lyrics, artists, album years. Port 5173.
+2. **`game/`** — the player-facing quiz app. Port 5174 locally; deployed to Cloudflare Pages.
+3. **`server/`** — local Express + orchestration. Port 3001.
+4. **`music-game-wrangler/`** — Cloudflare Worker holding D1 + R2 (tracks, artists, lyrics, instruments, profiles, follows, invites, collections).
+5. **`host-sporcle-wrangler/`** — Durable Object service for Sporcle multiplayer.
+6. **`tools/ACE-Step-1.5/`** — Local AI model for style-transfer.
+
+The game does **not** go through Express. It fetches `music-game-wrangler` directly for solo/co-op, profiles, follows, invites, and collections, and `host-sporcle-wrangler` for Sporcle.
+
+## Repository
+
+**GitHub:** `https://github.com/Farouk-hash/music-game` (private, monorepo)
+**Local repo root:** `E:\matb3aa-game\.git`
+**Last committed state:** v28 (initial commit `c2a9ad3`). Work from v29–v76 is **uncommitted**.
+
+**`.gitignore`:** Ignores `tools/`, `server/style-transfer-output/`, `server/instrumental-output/`, `*.mp3`, `*.wav`, `venv/`, `.venv/`, Python caches, `server/tmp-preview-test/`.
+
+**`.env.production` is TRACKED** and contains `VITE_API_BASE0`, `VITE_API_BASE`, `VITE_SPORCLE_BASE`.
+
+## Architecture & Ports
+
+| Piece | Location | Local port | URL |
+|---|---|---|---|
+| Express server | `server/` | 3001 | `http://localhost:3001` |
+| Admin app | `admin/` | 5173 | `http://localhost:5173` |
+| Game (local) | `game/` | 5174 | `http://localhost:5174` |
+| Game (deployed) | Pages | — | `https://music-game-9vn.pages.dev` |
+| Worker (music) | `music-game-wrangler/` | 8787 | `https://music-game-wrangler…workers.dev` |
+| Worker (Sporcle) | `host-sporcle-wrangler/` | 8788 | `https://host-sporcle-wrangler…workers.dev` |
+| ACE-Step API | `tools/ACE-Step-1.5/` | 8001 | `http://127.0.0.1:8001` |
+
+## Vite Configuration
+
+`game/vite.config.js` reads `VITE_API_BASE0` from env via `loadEnv` (falls back to the hardcoded Worker URL).
+
+- **`@/` alias** → `game/src/`.
+  - `resolve.alias` in `vite.config.js` for build.
+  - `jsconfig.json` (`"paths": { "@/*": ["./src/*"] }`) for IDE autocomplete.
+- **`jsconfig.json` uses `./src/*` (no `baseUrl`)** — `baseUrl` is deprecated in TS 5.x.
+- **Restart `npm run dev`** after changing `vite.config.js` or `jsconfig.json` — neither hot-reloads.
+- **No dead proxies.** Only `/api/game` is proxied. `/api/profiles`, `/api/follows`, `/api/invites` were removed (client calls those via `BASE` directly). Collections also uses `BASE` directly.
+
+## Styling System
+
+- `game/src/styles/tokens.css` — the ONE file with hex values.
+- `game/tailwind.config.js` — maps utility classes to CSS variables.
+- **Valid tokens:** `bg-bg`, `bg-surface`, `bg-surface-2`, `text-ink`, `text-accent`, `text-wrong`, `ring-accent`, etc. Opacity modifiers (`/40`) DO NOT WORK on token-mapped classes.
+- **Standard heights:** `h-9` for section actions, `h-10` for tab pills and header buttons, `h-11` for inputs, `h-11`/`h-12` for modal footers.
+
+## Layout
+
+- `html, body, #root` uses `min-height: 100%`.
+- `Shell.jsx` uses `flex-1 flex flex-col` on `<main>` and `flex-1` on the inner route wrapper.
+- `Play.jsx` and `Result.jsx` do **not** use `h-[calc(100vh)]`. Native window scroll with `pb-24`.
+- Modals are always **siblings** of the main route container.
+
+## Icons (`game/src/components/icons/`)
+
+**Restructured in v74.** One file per icon, grouped by purpose. All icons use the shared `base` SVG props (`stroke="currentColor"`, `strokeWidth="2"`).
+
+```
+game/src/components/icons/
+├── index.js             ← root barrel; import named icons from here
+├── _base.js             ← shared SVG props
+├── navigation/          # IconChevronUp, IconChevronDown, IconChevronLeft, IconChevronRight, IconBurger, IconClose (+ alias IconX)
+├── profile/             # IconUser, IconUserPlus, IconUserMinus, IconFriends, IconShare, IconDownload
+├── music/               # IconGenres, IconArtists, IconTracks, IconClips, IconAlbums, IconLyrics, IconInstruments, IconReversed
+├── collections/         # IconLibrary, IconCollection, IconPlus, IconTrash, IconPencil, IconMinus
+├── setup/               # IconCalendar, IconStrict, IconSelectAll, IconDice
+└── ui/                  # IconGrid, IconList, IconDense, IconEye, IconEyeOff, IconCheck, IconSearch, IconHeart, IconUsers, IconPlay, IconCloud
+```
+
+**`lib/icons.jsx` is a compat shim** — `export * from '../components/icons/index.js'`. Existing imports keep working.
+
+**Import convention:**
+- Use `import { IconFoo } from '@/components/icons'`.
+- **Not** `'@/icons'` — that path doesn't exist (though aliases vary by file).
+- `.jsx` extension required for direct file imports (barrel resolves automatically).
+
+## Image Pipeline (`@/lib/workerUrl.js` + `@/hooks/ui/useWorkerImage.js`)
+
+- **`absoluteWorkerUrl(path)`** — prefixes `BASE` to relative paths. **Passes through any scheme-prefixed URL** (http:, https:, blob:, data:) — critical for staged previews.
+- **`resolveCoverUrl(cover)`** — `null` unless `cover.kind === 'uploaded'`; else `absoluteWorkerUrl(cover.url)`.
+- **`resolveAvatarUrl(profile)`** — mirror for avatars.
+- **`useWorkerImage(input)`** — accepts a string or `{ kind, url }`, resolves to `src` + load state. Used by `CollectionCover` and any future Worker asset.
+- **`absoluteAvatarUrl(profile)`** in `profileApi.js` still works — used by `ProfileModal` and `PlayerAvatar`. **Do not migrate these to `useWorkerImage`** — they mix Worker + DiceBear sources.
+
+## Tiles & Grid
+
+**`TileGrid.jsx`** — grid of tiles.
+- `view` = `'grid' | 'dense' | 'list'` (visual style).
+- `onToggle` — standard click (used by genres/artists for selection).
+- **`onTileClick`** — when provided, replaces `onToggle` for the primary click AND hides the selection check-circle. Used by collections (tile click = open editor).
+- `renderHeart` — the corner action slot. Used for favorites (heart), collection delete (trash), clone toggle (plus/minus).
+- `paginated` (boolean) — when true, disables the mobile "Show more" behavior; caller handles pagination externally.
+
+**`Tile.jsx`** — one tile. Three views (grid/dense/list). If `onTileClick` is set, the selection circle doesn't render.
+
+**`ArtistTileGrid` / `GenreTileGrid`** — wrap `TileGrid` with pagination + `HeartButton`.
+- Responsive page size via `useMediaQuery('(min-width: 640px)')`:
+  - Genres: 5 mobile / 10 desktop.
+  - Artists: 10 mobile / 15 desktop.
+- `pageSize={0}` disables pagination; explicit `pageSize={n}` overrides the responsive default.
+
+## Tabs & Primitives
+
+**`TabStrip.jsx`** — controlled tab row.
+```jsx
+<TabStrip tabs={[{ key, label, badge? }]} value={tab} onChange={setTab} cols={3} mode="grid" />
+```
+Used by `CollectionsModal` (3), `ProfileModal` (4), `FriendsModal` (3).
+
+**`Button.jsx`** — shared button component.
+- Variants: `primary`, `secondary`, `ghost`, `danger`, `danger-outline`.
+- Sizes: `sm` (`h-8`), `md` (`h-10`), `lg` (`h-12`).
+- Standard for all new buttons going forward.
+
+## TOAST SYSTEM
+
+`useToast.jsx`. **API: `show({ message, actionLabel?, onAction?, onDismiss?, durationMs? })`.** Method is `show`, NOT `push`. No `tone`/`title` — every toast is single-line, uniformly styled. Dismiss reasons: `cancel` (fires action), `expire` (fires onDismiss). Default duration 6000ms.
+
+## GAME SETTINGS CONTEXT (v76)
+
+`game/src/context/GameSettingsContext.jsx` exposes:
+- `questionTypes`, `answerMode`, `roundCount`, `reversedAnswers`, `timer`, `audioRendition`, `instruments`
+- Individual setters for each
+- **`applySettings(partial)`** — bulk setter (NEW in v76). Accepts a partial object with any of the above keys and updates state in one call.
+
+Used by `useCollectionMultiplayer` to hydrate the modal with a collection's defaults before opening it.
+
+## PROFILE / FOLLOW / INVITE SYSTEMS
+
+Unchanged from v75. Profile + recovery code, M2 follows, room invites with 15s poll, room-death cleanup via `waitUntil`.
+
+**⚠️ CRITICAL:** Any fire-and-forget HTTP call from a Worker/DO **must** be wrapped in `execCtx.waitUntil(...)`.
+
+## SPORCLE — fully implemented (v68–v72)
+
+- Tie-breaker loop, all-answered fix, chat (DO-local, 200 cap), play-again-with-settings (`start_again` + `ReplaySettingsModal`).
+- Heartbeat: `left` = 0/1/2; 30s/2min timeouts; 5s sweep; `lobby_wait_reason` (`alone`/`no-ready`/`host-idle`); `force_close`; idempotent `version: 0` returns; `AutoCloseBar`.
+- Route handlers take `(ctx)`; `playerId` in state query.
+
+## SPORCLE SUDDEN DEATH — Level-aware (v76)
+
+`useSuddenDeath.js` fetch logic:
+- L1 → `POST /game/round`
+- L2 → `POST /game/round-multi` (multi-question rounds, same clip)
+- L3 → `POST /game/round` (fallback)
+
+For L2, flatten all questions per round into a single flat array. The state machine (`commitAnswer`, `advanceToNextPlayer`, `nextQuestion`) doesn't care about rounds — it works on the flat question array. **The clip is attached to every question** (same clip repeated for questions in the same round).
+
+Flatten logic (L2 branch):
+```js
+const flattened = [];
+for (const r of rawRounds) {
+  if (flattened.length >= QUESTIONS_PER_BATCH) break;
+  const qs = Array.isArray(r.questions) ? r.questions : [];
+  if (qs.length === 0) continue;
+  const q = qs[Math.floor(Math.random() * qs.length)];
+  flattened.push({
+    slotId: r.slotId,
+    clip: r.clip,
+    lyrics: q.lyrics || r.lyrics,
+    revealClip: q.revealClip || r.revealClip,
+    source: q.source || r.source,
+    type: q.type,
+    prompt: q.prompt,
+    options: q.options,
+    correctValue: q.correctValue,
+  });
+}
+```
+
+**Also fixed in v76:** `SuddenDeath.jsx` must render `PromptSource` when `q?.clip || q?.lyrics` (not just `q?.clip`), otherwise lyrics rounds show a blank prompt area.
+
+**Also fixed in v76:** `SuddenDeath.jsx` `apiParams` is wrapped in `useMemo` to prevent a fetch loop (was causing "loading flashes").
+
+**Also fixed in v76:** `OptionsGrid` has a third visual state (`locked`) for "picked but not revealed" — used during L2 collect mode where the answer window is long.
+
+## COLLECTIONS — COMPLETE SYSTEM
+
+### Overview
+
+Per-profile saved game configurations. Two flavors:
+- **Original collections** — created by the user, editable.
+- **Clones (Pointers)** — a reference to a published collection by someone else. **Read-only.** Stored in a `collection_clones` join table, NOT duplicated as a new row.
+
+"Other Collections" tab shows all public collections, with a `+`/`−` toggle to clone/unclone.
+
+### Database schema
+
+**`collections`:** id, profile_id, name, is_public, cover_kind, cover_r2_key, levels (JSON), years (JSON), genres_ids (JSON), artists_ids (JSON), created_at, updated_at.
+
+**`collection_rounds`:** collection_id, position, level, question_types (JSON), answer_mode, mode, rounds, reversed_answers, reversed_audio, instruments, timer.
+
+**`collection_clones`:** profile_id, collection_id, created_at. PRIMARY KEY (profile_id, collection_id).
+
+**`source_id`** on `collections` is deprecated. Ignore it.
+
+### Worker routes
+
+```
+POST   /profiles/:profileId/collections
+POST   /profiles/:profileId/collections/clone       ← must be BEFORE /:id
+GET    /profiles/:profileId/collections             ← returns { mine: [], others: [] }
+GET    /profiles/:profileId/collections/:id
+PUT    /profiles/:profileId/collections/:id
+DELETE /profiles/:profileId/collections/:id
+POST   /profiles/:profileId/collections/:id/cover
+DELETE /profiles/:profileId/collections/:id/cover
+GET    /profiles/:profileId/collections/:id/cover
+```
+
+**Route ordering critical:** `/clone` must be registered BEFORE `/:id`.
+
+### Canonical response shape
+
+```json
+{
+  "mine": [
+    { "id": 1, "profileId": "uuid", "name": "...", "isPublic": false,
+      "levels": [1,2], "years": {...}, "genresIds": [...], "artistsIds": [...],
+      "cover": { "kind": "uploaded", "url": "/profiles/.../cover" },
+      "rounds": [...], "createdAt": "...", "updatedAt": "..." }
+  ],
+  "others": [
+    { "id": 6, "profileId": "authorUuid", "name": "...", "isPublic": true, ...,
+      "isCloned": true,
+      "followStatus": "friends" | "requested" | "incoming" | "following" | "none", // v76
+      "author": {
+        "profileId": "authorUuid",
+        "nickname": "Farouk",
+        "avatar": { "kind": "uploaded", "style": null, "seed": null, "url": "/profiles/.../avatar" }
+      }
+    }
+  ]
+}
+```
+
+**`cover.url` and `author.avatar.url` are relative paths.** Frontend absolutizes via `resolveCoverUrl` / `absoluteAvatarUrl`.
+
+### Client files
+
+```
+game/src/
+├── lib/
+│   ├── collectionsApi.js      # list/get/create/save/remove/uploadCover/removeCover/clone
+│   └── ...
+├── hooks/collections/
+│   ├── useCollections.js               # queries + mutations with optimistic updates
+│   ├── useCollectionDraft.js           # draft from/to collection, validate()
+│   ├── useCollectionFilters.js         # search + facets + active filters (incl. friends) — v76
+│   ├── usePlayCollection.js            # startGame(collection, level, onPlay) — solo
+│   └── useCollectionMultiplayer.js     # openMultiplayerFor / closeMultiplayer / startMultiplayer — v76
+├── components/domain/Collections/
+│   ├── modal/
+│   │   ├── CollectionsModal.jsx          # 3 tabs: Mine/Create/Other
+│   │   ├── CollectionReadOnlyModal.jsx   # thin wrapper around CollectionModalShell
+│   │   ├── CollectionEditorModal.jsx     # thin wrapper around CollectionEditor → CollectionModalShell
+│   │   ├── CollectionModalShell.jsx      # SHARED layout (header, body, footer buttons) — v76
+│   │   ├── CollectionMultiplayerModal.jsx # thin wrapper for MultiplayerModal — v76
+│   │   ├── LevelPickerModal.jsx          # "Which level?" mini-modal
+│   │   ├── CreateCollectionTab.jsx
+│   │   └── OtherCollectionsTab.jsx       # v76: accepts onMultiplayer prop
+│   ├── editor/
+│   │   ├── CollectionEditor.jsx          # body + state → renders CollectionModalShell
+│   │   ├── EditorBasics.jsx
+│   │   ├── EditorScope.jsx
+│   │   ├── EditorRounds.jsx
+│   │   └── RoundRow.jsx
+│   ├── tiles/
+│   │   ├── CollectionTileGrid.jsx        # shows (Friend) in subtitle — v76
+│   │   └── CollectionTileAction.jsx
+│   ├── primitives/
+│   │   ├── CollectionCover.jsx
+│   │   └── LevelBadge.jsx
+│   └── filters/
+│       ├── FilterPanel.jsx                # "Friends" filter group — v76
+│       └── FilterGroup.jsx
+├── components/domain/Setup/Modals/
+│   ├── LevelModalWrapper.jsx              # shared shell for Level1/2/3 modals
+│   └── SharedGameSettings.jsx
+├── routes/
+│   ├── Library.jsx                        # /library — own collections
+│   ├── LibraryOthers.jsx                  # /library/others — public collections
+│   └── ...
+└── ...
+```
+
+### Client routing
+
+```
+/library              → Library.jsx
+/library/others       → LibraryOthers.jsx (must be registered BEFORE /library/:id)
+/library/:id          → Library.jsx (deep link: opens edit for originals, read-only for clones)
+```
+
+### Round schema — 10 fields
+
+| Field | Type | Notes |
+|---|---|---|
+| `level` | 1/2/3 | must be in `collection.levels` |
+| `questionTypes` | string[] | ≥1, ≤8, from VALID_QUESTION_TYPES |
+| `answerMode` | 'choose'\|'type' | input mode |
+| `mode` | 'speed'\|'collect' | game scoring mode |
+| `rounds` | int 1–50 | questions this round plays |
+| `reversedAnswers` | 'no'\|'some'\|'all' | tri-state |
+| `reversedAudio` | bool | forward/reverse |
+| `instruments` | 'none'\|'mixed'\|'all' | |
+| `timer` | int 5–300 \| null | seconds |
+
+### v76 architecture — shared shell
+
+`CollectionModalShell.jsx` is the **single source of truth** for the collection modal's header, body, and footer. It accepts:
+
+- `title`, `subtitle`, `collection`, `draft`
+- `mutations` (undefined for read-only)
+- `readOnly`, `isClone`, `isPublic`, `setIsPublic`
+- `disabledTypes`, `reversedClipsCount`, `collectionId`, `isExisting`
+- `onPlay`, `onMultiplayer`, `onSave`, `saving`, `dirty`, `availableLevels`
+
+It renders:
+- Header (cover, title, author + FollowButton, close button)
+- Body — EditorBasics (if not readOnly), EditorScope, EditorRounds, Publish toggle (if applicable)
+- Footer — Close/Cancel (secondary), Multiplayer (secondary + IconUsers), Play (primary + IconPlay), Save (primary + IconCloud, only in edit mode)
+
+Both `CollectionReadOnlyModal` and `CollectionEditor` are now **thin wrappers** that compute their specific logic (start game, save validation, dirty state) and pass everything to `CollectionModalShell`.
+
+### v76 multiplayer flow (Collections → Multiplayer)
+
+**The hook `useCollectionMultiplayer`** encapsulates the entire state machine:
+
+```js
+const {
+  multiplayerCollection,
+  openMultiplayerFor,   // (collection, { onCloseReadOnly }) → seeds settings + opens modal
+  closeMultiplayer,
+  startMultiplayer,     // ({ names, level, roundsPerPlayer }) → builds payload + navigates
+} = useCollectionMultiplayer();
+```
+
+**`openMultiplayerFor(collection)`** does:
+1. Finds the seed round (by smallest available level, or any round as fallback)
+2. Calls `settings.applySettings(seedRound settings)` — hydrates `GameSettingsContext`
+3. Calls `onCloseReadOnly()` if provided (closes the read-only modal)
+4. Sets `multiplayerCollection` state
+
+**`startMultiplayer({ names, level, roundsPerPlayer })`** does:
+1. Resolves the target round by `level` (`rounds.find(r => Number(r.level) === Number(effectiveLevel))`)
+2. Builds payload from `collection.genresIds`, `collection.artistsIds`, `collection.years`, `targetRound.*`
+3. Writes to `sessionStorage['game.lastPlayParams']`
+4. Clears `multiplayerCollection` and navigates to `/play-multi`
+
+**Wiring in `LibraryPage.jsx` and `CollectionsModal.jsx`:**
+
+```jsx
+const mp = useCollectionMultiplayer();
+
+<CollectionEditorModal
+  open={editorOpen}
+  onClose={handleCloseEditor}
+  onPlay={handlePlayFromEditor}
+  onMultiplayer={(c) => mp.openMultiplayerFor(c, { onCloseReadOnly: () => setReadOnlyTarget(null) })}
+  initialCollection={editingCollection}
+/>
+
+<CollectionReadOnlyModal
+  open={!!readOnlyTarget}
+  onClose={handleCloseReadOnly}
+  onPlay={handlePlayFromReadOnly}
+  onMultiplayer={(c) => mp.openMultiplayerFor(c, { onCloseReadOnly: () => setReadOnlyTarget(null) })}
+  collection={readOnlyTarget}
+/>
+
+<CollectionMultiplayerModal
+  collection={mp.multiplayerCollection}
+  onClose={mp.closeMultiplayer}
+  onStart={mp.startMultiplayer}
+  reversedClipsCount={reversedClipsCount}
+/>
+```
+
+**Wiring in `OtherCollectionsTab.jsx`:** accepts `onMultiplayer` prop and forwards it to its own `CollectionReadOnlyModal`.
+
+### v76 friends filter in Library
+
+`useCollectionFilters.js` was updated to extract a `friends` facet (count of collections where `followStatus === 'friends'`) and filter by it.
+
+`LibraryPage.jsx` adds `friends: new Set()` to `activeFilters` and `handleClearFilters`. `FilterPanel.jsx` renders the "Friends" filter group first (only when `facets.friends.has('true')`).
+
+`CollectionTileGrid.jsx` shows `by {nickname} (Friend)` in the subtitle when `followStatus === 'friends'`.
+
+## MATB3AA / NETWORK FIXES
+
+- matb3aa media lives at `/storage/media/` — `absolutizeSrc()` normalizes; `download()` rejects non-audio magic bytes.
+- Node Happy Eyeballs: `--no-network-family-autoselection` in root `package.json` scripts.
+
+## ENVIRONMENT — SETUP TRAPS
+
+- **Vite proxies:** Only `/api/game` is proxied. Any new prefix needs an entry.
+- **JSX extension:** `.jsx` mandatory.
+- **`@/` alias:** exists (see Vite Configuration above).
+- **PowerShell encoding:** ASCII-only, or save as UTF-8 with BOM.
+- **PowerShell + Arabic:** use `-Body ([System.Text.Encoding]::UTF8.GetBytes($json))` or `[System.Uri]::EscapeDataString(...)`.
+- **`curl -I` with Arabic URLs** returns `400`. Use `Invoke-WebRequest -UseBasicParsing`.
+- **Windows pagefile:** 32 GB for ACE-Step.
+- **Node 18+**, Python 3.14 (venv), Python 3.12 (ACE-Step uv env).
+- **`yt-dlp.exe` at `C:\Tools\yt-dlp.exe`**, **ffmpeg.exe + ffprobe.exe at `C:\Tools\ffmpeg\bin\`**.
+- **Cloudflare D1 `datetime('now')` returns UTC.** Egypt is UTC+3 (EEST) / UTC+2 (EET).
+- **`cmd` + `echo` mangles nested JSON.** Use `echo {...}> body.json` (no space before `>`) or Notepad. Verify with `type body.json`.
+- **D1 parameter cap: 100.** Use `chunkedIn` at 90.
+- **D1 bind must never receive `undefined`** — coerce to `null` with `?? null`.
+
+## STYLE TRANSFER PIPELINE
+
+Working with 20-second clips, `inference_steps: 10`. Known issue: `/query_result` returns empty `data: []` after success (file exists at `.cache/acestep/tmp/api_audio/<uuid>.mp3`). **Fix needed:** poll the filesystem for the newest `.mp3`.
+
+## CARD GAME — DESIGN ONLY
+
+Single device, pass-around, 2–4 players, last alive wins, turn = draw → challenge → resolve. Full design not captured.
+
+---
+
+## Commands
+
+```cmd
+:: Local dev
+cd E:\matb3aa-game && npm run dev
+cd E:\matb3aa-game\game && npm run dev
+
+:: Workers
+cd E:\matb3aa-game\music-game-wrangler && npx wrangler dev --port 8787
+cd E:\matb3aa-game\host-sporcle-wrangler && npx wrangler dev --port 8788
+
+:: Deploy (order: music → sporcle → pages)
+cd E:\matb3aa-game\music-game-wrangler && npx wrangler deploy
+cd E:\matb3aa-game\host-sporcle-wrangler && npx wrangler deploy
+
+cd E:\matb3aa-game\game
+npm run build
+npx wrangler pages deploy dist --project-name=music-game --branch=production
+
+:: Collections migrations (apply in order)
+cd E:\matb3aa-game\music-game-wrangler
+npx wrangler d1 execute music-game-db --remote --file=./migrations/0008_collections.sql
+npx wrangler d1 execute music-game-db --remote --file=./migrations/0009_question_types.sql
+npx wrangler d1 execute music-game-db --remote --file=./migrations/0010_collection_rounds_mode.sql
+npx wrangler d1 execute music-game-db --remote --file=./migrations/0011_collection_rounds_reversed_answers.sql
+npx wrangler d1 execute music-game-db --remote --file=./migrations/0014_collection_clones.sql
+```
+
+## Known open (non-collections)
+
+1. **Style-transfer polling** — patch `style_cover.py` to poll the filesystem for the newest `.mp3`.
+2. **Anti-skew round-robin verification** — 5× L1 curl with `instruments=all`.
+3. **Enable L3 instruments** — flip `allowInstruments={true}` on `Level3Modal`, add `source` to `Play3.jsx`.
+4. **`PublishedInstruments.jsx`** — browse/delete uploaded instruments.
+5. **Client rendition chain** — `useRoundMultiplayer.js` + `PlayMulti.jsx`.
+6. **Favourite cap feedback** — toast on 100/kind, 300 total.
+7. **Card game** — design only.
+8. **Collections solo Play from `CollectionEditor` (draft state)** — `startGame` currently uses the current draft directly; might want to use `useCollectionMultiplayer` for consistency (single source of truth).
+9. **`CollectionEditorModal` doesn't forward `reversedClipsCount` from parent** — hardcodes 0. Fix: pass through from `LibraryPage` / `CollectionsModal`.
+10. **`CollectionsModal` and `OtherCollectionsTab`** — need `useCollectionMultiplayer` hook wired (v76 refactor in progress). If the Multiplayer button in "Other collections" does nothing, check `OtherCollectionsTab` forwards `onMultiplayer` prop.
+
+## Style the User Prefers
+
+- **Complete files, not fragments.**
+- **Minimal fixes.**
+- **Tables** to explain changes.
+- **One clear next step.**
+- **Note what to test** and what to paste back.
+- **Concise.** Experienced with React/Node.
+- **Recommend explicitly** when there are tradeoffs.
+
+## Most Likely Next Tasks
+
+1. **Commit everything.** v29–v76 is uncommitted. This is the biggest checkpoint risk.
+2. **Verify the v76 refactor end-to-end** — My Collections multiplayer, Other Collections multiplayer, Solo play from editor, Friends filter, etc.
+3. **Clean up dead code** — `CollectionCardFull.jsx`, `CollectionCardQuick.jsx`, `CollectionDetails.jsx`, `CardItem.jsx` (verify zero imports first).
+4. **Fix `CollectionEditorModal` to pass `reversedClipsCount`** — currently 0.
+5. **Style-transfer polling fix.**
+6. **Enable L3 instruments.**
+
+**Recommended next step:** **Commit.** Then pick from tasks 2–4.
+
+Ask what the user wants to work on next.
+
+---
+
+## END OF PROMPT
+
+Save this as `E:\matb3aa-game\handoff-v76.md`. Paste it as the first message of your next session.
+```
+
+---
+
+## What's new in v76 (vs v75)
+
+| Section | Change |
+|---|---|
+| **GAME SETTINGS CONTEXT** | New `applySettings(partial)` bulk setter |
+| **SPORCLE SUDDEN DEATH** | Level-aware endpoints (L1/L2/L3) + flatten logic; `useMemo` on `apiParams`; `PromptSource` renders for `lyrics` not just `clip`; `OptionsGrid` `locked` state |
+| **COLLECTIONS — Complete System** | Rewritten: `CollectionModalShell` shared shell (editor + read-only share header/footer/body); `useCollectionMultiplayer` hook; `CollectionMultiplayerModal` wrapper; `OtherCollectionsTab` accepts `onMultiplayer`; Friends filter in `useCollectionFilters` / `FilterPanel` / `CollectionTileGrid` |
+| **Canonical response shape** | Added `followStatus` field on `others[i]` |
+| **Icons** | Added `IconUsers`, `IconPlay`, `IconCloud` |
+| **Button.jsx** | Documented as shared primitive with variants + sizes |
+| **File tree** | Updated with `CollectionModalShell`, `CollectionMultiplayerModal`, `OtherCollectionsTab` accepting prop |
+| **Known open** | Added collections-specific items (solo play from editor, `reversedClipsCount` forwarding, `OtherCollectionsTab` wiring) |
+| **Most Likely Next Tasks** | Reordered — commit is #1, refactor verification is #2 |
+
+The document is self-contained. A fresh model knows:
+- The full collections system including the v76 shared-shell architecture
+- The `useCollectionMultiplayer` hook pattern and how both `LibraryPage` and `CollectionsModal` wire it
+- The friends filter and how it interacts with `followStatus`
+- The sudden-death level-aware endpoint selection and flatten logic
+- The `GameSettingsContext.applySettings` bulk setter
+- Exactly what remains: commit, verify refactor, cleanup, `reversedClipsCount` forwarding, style-transfer, L3

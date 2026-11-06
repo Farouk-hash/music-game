@@ -182,15 +182,15 @@ export function pickLyricsVaried(lyricsRows, count) {
 /**
  * Parse the `types` query parameter. Shared by both endpoints.
  */
-export function parseRequestedTypes(url) {
-  const csv = url.searchParams.get('types');
-  if (csv) {
-    return csv
-      .split(',')
-      .map(s => s.trim())
-      .filter(t => VALID_TYPES.includes(t));
+// Update parseRequestedTypes in scope-helpers.js
+export function parseRequestedTypes(val) {
+  if (!val) return [];
+  // Handle single string fallback if it's not an array
+  if (typeof val === 'string' && !val.includes(',') && val !== 'mixed') {
+    return VALID_TYPES.includes(val) ? [val] : [];
   }
-  const single = url.searchParams.get('type');
-  if (!single || single === 'mixed') return [];
-  return VALID_TYPES.includes(single) ? [single] : [];
+  const arr = Array.isArray(val) ? val : String(val).split(',');
+  return arr
+    .map(s => String(s).trim())
+    .filter(t => VALID_TYPES.includes(t));
 }

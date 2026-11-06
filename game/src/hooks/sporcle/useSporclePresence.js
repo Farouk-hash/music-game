@@ -12,7 +12,7 @@
 // must not mark anyone as left), so it only listens to real page events.
 
 import { useCallback, useEffect, useRef } from 'react';
-import { sporcleApi, leaveBeaconRaw } from '../../lib/sporcleApi.js';
+import { sporcleApi, leaveBeaconRaw } from '@/lib/sporcleApi.js';
 
 const PING_INTERVAL_MS = 10000;
 

@@ -1,7 +1,7 @@
 // game/src/components/domain/Setup/Years/YearRangeModal.jsx
 import { useState, useEffect } from 'react';
-import { Modal } from '../../../Modal/Modal.jsx';
-import { Button } from '../../../ui/Button.jsx';
+import { Modal } from '@/components/Modal/Modal.jsx';
+import { Button } from '@/components/ui/Button.jsx';
 
 export function YearRangeModal({ open, onClose, years, onApply }) {
   const yearNumbers = years.map(y => y.year).sort((a, b) => a - b);

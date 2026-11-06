@@ -1,20 +1,20 @@
 // game/src/routes/PlayMulti.jsx
-import { useMultiplayerParams } from '../../hooks/rounds/useMultiplayerParams.js';
-import { useMultiplayerSession } from '../../hooks/rounds/useMultiplayerSession.js';
-import { Loader } from '../../components/ui/Loader.jsx';
-import { BorderContainer } from '../../components/layout/BorderContainer.jsx';
-import { PromptSource } from '../../components/domain/Rounds/PromptSource.jsx';
-import { AudioPlayer } from '../../components/domain/Rounds/AudioPlayer.jsx';
-import { QuestionCard } from '../../components/domain/Rounds/QuestionCard.jsx';
-import { ErrorBlock } from '../../components/domain/Rounds/ErrorBlock.jsx';
-import { EmptyBlock } from '../../components/domain/Rounds/EmptyBlock.jsx';
-import { TimerBar } from '../../components/domain/Setup/Timer/Timerbar.jsx';
-import { useRoundReversal } from '../../hooks/rounds/useRoundReversal.js';
-import { TurnBanner } from '../../components/domain/Multiplayer/TurnBanner.jsx';
-import { PlayerBadge } from '../../components/domain/Multiplayer/PlayerBadge.jsx';
-import { useRoundMultiplayer } from '../../hooks/rounds/useRoundMultiPlayer.js';
-import { Leaderboard } from '../../components/domain/Multiplayer/LeaderBoard.jsx';
-import { MultiplayerProgress } from '../../components/domain/Multiplayer/MultiplayerProgress.jsx';
+import { useMultiplayerParams } from '@/hooks/rounds/useMultiplayerParams.js';
+import { useMultiplayerSession } from '@/hooks/rounds/useMultiplayerSession.js';
+import { Loader } from '@/components/ui/Loader.jsx';
+import { BorderContainer } from '@/components/layout/BorderContainer.jsx';
+import { PromptSource } from '@/components/domain/Rounds/PromptSource.jsx';
+import { AudioPlayer } from '@/components/domain/Rounds/AudioPlayer.jsx';
+import { QuestionCard } from '@/components/domain/Rounds/QuestionCard.jsx';
+import { ErrorBlock } from '@/components/domain/Rounds/ErrorBlock.jsx';
+import { EmptyBlock } from '@/components/domain/Rounds/EmptyBlock';
+import { TimerBar } from '@/components/domain/Setup/Timer/Timerbar.jsx';
+import { useRoundReversal } from '@/hooks/rounds/useRoundReversal.js';
+import { TurnBanner } from '@/components/domain/Multiplayer/TurnBanner.jsx';
+import { PlayerBadge } from '@/components/domain/Multiplayer/PlayerBadge.jsx';
+import { useRoundMultiplayer } from '@/hooks/rounds/useRoundMultiPlayer.js';
+import { Leaderboard } from '@/components/domain/Multiplayer/LeaderBoard.jsx';
+import { MultiplayerProgress } from '@/components/domain/Multiplayer/MultiplayerProgress.jsx';
 
 const POSITION_LABELS = {
   start: 'البداية',
@@ -26,16 +26,16 @@ const POSITION_LABELS = {
 export default function PlayMulti() {
   const params = useMultiplayerParams();
 
-  const { data, isLoading, error } = useRoundMultiplayer({
+   const { data, isLoading, error } = useRoundMultiplayer({
     genres: params.genres,
     artists: params.artists,
     years: params.years,
     types: params.types,
     players: params.players,
     level: params.level,
-    roundsPerPlayer: params.count,
+    roundsPerPlayer: params.roundsPerPlayer,
     rendition: params.rendition,
-    instruments:params.instruments
+    instruments: params.instruments,
   });
 
   const playerRounds = data?.players ?? [];
@@ -59,26 +59,26 @@ export default function PlayMulti() {
   if (error) return <ErrorBlock error={error} />;
   if (playerRounds.length === 0) return <EmptyBlock />;
 
-  const buildSuddenDeathUrl = (mode, winnerNames) => {
-    const qp = new URLSearchParams();
+    const buildSuddenDeathUrl = (mode, winnerNames) => {
+      // Build the payload from the current game params
+      const payload = {
+        genres: params.genres,
+        artists: params.artists,
+        years: params.years,
+        types: params.types,
+        rendition: params.rendition,
+        instruments: params.instruments,
+        answerMode: mode === 'options' ? 'choose' : 'type',
+        players: winnerNames,
+        level: params.level, // Keep the same level for sudden death
+      };
 
-    if (params.genres?.length)  qp.set('genres',  params.genres.join(','));
-    if (params.artists?.length) qp.set('artists', params.artists.join(','));
-    if (params.years?.length)   qp.set('years',   params.years.join(','));
-    if (params.types?.length)   qp.set('types',   params.types.join(','));
-    if (params.rendition)       qp.set('rendition', params.rendition);
-    if (params.instruments && params.instruments !== 'none') {
-      qp.set('instruments', params.instruments);
-    }
-
-    // Sudden death roster = the tied winners only.
-    qp.set('players', winnerNames.join(','));
-    qp.set('labels',  winnerNames.join(','));
-    qp.set('returnTo', window.location.pathname + window.location.search);
-    qp.set('mode', mode);
-
-    return `/sudden-death?${qp.toString()}`;
-  };
+      // Save to sessionStorage
+      sessionStorage.setItem('game.lastPlayParams', JSON.stringify(payload));
+      
+      // Navigate
+      return '/sudden-death';
+    };
   if (session.phase === 'game-end') {
     return (
       <Leaderboard

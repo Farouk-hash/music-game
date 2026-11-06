@@ -1,6 +1,6 @@
 // game/src/hooks/setup/useFavoriteToggles.js
 import { useCallback, useMemo } from 'react';
-import { useProfileContext } from '../../context/ProfileContext.jsx';
+import { useProfileContext } from '@/context/ProfileContext.jsx';
 
 /**
  * Convenience wrapper around ProfileContext for Setup-screen tiles.

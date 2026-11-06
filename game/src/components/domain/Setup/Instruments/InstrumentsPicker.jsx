@@ -1,32 +1,27 @@
 // game/src/components/domain/Setup/Instruments/InstrumentsPicker.jsx
-/**
- * Three-button picker for the `instruments` mode.
- *
- *   none  — original audio (vocals included)
- *   mixed — half the rounds use instruments (no vocals)
- *   all   — every round uses instruments
- */
-export function InstrumentsPicker({ value, onChange, disabled = false }) {
-  const OPTIONS = [
-    { key: 'none',  label: 'None',  hint: 'Vocals included' },
-    { key: 'mixed', label: 'Mixed', hint: '50 / 50' },
-    { key: 'all',   label: 'All',   hint: 'No vocals' },
-  ];
 
+import { INSTRUMENT_OPTIONS } from "@/constants";
+
+export function InstrumentsPicker({ value, onChange, disabled = false }) {
   return (
     <div className="flex gap-2">
-      {OPTIONS.map(opt => {
-        const active = value === opt.key;
+      {INSTRUMENT_OPTIONS.map(opt => {
+        const active = value === opt.value;
         return (
           <button
-            key={opt.key}
+            key={opt.value}
             type="button"
-            disabled={disabled}
-            onClick={() => onChange(opt.key)}
+            // We remove `disabled={disabled}` here so it stays colorful.
+            // The parent wrapper (`SharedGameSettings`) uses `pointer-events-none` 
+            // to block clicks in read-only mode.
+            onClick={() => !disabled && onChange(opt.value)}
             aria-pressed={active}
+            aria-disabled={disabled}
             className={[
               'flex-1 py-2 rounded-md border text-sm font-medium transition-colors',
-              'disabled:opacity-40 disabled:cursor-not-allowed',
+              // Only apply opacity-40 if disabled AND not active, to show the active one clearly
+              disabled && !active ? 'opacity-40 cursor-not-allowed' : '',
+              disabled && active ? 'cursor-default' : '',
               active
                 ? 'bg-accent text-bg border-accent'
                 : 'bg-surface-2 text-ink-muted border-border hover:border-accent-2 hover:text-ink',

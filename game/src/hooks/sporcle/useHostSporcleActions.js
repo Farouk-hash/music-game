@@ -1,6 +1,6 @@
 // game/src/hooks/sporcle/useHostSporcleActions.js
 import { useCallback, useState } from 'react';
-import { sporcleApi } from '../../lib/sporcleApi.js';
+import { sporcleApi } from '@/lib/sporcleApi.js';
 
 export function useHostSporcleActions(code, { onVersion } = {}) {
   const [pending, setPending] = useState(null);

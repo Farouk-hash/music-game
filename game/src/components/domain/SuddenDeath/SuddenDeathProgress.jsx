@@ -1,5 +1,5 @@
 // game/src/components/domain/SuddenDeath/SuddenDeathProgress.jsx
-import { SegmentedProgress } from '../../ui/SegmentedProgress.jsx';
+import { SegmentedProgress } from '@/components/ui/SegmentedProgress.jsx';
 
 /**
  * Sudden-death progress bar.

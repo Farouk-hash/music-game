@@ -1,6 +1,7 @@
+// music-game-wrangler/src/index.js
 import { handleCors } from './middleware/cors.js';
 import { matchRoute } from './routes/index.js';
-import { json, error } from './lib/response.js';
+import { json, error, CORS_HEADERS } from './lib/response.js';
 
 export default {
   async fetch(request, env, ctx) {
@@ -14,27 +15,38 @@ export default {
     if (url.pathname === '/health' && request.method === 'GET') {
       try {
         const result = await env.DB
-          .prepare('SELECT COUNT(*) AS count FROM genres')
+          .prepare('SELECT COUNT(1) AS count FROM genres')
           .first();
-        return json({ ok: true, time: new Date().toISOString(), genres: result.count });
+        
+        const res = json({ ok: true, time: new Date().toISOString(), genres: result.count });
+        Object.entries(CORS_HEADERS).forEach(([k, v]) => res.headers.set(k, v));
+        return res;
       } catch (e) {
-        return error(e.message, 500);
+        const res = error(e.message, 500);
+        Object.entries(CORS_HEADERS).forEach(([k, v]) => res.headers.set(k, v));
+        return res;
       }
     }
 
     // ── Route dispatch ──────────────────────────────────────
     const match = matchRoute(request);
     if (!match) {
-
-      return error('Not found', 404);
+      const res = error('Not found', 404);
+      Object.entries(CORS_HEADERS).forEach(([k, v]) => res.headers.set(k, v));
+      return res;
     }
 
     // ── Invoke the controller ───────────────────────────────
     try {
-      return await match.handler(request, env, match.params);
+      const response = await match.handler(request, env, match.params);
+      // Inject CORS headers into the successful response
+      Object.entries(CORS_HEADERS).forEach(([k, v]) => response.headers.set(k, v));
+      return response;
     } catch (e) {
       console.error('[worker error]', e);
-      return error(e.message, 500);
+      const res = error(e.message, 500);
+      Object.entries(CORS_HEADERS).forEach(([k, v]) => response.headers.set(k, v));
+      return res;
     }
   },
 };

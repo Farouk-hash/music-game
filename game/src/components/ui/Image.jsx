@@ -1,24 +1,7 @@
 // game/src/components/ui/Image.jsx
-import { useImageLoader } from '../../hooks/common/useImageLoader.js';
+import { useState } from 'react';
 import { Skeleton } from './Skeleton.jsx';
 
-/**
- * Image with built-in loading skeleton and error fallback.
- *
- *   <Image src={url} alt="Artist" className="w-full h-full object-cover" />
- *   <Image src={url} fallbackLetter="A" className="..." />
- *   <Image src={url} fallback={<CustomThing />} className="..." />
- *
- * Props:
- *   src           — image URL
- *   alt           — alt text (defaults to '')
- *   className     — applied to the <img> element
- *   wrapperClass  — applied to the outer container
- *   fallbackLetter — single letter shown if no image / error (optional)
- *   fallback      — custom React node shown on error (overrides fallbackLetter)
- *   fadeDuration  — transition duration in ms (default 250)
- *   loading       — native loading attribute (default 'lazy')
- */
 export function Image({
   src,
   alt = '',
@@ -30,7 +13,7 @@ export function Image({
   loading = 'lazy',
   ...rest
 }) {
-  const { status } = useImageLoader(src);
+  const [status, setStatus] = useState(src ? 'loading' : 'idle');
 
   const showSkeleton = status === 'loading' && !!src;
   const showImage    = status === 'loaded' && !!src;
@@ -63,6 +46,8 @@ export function Image({
           src={src}
           alt={alt}
           loading={loading}
+          onLoad={() => setStatus('loaded')}
+          onError={() => setStatus('error')}
           className={[
             className,
             'transition-opacity',

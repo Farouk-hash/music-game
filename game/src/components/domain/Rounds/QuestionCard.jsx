@@ -1,20 +1,11 @@
 // game/src/components/domain/Rounds/QuestionCard.jsx
-import { Button } from '../../ui/Button.jsx';
+import { Button } from '@/components/ui/Button.jsx';
 import { OptionsGrid } from './OptionsGrid.jsx';
 import { TextAnswerInput } from '../TextAnswerInput/TextAnswerInput.jsx';
-import { isAnswerCorrect } from '../../../hooks/rounds/answerCheck.js';
-import { applyReversal } from '../../../lib/reverseText.js';
+import { isAnswerCorrect } from '@/hooks/rounds/answerCheck.js';
+import { applyReversal } from '@/lib/reverseText.js';
+import { Reveal } from '@/components/ui/Reveal.jsx';
 
-/**
- * The question card for all play routes.
- *
- * `source` — optional. When `'instrumental'`, the card gets an
- *            "INSTRUMENTAL" badge and a subtle accent-2 frame so
- *            instrumental rounds are visually distinct.
- *
- * Reversed answers are skipped for `lyrics-track` — the snippet options
- * are multi-line and reversing them is unreadable regardless of source.
- */
 export function QuestionCard({
   eyebrow,
   prompt,
@@ -39,11 +30,13 @@ export function QuestionCard({
   const correctLabel =
     options.find(o => o.value === correctValue)?.label ?? correctValue;
 
-  // Multi-line snippets aren't readable when reversed. Force-off.
   const effectiveReversal =
     questionType === 'lyrics-track'
       ? { reversed: false, style: null }
       : reversal;
+
+  // Used to force re-animation when the question changes
+  const revealKey = `${questionType}-${prompt}`;
 
   function handleTypedSubmit(rawInput) {
     const correct = isAnswerCorrect(rawInput, correctValue);
@@ -59,24 +52,32 @@ export function QuestionCard({
           : '',
       ].join(' ')}
     >
-      {isInstrumental && (
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-accent-2 bg-surface-2 px-2.5 py-0.5 text-[10px] font-semibold text-accent-2 uppercase tracking-[0.15em]">
-          <span aria-hidden>🎼</span>
-          Instrumental
-        </span>
-      )}
+      <div className="space-y-4">
+        {isInstrumental && (
+          <Reveal key={`badge-${revealKey}`} direction="down" delay={0}>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-accent-2 bg-surface-2 px-2.5 py-0.5 text-[10px] font-semibold text-accent-2 uppercase tracking-[0.15em]">
+              <span aria-hidden>🎼</span>
+              Instrumental
+            </span>
+          </Reveal>
+        )}
 
-      {eyebrow && (
-        <p className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">
-          {eyebrow}
-        </p>
-      )}
+        {eyebrow && (
+          <Reveal key={`eyebrow-${revealKey}`} direction="down" delay={50}>
+            <p className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">
+              {eyebrow}
+            </p>
+          </Reveal>
+        )}
+
+        <Reveal key={`prompt-${revealKey}`} direction="down" delay={100}>
+          <p className="text-xl font-bold text-ink leading-snug">{prompt}</p>
+        </Reveal>
+      </div>
 
       {revealed && picked === '__TIMEOUT__' && (
         <p className="text-wrong text-sm">⏱ Time's up — you didn't answer in time.</p>
       )}
-
-      <p className="text-xl font-bold text-ink leading-snug">{prompt}</p>
 
       {revealed && revealExtra && (
         <div className="rounded-md border border-border bg-surface-2 p-3 space-y-2">
@@ -87,29 +88,32 @@ export function QuestionCard({
         </div>
       )}
 
-      {useTyping ? (
-        <TextAnswerInput
-          onSubmit={handleTypedSubmit}
-          revealed={revealed}
-          userAnswer={picked}
-          correctLabel={correctLabel}
-          correct={
-            revealed && picked != null
-              ? isAnswerCorrect(picked, correctValue)
-              : null
-          }
-        />
-      ) : (
-        <OptionsGrid
-          options={options}
-          correctValue={correctValue}
-          picked={picked}
-          revealed={revealed}
-          onPick={onPick}
-          labelFor={labelFor}
-          reversal={effectiveReversal}
-        />
-      )}
+      {/* Input / Options reveal slightly later */}
+      <Reveal key={`input-${revealKey}`} direction="up" delay={250} distance={40}>
+        {useTyping ? (
+          <TextAnswerInput
+            onSubmit={handleTypedSubmit}
+            revealed={revealed}
+            userAnswer={picked}
+            correctLabel={correctLabel}
+            correct={
+              revealed && picked != null
+                ? isAnswerCorrect(picked, correctValue)
+                : null
+            }
+          />
+        ) : (
+          <OptionsGrid
+            options={options}
+            correctValue={correctValue}
+            picked={picked}
+            revealed={revealed}
+            onPick={onPick}
+            labelFor={labelFor}
+            reversal={effectiveReversal}
+          />
+        )}
+      </Reveal>
 
       {revealed && (
         <div className="flex justify-end pt-2">

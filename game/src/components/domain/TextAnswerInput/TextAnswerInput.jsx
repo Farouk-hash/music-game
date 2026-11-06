@@ -1,6 +1,6 @@
 // game/src/components/game/TextAnswerInput.jsx
 import { useState, useEffect } from 'react';
-import { Button } from '../../ui/Button.jsx';
+import { Button } from '@/components/ui/Button.jsx';
 
 export function TextAnswerInput({
   onSubmit,

@@ -1,36 +1,11 @@
 // game/src/context/GameSettingsContext.jsx
-import { createContext, useContext, useState, useEffect } from 'react';
-
-/**
- * Shared game settings across all play modes.
- *
- *   questionTypes    — array of type strings (8 total)
- *   answerMode       — 'choose' | 'type'
- *   roundCount       — integer, single-player rounds
- *   reversedAnswers  — 'no' | 'some' | 'all'
- *   timer            — 'off' | 'on'
- *   audioRendition   — 'forward' | 'reverse'
- *   instruments      — 'none' | 'mixed' | 'all'
- *
- * Persisted to localStorage (except roundCount and questionTypes,
- * which reset per session by design).
- */
-
-const ALL_TYPES = [
-  'name-track',
-  'name-artist',
-  'name-album',
-  'name-featured',
-  'name-position',
-  'lyrics-track',
-  'lyrics-artist',
-  'lyrics-album',
-];
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { QUESTION_TYPE_VALUES } from '@/constants/questionTypes.js';
 
 const GameSettingsContext = createContext(null);
 
 export function GameSettingsProvider({ children }) {
-  const [questionTypes, setQuestionTypes] = useState(ALL_TYPES);
+  const [questionTypes, setQuestionTypes] = useState(QUESTION_TYPE_VALUES);
   const [answerMode, setAnswerMode] = useState(() =>
     localStorage.getItem('game.answerMode') || 'choose'
   );
@@ -59,8 +34,19 @@ export function GameSettingsProvider({ children }) {
     localStorage.setItem('game.instruments', instruments);
   }, [answerMode, reversedAnswers, timer, audioRendition, instruments]);
 
+  // Bulk apply — used when launching from a collection
+  const applySettings = useCallback((partial) => {
+    if (partial.questionTypes !== undefined) setQuestionTypes(partial.questionTypes);
+    if (partial.answerMode !== undefined) setAnswerMode(partial.answerMode);
+    if (partial.roundCount !== undefined) setRoundCount(partial.roundCount);
+    if (partial.reversedAnswers !== undefined) setReversedAnswers(partial.reversedAnswers);
+    if (partial.timer !== undefined) setTimer(partial.timer);
+    if (partial.audioRendition !== undefined) setAudioRendition(partial.audioRendition);
+    if (partial.instruments !== undefined) setInstruments(partial.instruments);
+  }, []);
+
   const value = {
-    ALL_TYPES,
+    ALL_TYPES: QUESTION_TYPE_VALUES,
     questionTypes, setQuestionTypes,
     answerMode, setAnswerMode,
     roundCount, setRoundCount,
@@ -68,6 +54,7 @@ export function GameSettingsProvider({ children }) {
     timer, setTimer,
     audioRendition, setAudioRendition,
     instruments, setInstruments,
+    applySettings,
   };
 
   return (

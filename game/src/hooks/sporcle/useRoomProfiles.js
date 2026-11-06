@@ -1,6 +1,6 @@
 // game/src/hooks/sporcle/useRoomProfiles.js
 import { useQueries } from '@tanstack/react-query';
-import { profileApi } from '../../lib/profileApi.js';
+import { profileApi } from '@/lib/profileApi.js';
 
 /**
  * Fetch profiles for a list of players, keyed by profileId.

@@ -1,6 +1,6 @@
 // game/src/context/ProfileContext.jsx
 import { createContext, useContext } from 'react';
-import { useProfile } from '../hooks/profiles/useProfile';
+import { useProfile } from '@/hooks/profiles/useProfile';
 
 const ProfileContext = createContext(null);
 

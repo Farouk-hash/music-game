@@ -1,13 +1,14 @@
 // game/src/components/domain/Setup/Modals/SporcleModal.jsx
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Modal } from '../../../Modal/Modal.jsx';
-import { Button } from '../../../ui/Button.jsx';
+import { Modal } from '@/components/Modal/Modal.jsx';
+import { Button } from '@/components/ui/Button.jsx';
 import { SharedGameSettings } from './SharedGameSettings.jsx';
-import { useGameSettings } from '../../../../context/GameSettingsContext.jsx';
-import { sporcleApi } from '../../../../lib/sporcleApi.js';
+import { useGameSettings } from '@/context/GameSettingsContext.jsx';
+import { sporcleApi } from '@/lib/sporcleApi.js';
 import { RoomPanel } from '../../Sporcle/RoomPanel.jsx';
-import { useProfileContext } from '../../../../context/ProfileContext.jsx';
+import { useProfileContext } from '@/context/ProfileContext.jsx';
+import { IconClose } from '@/icons/index.js';
 
 /**
  * The Sporcle modal — entry + lobby, all in one.
@@ -213,7 +214,7 @@ export function SporcleModal({
             className="text-ink-subtle hover:text-ink text-sm shrink-0"
             aria-label="Close"
           >
-            ✕
+            <IconClose/>
           </button>
         </header>
 

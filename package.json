@@ -4,10 +4,10 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently -n server,admin -c blue,magenta \"npm:dev:server\" \"npm:dev:admin\"",
-    "dev:server": "node --watch server/index.js",
+    "dev:server": "node --no-network-family-autoselection --watch server/index.js",
     "dev:admin": "npm --prefix admin run dev",
     "build": "npm --prefix admin run build",
-    "start": "node server/index.js",
+    "start": "node --no-network-family-autoselection server/index.js",
     "install:all": "npm install && npm --prefix admin install"
   },
   "dependencies": {

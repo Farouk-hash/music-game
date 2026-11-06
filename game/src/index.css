@@ -9,14 +9,25 @@
   html, body, #root {
     min-height: 100%;
   }
+  
   body {
+    /* This applies the Kaushan Script to everything by default */
     @apply bg-bg text-ink font-sans antialiased;
+    font-synthesis: none; 
   }
+  
+  h1, h2, h3, h4, h5, h6 {
+    /* Ensure headings inherit the font and don't default to Times New Roman */
+    font-family: inherit;
+    @apply font-normal tracking-normal normal-case;
+  }
+  
   *:focus-visible {
     outline: none;
     box-shadow: 0 0 0 2px var(--focus-ring);
     border-radius: var(--radius-sm);
   }
+  
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }

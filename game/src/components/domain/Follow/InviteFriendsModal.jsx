@@ -3,31 +3,22 @@ import { useState, useEffect, useRef } from 'react';
 import { Modal } from '../../Modal/Modal.jsx';
 import { Button } from '../../ui/Button.jsx';
 import { PlayerAvatar } from '../../Avatar/PlayerAvatar.jsx';
+import { IconClose, IconCheck } from '../../../icons/index.js';
 import { useFriends } from '../../../hooks/follows/useFollows.js';
 import { useSendInvites, useRoomInvites } from '../../../hooks/invites/useInvites.js';
 import { SkeletonRowList } from '../../ui/SkeletonRow.jsx';
 
-/**
- * Host-only modal: pick friends to invite to the current room.
- *
- * Pre-checks already-invited friends (fetched from the server).
- * Un-checking a pre-checked friend triggers a revoke on submit.
- */
 export function InviteFriendsModal({ open, onClose, roomCode }) {
   const { data: friendsData, isLoading: friendsLoading } = useFriends();
   const { data: roomData, isLoading: roomLoading } = useRoomInvites(roomCode, { enabled: open });
   const send = useSendInvites();
 
-  // Current selection (checked state).
   const [selected, setSelected] = useState(() => new Set());
-
-  // The set we started with — used to compute revokes on submit.
   const initialRef = useRef(new Set());
 
   const [error, setError] = useState(null);
   const [sent, setSent] = useState(false);
 
-  // Reset when closing; pre-check when data arrives while open.
   useEffect(() => {
     if (!open) {
       setSelected(new Set());
@@ -101,7 +92,7 @@ export function InviteFriendsModal({ open, onClose, roomCode }) {
             className="text-ink-subtle hover:text-ink text-sm shrink-0"
             aria-label="Close"
           >
-            ✕
+            <IconClose className="w-4 h-4" />
           </button>
         </header>
 
@@ -144,17 +135,7 @@ export function InviteFriendsModal({ open, onClose, roomCode }) {
                           : 'bg-surface border-border',
                       ].join(' ')}
                     >
-                      {checked && (
-                        <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="none">
-                          <path
-                            d="M3 8.5 L6.5 12 L13 4.5"
-                            stroke="currentColor"
-                            strokeWidth="2.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      )}
+                      {checked && <IconCheck className="w-3.5 h-3.5" />}
                     </span>
                   </button>
                 </li>

@@ -1,5 +1,5 @@
 // game/src/components/game/Tile.jsx
-import { Image } from "../../ui/Image";
+import { Image } from '@/components/ui/Image';
 
 export function Tile({
   title,
@@ -8,27 +8,32 @@ export function Tile({
   fallbackLetter,
   selected = false,
   onToggle,
+  onTileClick = null,
   disabled = false,
   heart = null,
-  view = 'grid',        // 'grid' | 'list' | 'dense'
+  view = 'grid',
+  className = '',
 }) {
+  const primaryHandler = onTileClick ?? onToggle;
+  const showSelection = !onTileClick;
+
   function handleClick() {
     if (disabled) return;
-    onToggle?.();
+    primaryHandler?.();
   }
 
   function handleKeyDown(e) {
     if (disabled) return;
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      onToggle?.();
+      primaryHandler?.();
     }
   }
 
   const sharedProps = {
     role: 'button',
     tabIndex: disabled ? -1 : 0,
-    'aria-pressed': selected,
+    'aria-pressed': showSelection ? selected : undefined,
     'aria-disabled': disabled || undefined,
     onClick: handleClick,
     onKeyDown: handleKeyDown,
@@ -39,9 +44,10 @@ export function Tile({
     'rounded-md border transition-all duration-150',
     'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent',
     disabled ? 'opacity-40 cursor-not-allowed' : '',
-    selected
+    showSelection && selected
       ? 'border-accent ring-2 ring-accent shadow-md'
       : 'border-border hover:border-accent-2 shadow-sm',
+    className, // <-- Appended last so it overrides default borders
   ].join(' ');
 
   /* ── LIST VIEW ────────────────────────────────────── */
@@ -51,7 +57,6 @@ export function Tile({
         {...sharedProps}
         className={[sharedClasses, 'flex items-center gap-3 px-3 py-2.5'].join(' ')}
       >
-        {/* Image / fallback letter — square on the left */}
         <div className="relative shrink-0 w-12 h-12 rounded-sm overflow-hidden">
           <Image
             src={image}
@@ -62,41 +67,36 @@ export function Tile({
           />
         </div>
 
-        {/* Text block */}
         <div className="flex-1 min-w-0">
-          <p className="text-ink font-medium text-sm leading-tight truncate">
-            {title}
-          </p>
+          <p className="text-ink font-medium text-sm leading-tight truncate">{title}</p>
           {subtitle && (
-            <p className="text-ink-subtle text-xs mt-0.5 truncate">
-              {subtitle}
-            </p>
+            <p className="text-ink-subtle text-xs mt-0.5 truncate">{subtitle}</p>
           )}
         </div>
 
-        {/* Heart */}
         {heart && <div className="shrink-0">{heart}</div>}
 
-        {/* Selection indicator */}
-        <span
-          className={[
-            'flex items-center justify-center w-5 h-5 rounded-full border shrink-0',
-            'transition-all duration-150',
-            selected
-              ? 'bg-accent border-accent text-bg'
-              : 'border-border text-transparent',
-          ].join(' ')}
-        >
-          <svg viewBox="0 0 16 16" className="w-3 h-3" fill="none">
-            <path
-              d="M3.5 8.5 L6.5 11.5 L12.5 4.5"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </span>
+        {showSelection && (
+          <span
+            className={[
+              'flex items-center justify-center w-5 h-5 rounded-full border shrink-0',
+              'transition-all duration-150',
+              selected
+                ? 'bg-accent border-accent text-bg'
+                : 'border-border text-transparent',
+            ].join(' ')}
+          >
+            <svg viewBox="0 0 16 16" className="w-3 h-3" fill="none">
+              <path
+                d="M3.5 8.5 L6.5 11.5 L12.5 4.5"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
+        )}
       </div>
     );
   }
@@ -116,8 +116,6 @@ export function Tile({
           className="w-full h-full object-cover"
         />
 
-        {/* Lighter gradient than grid mode — smaller tiles don't need
-            as much contrast behind the text. */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
 
         {heart && (
@@ -126,20 +124,22 @@ export function Tile({
           </div>
         )}
 
-        <div className="absolute top-1 right-1 z-10">
-          <span
-            className={[
-              'flex items-center justify-center w-5 h-5 rounded-full border transition-all',
-              selected
-                ? 'bg-accent border-accent text-bg'
-                : 'bg-black/40 border-white/30 text-transparent',
-            ].join(' ')}
-          >
-            <svg viewBox="0 0 16 16" className="w-3 h-3" fill="none">
-              <path d="M3.5 8.5 L6.5 11.5 L12.5 4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </span>
-        </div>
+        {showSelection && (
+          <div className="absolute top-1 right-1 z-10">
+            <span
+              className={[
+                'flex items-center justify-center w-5 h-5 rounded-full border transition-all',
+                selected
+                  ? 'bg-accent border-accent text-bg'
+                  : 'bg-black/40 border-white/30 text-transparent',
+              ].join(' ')}
+            >
+              <svg viewBox="0 0 16 16" className="w-3 h-3" fill="none">
+                <path d="M3.5 8.5 L6.5 11.5 L12.5 4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
+          </div>
+        )}
 
         <div className="absolute inset-x-0 bottom-0 z-10 px-2 py-1.5">
           <p className="text-ink font-semibold text-[11px] leading-tight truncate drop-shadow">
@@ -150,7 +150,7 @@ export function Tile({
     );
   }
 
-  /* ── GRID VIEW (default, unchanged) ───────────────── */
+  /* ── GRID VIEW (default) ──────────────────────────── */
   return (
     <div
       {...sharedProps}
@@ -165,31 +165,31 @@ export function Tile({
       />
       <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/10" />
 
-      {heart && (
-        <div className="absolute top-2 left-2 z-20">{heart}</div>
-      )}
+      {heart && <div className="absolute top-2 left-2 z-20">{heart}</div>}
 
-      <div className="absolute top-2 right-2 z-10">
-        <span
-          className={[
-            'flex items-center justify-center w-6 h-6 rounded-full border',
-            'transition-all duration-150',
-            selected
-              ? 'bg-accent border-accent text-bg'
-              : 'bg-black/40 border-white/30 text-transparent',
-          ].join(' ')}
-        >
-          <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="none">
-            <path
-              d="M3.5 8.5 L6.5 11.5 L12.5 4.5"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </span>
-      </div>
+      {showSelection && (
+        <div className="absolute top-2 right-2 z-10">
+          <span
+            className={[
+              'flex items-center justify-center w-6 h-6 rounded-full border',
+              'transition-all duration-150',
+              selected
+                ? 'bg-accent border-accent text-bg'
+                : 'bg-black/40 border-white/30 text-transparent',
+            ].join(' ')}
+          >
+            <svg viewBox="0 0 16 16" className="w-3.5 h-3.5" fill="none">
+              <path
+                d="M3.5 8.5 L6.5 11.5 L12.5 4.5"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
+        </div>
+      )}
 
       <div className="absolute inset-x-0 bottom-0 z-10 p-3">
         <p className="text-ink font-semibold text-sm leading-tight line-clamp-2 drop-shadow">

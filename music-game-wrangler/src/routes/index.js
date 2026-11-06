@@ -10,6 +10,7 @@ import { instrumentRoutes } from './admin/instruments.js';
 import { profileRoutes } from './profiles.js';
 import { followRoutes } from './follows.js';
 import { inviteRoutes } from './invites.js';
+import { collectionRoutes } from './collections.js';
 const allRoutes = [
   // GAME ROUTES ;
   ...catalogRoutes,
@@ -20,6 +21,8 @@ const allRoutes = [
   ...followRoutes,
   ...inviteRoutes,
   
+  ...collectionRoutes ,
+
   // ADMIN PANEL ROUTES ;
   ...genreRoutes,
   ...artistRoutes,

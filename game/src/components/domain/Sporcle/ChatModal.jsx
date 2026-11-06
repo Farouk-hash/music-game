@@ -1,10 +1,10 @@
 // game/src/components/domain/Sporcle/ChatModal.jsx
 import { useState, useEffect, useRef } from 'react';
-import { Modal } from '../../Modal/Modal.jsx';
-import { Button } from '../../ui/Button.jsx';
-import { PlayerAvatar } from '../../Avatar/PlayerAvatar.jsx';
-import { useRoomProfiles } from '../../../hooks/sporcle/useRoomProfiles.js';
-import { getLastReadId, setLastReadId } from '../../../lib/chatReadState.js';
+import { Modal } from '@/components/Modal/Modal.jsx';
+import { Button } from '@/components/ui/Button.jsx';
+import { PlayerAvatar } from '@/components/Avatar/PlayerAvatar.jsx';
+import { useRoomProfiles } from '@/hooks/sporcle/useRoomProfiles.js';
+import { getLastReadId, setLastReadId } from '@/lib/chatReadState.js';
 
 export function ChatModal({ open, onClose, messages = [], myId, onSend, players = [], roomCode }) {
   const [draft, setDraft] = useState('');

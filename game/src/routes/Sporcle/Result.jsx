@@ -1,21 +1,21 @@
 // game/src/routes/Sporcle/Result.jsx
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { BorderContainer } from '../../components/layout/BorderContainer.jsx';
-import { Button } from '../../components/ui/Button.jsx';
-import { Loader } from '../../components/ui/Loader.jsx';
-import { useHostSporcle } from '../../hooks/sporcle/useHostSporcle.js';
-import { useHostSporcleIdentity } from '../../hooks/sporcle/useHostSporcleIdentity.js';
-import { useHostSporcleActions } from '../../hooks/sporcle/useHostSporcleActions.js';
-import { useRoomProfiles } from '../../hooks/sporcle/useRoomProfiles.js';
-import { useSporclePresence } from '../../hooks/sporcle/useSporclePresence.js';
-import { PlayerAvatar } from '../../components/Avatar/PlayerAvatar.jsx';
-import { FollowRing } from '../../components/Avatar/FollowRing.jsx';
-import { FollowButton } from '../../components/domain/Follow/FollowButton.jsx';
-import { ChatButton } from '../../components/domain/Sporcle/ChatButton.jsx';
-import { ChatModal } from '../../components/domain/Sporcle/ChatModal.jsx';
-import { ReplaySettingsModal } from '../../components/domain/Sporcle/ReplaySettingsModal.jsx';
-import { getLastReadId, countUnread } from '../../lib/chatReadState.js';
+import { BorderContainer } from '@/components/layout/BorderContainer.jsx';
+import { Button } from '@/components/ui/Button.jsx';
+import { Loader } from '@/components/ui/Loader.jsx';
+import { useHostSporcle } from '@/hooks/sporcle/useHostSporcle.js';
+import { useHostSporcleIdentity } from '@/hooks/sporcle/useHostSporcleIdentity.js';
+import { useHostSporcleActions } from '@/hooks/sporcle/useHostSporcleActions.js';
+import { useRoomProfiles } from '@/hooks/sporcle/useRoomProfiles.js';
+import { useSporclePresence } from '@/hooks/sporcle/useSporclePresence.js';
+import { PlayerAvatar } from '@/components/Avatar/PlayerAvatar.jsx';
+import { FollowRing } from '@/components/Avatar/FollowRing.jsx';
+import { FollowButton } from '@/components/domain/Follow/FollowButton.jsx';
+import { ChatButton } from '@/components/domain/Sporcle/ChatButton.jsx';
+import { ChatModal } from '@/components/domain/Sporcle/ChatModal.jsx';
+import { ReplaySettingsModal } from '@/components/domain/Sporcle/ReplaySettingsModal.jsx';
+import { getLastReadId, countUnread } from '@/lib/chatReadState.js';
 
 export default function SporcleResult() {
   const [chatOpen, setChatOpen] = useState(false);

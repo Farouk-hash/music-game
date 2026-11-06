@@ -6,23 +6,7 @@ import { getRoundMulti } from './round-mutli.js';
 import { getRoundSet } from './round-sets.js';
 
 /* ═══════════════════════════════════════════════════════════
-   GET /game/round-multiplayer
-
-   Thin wrapper around the three existing round endpoints.
-   Multiplies `count` by the number of players and slices the
-   resulting flat rounds array into per-player buckets using
-   round-robin assignment:
-
-     round[0] → player[0]
-     round[1] → player[1]
-     ...
-     round[N] → player[N % playerCount]
-
-   Query params:
-     level     1 | 2 | 3         (required)
-     players   2..5              (default 2)
-     count     1..100            (rounds per player, default 5)
-     ...all the same params the underlying endpoints accept
+   POST /game/round-multiplayer
    ═══════════════════════════════════════════════════════════ */
 
 const MAX_PLAYERS = 5;
@@ -37,25 +21,27 @@ function parseLevel(raw) {
 }
 
 export async function getRoundMultiplayer(request, env) {
-  const url = new URL(request.url);
+  // ── CHANGED: Read from POST body ──
+  const body = await request.json().catch(() => ({}));
 
-  const level = parseLevel(url.searchParams.get('level'));
+  const level = parseLevel(body.level);
   const playerCount = clamp(
-    Number(url.searchParams.get('players') ?? 2),
+    Number(body.players ?? 2),
     2, MAX_PLAYERS
   );
   const roundsPerPlayer = clamp(
-    Number(url.searchParams.get('count') ?? 5),
+    Number(body.count ?? 5),
     1, MAX_ROUNDS_PER_PLAYER
   );
   const totalCount = playerCount * roundsPerPlayer;
 
-  // Build an internal request with the multiplied count. Everything
-  // else (genres, artists, years, types, etc.) passes through.
-  const innerUrl = new URL(request.url);
-  innerUrl.searchParams.set('count', String(totalCount));
-  innerUrl.pathname = '/game/round';
-  const innerReq = new Request(innerUrl.toString(), { method: 'GET' });
+  // Build an internal POST request with the multiplied count.
+  const innerBody = { ...body, count: totalCount };
+  const innerReq = new Request(request.url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(innerBody)
+  });
 
   let response;
   try {
@@ -68,14 +54,14 @@ export async function getRoundMultiplayer(request, env) {
 
   if (response.status !== 200) return response;
 
-  const body = await response.json();
+  const resBody = await response.json();
 
   // Level 3 uses `sets`, levels 1 and 2 use `rounds`. Normalize to
   // a single `rounds` array before slicing.
-  const flatRounds = Array.isArray(body.rounds)
-    ? body.rounds
-    : Array.isArray(body.sets)
-      ? body.sets
+  const flatRounds = Array.isArray(resBody.rounds)
+    ? resBody.rounds
+    : Array.isArray(resBody.sets)
+      ? resBody.sets
       : [];
 
   const players = Array.from({ length: playerCount }, (_, i) => ({
@@ -89,7 +75,7 @@ export async function getRoundMultiplayer(request, env) {
   return json({
     players,
     meta: {
-      ...(body.meta ?? {}),
+      ...(resBody.meta ?? {}),
       level,
       playerCount,
       roundsPerPlayer,

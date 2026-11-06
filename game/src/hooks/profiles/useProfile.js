@@ -1,7 +1,7 @@
 // game/src/hooks/profile/useProfile.js
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { profileApi } from '../../lib/profileApi.js';
+import { profileApi } from '@/lib/profileApi.js';
 import {
   getProfileId,
   setProfileId,
@@ -28,10 +28,6 @@ function shortSuffix() {
   return s;
 }
 
-/* ─────────────────────────────────────────────────────────────
-   Module-level in-flight promise for profile creation.
-   ───────────────────────────────────────────────────────────── */
-
 let creatingPromise = null;
 
 function ensureProfileCreated() {
@@ -53,10 +49,6 @@ function ensureProfileCreated() {
 
   return creatingPromise;
 }
-
-/* ─────────────────────────────────────────────────────────────
-   Internal hook — id + recovery state
-   ───────────────────────────────────────────────────────────── */
 
 function useEnsureProfile() {
   const [id, setId] = useState(() => getProfileId());
@@ -94,10 +86,6 @@ function useEnsureProfile() {
   };
 }
 
-/* ─────────────────────────────────────────────────────────────
-   Public hook
-   ───────────────────────────────────────────────────────────── */
-
 export function useProfile() {
   const queryClient = useQueryClient();
 
@@ -111,19 +99,11 @@ export function useProfile() {
     queryKey: ['profile', id],
     queryFn: () => profileApi.get(id),
     enabled: !!id,
-
-    // Never consider the profile stale on its own. It only refetches
-    // when we explicitly invalidate after a mutation.
     staleTime: Infinity,
     gcTime: Infinity,
-
-    // Even if it were stale, don't refetch on mount / focus / reconnect.
     refetchOnMount: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
-
-    // Hydrate from localStorage so the profile renders instantly on
-    // a page refresh — no network round-trip needed.
     initialData: () => {
       const cached = getCachedProfile(id);
       if (!cached) return undefined;
@@ -138,8 +118,6 @@ export function useProfile() {
 
   const favorites = profile?.favorites ?? EMPTY_FAVORITES;
 
-  /* ── Cache writers ──────────────────────────────────────── */
-
   const writeProfileToCache = useCallback((nextProfile) => {
     if (!id || !nextProfile) return;
     queryClient.setQueryData(['profile', id], { profile: nextProfile });
@@ -149,8 +127,6 @@ export function useProfile() {
   useEffect(() => {
     if (id && profile) setCachedProfile(id, profile);
   }, [id, profile]);
-
-  /* ── Mutations ──────────────────────────────────────────── */
 
   const updateNickname = useCallback(async (nickname) => {
     const r = await profileApi.patch(id, { nickname });
@@ -192,18 +168,18 @@ export function useProfile() {
     if (r?.profile) writeProfileToCache(r.profile);
   }, [id, writeProfileToCache]);
 
-   /**
-   * Restore from a recovery code.
-   *
-   * After switching to the recovered profile, best-effort deletes the
-   * old profile on this device (D1 row + R2 avatar). The delete is
-   * intentionally fire-and-forget: if it fails, the restore has
-   * already succeeded and the old row simply lingers — harmless.
-   */
-  const recoverProfile = useCallback(async (code) => {
+  const updateContacts = useCallback(async ({ email, phone }) => {
+    const patch = {};
+    if (email !== undefined) patch.email = email;
+    if (phone !== undefined) patch.phone = phone;
+    const r = await profileApi.patch(id, patch);
+    if (r?.profile) writeProfileToCache(r.profile);
+  }, [id, writeProfileToCache]);
+
+  const recoverProfile = useCallback(async ({ recoveryCode, email, phone }) => {
     const oldId = getProfileId();
 
-    const r = await profileApi.recover({ recoveryCode: code });
+    const r = await profileApi.recover({ recoveryCode, email, phone });
 
     setProfileId(r.id);
     setId(r.id);
@@ -218,9 +194,6 @@ export function useProfile() {
     clearCachedProfile();
     queryClient.removeQueries({ queryKey: ['profile'] });
 
-    // Best-effort cleanup of the profile this device is leaving.
-    // Never let a failure here bubble — the user is already on the
-    // recovered profile and the UI has moved on.
     if (oldId && oldId !== r.id) {
       try {
         await profileApi.deleteProfile(oldId);
@@ -231,8 +204,6 @@ export function useProfile() {
 
     return r.id;
   }, [setId, setRecoveryCodeState, setRecoveryHidden, queryClient]);
-
-  /* ── Recovery code visibility ──────────────────────────── */
 
   const dismissRecovery = useCallback(() => {
     dismissRecoveryCode();
@@ -246,8 +217,6 @@ export function useProfile() {
 
   const pendingRecoveryCode = !recoveryHidden ? recoveryCode : null;
   const hasRecoveryCode = !!recoveryCode;
-
-  /* ── Memoized context value ────────────────────────────── */
 
   const value = useMemo(() => ({
     id,
@@ -264,6 +233,7 @@ export function useProfile() {
     save,
     addFavorite,
     removeFavorite,
+    updateContacts,
     recoverProfile,
 
     pendingRecoveryCode,
@@ -288,6 +258,7 @@ export function useProfile() {
     save,
     addFavorite,
     removeFavorite,
+    updateContacts,
     recoverProfile,
 
     pendingRecoveryCode,

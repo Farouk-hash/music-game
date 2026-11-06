@@ -1,9 +1,7 @@
-
-export function parseIdList(str) {
-  if (!str) return [];
-  return str
-    .split(',')
-    .map(s => Number(s.trim()))
+export function parseIdList(val) {
+  if (!val) return [];
+  const arr = Array.isArray(val) ? val : String(val).split(',');
+  return arr
+    .map(s => Number(String(s).trim()))
     .filter(Number.isInteger);
 }
-

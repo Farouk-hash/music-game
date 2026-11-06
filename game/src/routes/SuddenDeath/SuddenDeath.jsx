@@ -1,16 +1,17 @@
 // game/src/routes/SuddenDeath.jsx
 import { useCallback, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useSuddenDeath, isCorrectForQuestion } from '../../hooks/sudden-death/useSuddenDeath.js';
-import { useQuestionTimer } from '../../hooks/sudden-death/useQuestionTimer.js';
-import { BorderContainer } from '../../components/layout/BorderContainer.jsx';
-import { PromptSource } from '../../components/domain/Rounds/PromptSource.jsx';
-import { PlayerBadge } from '../../components/domain/Multiplayer/PlayerBadge.jsx';
-import { SuddenDeathProgress } from '../../components/domain/SuddenDeath/SuddenDeathProgress.jsx';
-import { SuddenDeathQuestionCard } from '../../components/domain/SuddenDeath/SuddenDeathQuestionCard.jsx';
-import PassAndPlayInput from '../../components/domain/SuddenDeath/PassAndPlayInput.jsx';
-import SuddenDeathReveal from '../../components/domain/SuddenDeath/SuddenDeathReveal.jsx';
-import SuddenDeathResult from '../../components/domain/SuddenDeath/SuddenDeathResult.jsx';
+import { useSuddenDeath, isCorrectForQuestion } from '@/hooks/sudden-death/useSuddenDeath.js';
+import { useQuestionTimer } from '@/hooks/sudden-death/useQuestionTimer.js';
+import { BorderContainer } from '@/components/layout/BorderContainer.jsx';
+import { PromptSource } from '@/components/domain/Rounds/PromptSource.jsx';
+import { PlayerBadge } from '@/components/domain/Multiplayer/PlayerBadge.jsx';
+import { SuddenDeathProgress } from '@/components/domain/SuddenDeath/SuddenDeathProgress.jsx';
+import { SuddenDeathQuestionCard } from '@/components/domain/SuddenDeath/SuddenDeathQuestionCard.jsx';
+import PassAndPlayInput from '@/components/domain/SuddenDeath/PassAndPlayInput.jsx';
+import SuddenDeathReveal from '@/components/domain/SuddenDeath/SuddenDeathReveal.jsx';
+import SuddenDeathResult from '@/components/domain/SuddenDeath/SuddenDeathResult.jsx';
+import { usePlayParams } from '@/hooks/rounds/usePlayParams';
 
 const POSITION_LABELS = {
   start: 'البداية',
@@ -28,67 +29,66 @@ function typeEyebrow(type) {
 
 export default function SuddenDeath() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const params = usePlayParams();
 
-  /* ── URL params ───────────────────────────────────────── */
-  const playerIds = useMemo(() => {
-    const raw = searchParams.get('players') ?? '';
-    const names = raw.split(',').map(s => s.trim()).filter(Boolean);
-    return names.length >= 2 ? names : ['Player 1', 'Player 2'];
-  }, [searchParams]);
+  const playerIds = params.players || [];
+
+  if (playerIds.length < 2) {
+    navigate('/setup', { replace: true });
+    return null;
+  }
 
   const playerLabels = useMemo(() => {
-    const raw = searchParams.get('labels') ?? '';
-    const labels = raw.split(',').map(s => s.trim());
     const map = {};
-    playerIds.forEach((id, i) => { map[id] = labels[i] || id; });
+    playerIds.forEach(id => { map[id] = id; });
     return map;
-  }, [searchParams, playerIds]);
+  }, [playerIds]);
 
-  const playerNames = useMemo(
-    () => playerIds.map(id => playerLabels[id] ?? id),
-    [playerIds, playerLabels]
-  );
+  const playerNames = playerIds;
+  const mode = params.answerMode === 'type' ? 'typed' : 'options';
+  const returnTo = '/setup';
 
-  const mode = searchParams.get('mode') === 'options' ? 'options' : 'typed';
+  const apiParams = useMemo(() => ({
+    genres: params.genres,
+    artists: params.artists,
+    years: params.years,
+    types: params.types,
+    rendition: params.rendition,
+    instruments: params.instruments,
+    count: params.count || 10,
+    players: playerIds,
+    level: params.level || 1,
+  }), [
+    params.genres,
+    params.artists,
+    params.years,
+    params.types,
+    params.rendition,
+    params.instruments,
+    params.count,
+    playerIds,
+    params.level,
+  ]);
 
-  const returnTo = useMemo(
-    () => searchParams.get('returnTo') || '/setup',
-    [searchParams]
-  );
-
-  const apiParams = useMemo(() => {
-    const out = {};
-    for (const [k, v] of searchParams.entries()) {
-      if (k === 'players' || k === 'labels' || k === 'returnTo' || k === 'mode') continue;
-      out[k] = v;
-    }
-    return out;
-  }, [searchParams]);
-
-  /* ── Core hook ────────────────────────────────────────── */
   const sd = useSuddenDeath({ playerIds, apiParams });
 
-  /* ── Timer (options mode only) ────────────────────────── */
   const currentPlayerRevealed =
     sd.lastCommitted?.playerId === sd.currentPlayerId;
 
-
   const handleTimeout = useCallback(() => {
     if (sd.phase !== 'answering') return;
-    // Empty answer → wrong → advance.
     sd.commitAnswer('');
   }, [sd]);
 
-    const { timeLeft, timedOut } = useQuestionTimer({
+  const { timeLeft, timedOut } = useQuestionTimer({
     seconds: OPTIONS_TIMER_SECONDS,
     paused: mode !== 'options'
         || sd.phase !== 'answering'
         || currentPlayerRevealed,
     resetKey: `${sd.batchIndex}-${sd.qIndex}-${sd.playerIndex}`,
     onTimeout: handleTimeout,
-    });
-  /* ── Derived for progress bar ─────────────────────────── */
+  });
+
   const currentIsPublic = sd.phase === 'reveal'
     || sd.phase === 'batch-done'
     || sd.phase === 'finished';
@@ -113,7 +113,6 @@ export default function SuddenDeath() {
 
   const progressScores = playerIds.map(id => sd.scores[id] ?? 0);
 
-  /* ── Render phases ────────────────────────────────────── */
   if (sd.phase === 'loading') {
     return (
       <BorderContainer border="all" className="p-8 max-w-2xl mx-auto">
@@ -176,7 +175,6 @@ export default function SuddenDeath() {
 
   return (
     <div className="space-y-6 max-w-2xl mx-auto">
-      {/* Row 1: badges + Q counter */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <PlayerBadge
           currentIndex={sd.playerIndex}
@@ -188,7 +186,6 @@ export default function SuddenDeath() {
         </span>
       </div>
 
-      {/* Row 2: progress bar */}
       <SuddenDeathProgress
         players={playerNames}
         scores={progressScores}
@@ -200,10 +197,9 @@ export default function SuddenDeath() {
         phase={sd.phase}
       />
 
-      {/* Row 3: main card */}
       {sd.phase === 'reveal' ? (
         <BorderContainer border="all" className="p-6 space-y-6">
-          {q?.clip && <PromptSource round={q} />}
+          {(q?.clip || q?.lyrics) && <PromptSource round={q} />}
           <SuddenDeathReveal
             question={q}
             answers={sd.currentQuestionAnswers}
@@ -231,7 +227,7 @@ export default function SuddenDeath() {
         </BorderContainer>
       ) : mode === 'options' ? (
         <>
-          {q?.clip && (
+          {(q?.clip || q?.lyrics) && (
             <BorderContainer border="all" className="p-6">
               <PromptSource round={q} />
             </BorderContainer>
@@ -260,9 +256,8 @@ export default function SuddenDeath() {
           </BorderContainer>
         </>
       ) : (
-        /* mode === 'typed' */
         <>
-          {q?.clip && (
+          {(q?.clip || q?.lyrics) && (
             <BorderContainer border="all" className="p-6">
               <PromptSource round={q} />
             </BorderContainer>

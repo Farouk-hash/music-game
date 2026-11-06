@@ -1,18 +1,20 @@
 // game/src/App.jsx
 import { Routes, Route } from 'react-router-dom';
-import { Shell } from './components/layout/Shell.jsx';
-import { ToastHost } from './hooks/ui/useToast';
-import Home from './routes/Home.jsx';
-import NotFound from './routes/NotFound.jsx';
-import Setup from './routes/Setup.jsx';
-import Play from './routes/PlayLevels/Play.jsx';
-import Play2 from './routes/PlayLevels/Play2.jsx';
-import Play3 from './routes/PlayLevels/Play3.jsx';
-import PlayMulti from './routes/PlayMulti/PlayMulti.jsx';
-import SuddenDeath from './routes/SuddenDeath/SuddenDeath.jsx';
+import { Shell } from '@/components/layout/Shell.jsx';
+import { ToastHost } from '@/hooks/ui/useToast';
+import Home from '@/routes/Home.jsx';
+import NotFound from '@/routes/NotFound.jsx';
+import Setup from '@/routes/Setup.jsx';
+import Play from '@/routes/PlayLevels/Play.jsx';
+import Play2 from '@/routes/PlayLevels/Play2.jsx';
+import Play3 from '@/routes/PlayLevels/Play3.jsx';
+import PlayMulti from '@/routes/PlayMulti/PlayMulti.jsx';
+import SuddenDeath from '@/routes/SuddenDeath/SuddenDeath.jsx';
 
-import SporclePlay from './routes/Sporcle/Play.jsx';
-import SporcleResult from './routes/Sporcle/Result.jsx';
+import SporclePlay from '@/routes/Sporcle/Play.jsx';
+import SporcleResult from '@/routes/Sporcle/Result.jsx';
+import Library from '@/routes/Library/Library.jsx';
+import LibraryOthers from '@/routes/Library/LibraryOthers';
 
 export default function App() {
   return (
@@ -28,8 +30,11 @@ export default function App() {
           <Route path="/sudden-death" element={<SuddenDeath />} />
           <Route path="/sporcle/play/:code" element={<SporclePlay />} />
           <Route path="/sporcle/result/:code" element={<SporcleResult />} />
+          <Route path="/library" element={<Library />} />
+          <Route path="/library/:id" element={<Library />} />
+          <Route path="/library/others" element={<LibraryOthers />} />
 
-          <Route path="*" element={<NotFound />} />
+          <Route path="*" element={<NotFound />} /> 
         </Routes>
       </Shell>
       <ToastHost />

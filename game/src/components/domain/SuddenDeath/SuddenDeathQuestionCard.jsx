@@ -1,6 +1,6 @@
 // game/src/components/domain/SuddenDeath/SuddenDeathQuestionCard.jsx
-import { Button } from '../../ui/Button.jsx';
-import { TimerBar } from '../../domain/Setup/Timer/Timerbar.jsx';
+import { Button } from '@/components/ui/Button.jsx';
+import { TimerBar } from '@/components/domain/Setup/Timer/Timerbar.jsx';
 import { OptionsGrid } from '../Rounds/OptionsGrid.jsx';
 
 /**

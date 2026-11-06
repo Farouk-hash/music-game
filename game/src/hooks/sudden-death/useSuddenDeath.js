@@ -1,6 +1,6 @@
 // game/src/hooks/useSuddenDeath.js
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api } from '../../lib/api';
+import { api } from '@/lib/api';
 import { isAnswerCorrect } from '../rounds/answerCheck';
 
 const QUESTIONS_PER_BATCH = 5;
@@ -12,11 +12,6 @@ const POSITION_LABELS = {
   custom: 'مقطع مخصص',
 };
 
-/**
- * For `name-position` questions, both the player's typed answer and the
- * correct value can be English ('start') or Arabic ('البداية'). Map both
- * to the same canonical form (the English key) before comparing.
- */
 function canonicalPosition(raw) {
   const s = String(raw ?? '').trim();
   for (const [en, ar] of Object.entries(POSITION_LABELS)) {
@@ -25,10 +20,6 @@ function canonicalPosition(raw) {
   return s;
 }
 
-/**
- * Unified correctness check — same logic used by the reveal screen, so
- * score and display never disagree.
- */
 export function isCorrectForQuestion(question, typed) {
   if (typed == null || typed === '') return false;
   if (question?.type === 'name-position') {
@@ -37,37 +28,21 @@ export function isCorrectForQuestion(question, typed) {
   return isAnswerCorrect(typed, question?.correctValue);
 }
 
-/**
- * Drives the sudden-death tiebreaker flow.
- *
- * Phases:
- *   loading    → fetching a batch of 5 questions
- *   answering  → current player types + taps eye (commit + hide)
- *   handoff    → "pass to Player N" screen
- *   reveal     → after every player has answered the current question
- *   batch-done → after the batch, if still tied → another batch
- *   finished   → a single leader emerged (possibly early)
- *   error      → fetch failed
- *
- * @param {object}   opts
- * @param {string[]} opts.playerIds  — stable IDs, e.g. ['Ali','Raffat']
- * @param {object}   opts.apiParams  — passthrough for /game/round
- */
 export function useSuddenDeath({ playerIds, apiParams }) {
   const playerCount = playerIds.length;
 
-  const [phase, setPhase]               = useState('loading');
-  const [error, setError]               = useState(null);
-  const [questions, setQuestions]       = useState([]);
-  const [batchIndex, setBatchIndex]     = useState(0);
-  const [qIndex, setQIndex]             = useState(0);
-  const [playerIndex, setPlayerIndex]   = useState(0);
-  const [answers, setAnswers]           = useState({}); // [batch][q][playerId] = string
-  const [scores, setScores]             = useState(() =>
+  const [phase, setPhase]             = useState('loading');
+  const [error, setError]             = useState(null);
+  const [questions, setQuestions]     = useState([]);
+  const [batchIndex, setBatchIndex]   = useState(0);
+  const [qIndex, setQIndex]           = useState(0);
+  const [playerIndex, setPlayerIndex] = useState(0);
+  const [answers, setAnswers]         = useState({});
+  const [scores, setScores]           = useState(() =>
     Object.fromEntries(playerIds.map(id => [id, 0]))
   );
-  const [draft, setDraft]               = useState('');
-  const [lastCommitted, setLastCommitted] = useState(null); // { playerId, typed }
+  const [draft, setDraft]             = useState('');
+  const [lastCommitted, setLastCommitted] = useState(null);
 
   const fetchTokenRef = useRef(0);
 
@@ -78,35 +53,76 @@ export function useSuddenDeath({ playerIds, apiParams }) {
     setError(null);
 
     try {
-      const params = new URLSearchParams({
-        count: String(QUESTIONS_PER_BATCH),
+      // ── Level-aware endpoint ──────────────────────────────
+      const level = Number(apiParams?.level ?? 1);
+      const useMulti = level === 2;
+      const endpoint = useMulti ? '/round-multi' : '/round';
+
+      const body = {
         ...(apiParams ?? {}),
-      });
-      for (const [k, v] of [...params.entries()]) {
-        if (v == null || v === '') params.delete(k);
+        count: QUESTIONS_PER_BATCH,
+      };
+      delete body.level;
+      for (const k of Object.keys(body)) {
+        if (body[k] == null || body[k] === '') delete body[k];
       }
 
-      const data = await api.get(`/round?${params.toString()}`);
-      if (token !== fetchTokenRef.current) return; // stale
+      const data = await api.post(endpoint, body);
+      if (token !== fetchTokenRef.current) return;
 
       const rawRounds = data?.rounds ?? [];
       if (rawRounds.length === 0) {
         throw new Error('No sudden-death questions available in this scope');
       }
 
-     
-        // retry a slot with different types. Sudden death plays exactly
-        // QUESTIONS_PER_BATCH, so clamp here.
-        const rounds = rawRounds
-        .slice(0, QUESTIONS_PER_BATCH)
-        .map(r => ({
+      // ── Flatten into a single per-turn question list ─────
+      const flattened = [];
+      for (const r of rawRounds) {
+        if (flattened.length >= QUESTIONS_PER_BATCH) break;
+
+        if (useMulti) {
+          const qs = Array.isArray(r.questions) ? r.questions : [];
+          if (qs.length === 0) continue;
+
+          // Pick ONE RANDOM question per round.
+          const q = qs[Math.floor(Math.random() * qs.length)];
+
+          flattened.push({
+            slotId: r.slotId,
+            
+            // ── PASS ALL MEDIA DOWN TO THE UI ──
+            // Check both `q` and `r` because L2 puts lyrics inside the question,
+            // while L1 might put it on the round itself.
+            clip: q.clip || r.clip,                  
+            lyrics: q.lyrics || r.lyrics,            
+            revealClip: q.revealClip || r.revealClip, 
+            source: q.source || r.source,            
+            
+            type: q.type,
+            prompt: q.prompt,
+            options: q.options,
+            correctValue: q.correctValue,
+          });
+        } else {
+          flattened.push({
             ...r,
             type:         r.type ?? r.question?.type,
             prompt:       r.question?.prompt ?? r.prompt,
             options:      r.question?.options ?? r.options,
             correctValue: r.question?.correctValue ?? r.correctValue,
-        }));
-      setQuestions(rounds);
+            // Ensure L1 passes media properly too
+            lyrics:       r.lyrics ?? r.question?.lyrics,
+            revealClip:   r.revealClip ?? r.question?.revealClip,
+            source:       r.source ?? r.question?.source,
+          });
+        }
+      }
+
+      if (flattened.length === 0) {
+        throw new Error('No sudden-death questions available in this scope');
+      }
+
+      setQuestions(flattened);
     } catch (e) {
       if (token !== fetchTokenRef.current) return;
       setError(e?.message ?? 'Failed to load sudden-death questions');
@@ -126,7 +142,6 @@ export function useSuddenDeath({ playerIds, apiParams }) {
     return () => { fetchTokenRef.current++; };
   }, [fetchBatch]);
 
-  /* ── Derived ───────────────────────────────────────────── */
   const currentQuestion = questions[qIndex] ?? null;
   const currentPlayerId = playerIds[playerIndex] ?? null;
 
@@ -140,7 +155,6 @@ export function useSuddenDeath({ playerIds, apiParams }) {
     [playerIds, scores]
   );
 
-  /* ── Leader evaluation ─────────────────────────────────── */
   function evaluateLeader(snapshot) {
     const entries = playerIds.map(id => ({ id, score: snapshot[id] ?? 0 }));
     entries.sort((a, b) => b.score - a.score);
@@ -152,10 +166,6 @@ export function useSuddenDeath({ playerIds, apiParams }) {
     return { kind: 'tied', leaders: leaders.map(l => l.id), scores: entries };
   }
 
-  /**
-   * Returns true if the current leader cannot be caught even if every
-   * remaining question is scored for the runner-up.
-   */
   function leaderIsUncatchable(snapshot, questionsLeft) {
     if (questionsLeft <= 0) return false;
     const sorted = playerIds
@@ -164,13 +174,8 @@ export function useSuddenDeath({ playerIds, apiParams }) {
     const leader = sorted[0];
     const second = sorted[1];
     if (!leader || !second) return false;
-    // Leader can earn at most `questionsLeft` more; so can the second.
-    // If the leader's current margin exceeds the number of remaining
-    // questions, the second cannot overtake.
     return leader.score - second.score > questionsLeft;
   }
-
-  /* ── Actions ───────────────────────────────────────────── */
 
   const commitAnswer = useCallback((typed) => {
     if (phase !== 'answering') return;
@@ -201,7 +206,6 @@ export function useSuddenDeath({ playerIds, apiParams }) {
       return;
     }
 
-    // Last player → award points for this question, synchronously.
     const q = questions[qIndex];
     let nextScores = scores;
     if (q) {
@@ -222,8 +226,6 @@ export function useSuddenDeath({ playerIds, apiParams }) {
       }
     }
 
-    // Early termination: check if the leader is now uncatchable,
-    // given the questions remaining AFTER this one.
     const remaining = questions.length - (qIndex + 1);
     if (remaining > 0 && leaderIsUncatchable(nextScores, remaining)) {
       setPhase('finished');
@@ -246,8 +248,6 @@ export function useSuddenDeath({ playerIds, apiParams }) {
   const nextQuestion = useCallback(() => {
     if (phase !== 'reveal') return;
 
-    // Another early check in case the last player's answer changed
-    // nothing but we still want to short-circuit before showing Q(n+1).
     const remaining = questions.length - (qIndex + 1);
     if (remaining > 0 && leaderIsUncatchable(scores, remaining)) {
       setPhase('finished');
@@ -262,7 +262,6 @@ export function useSuddenDeath({ playerIds, apiParams }) {
       return;
     }
 
-    // End of batch.
     const result = evaluateLeader(scores);
     if (result.kind === 'winner') {
       setPhase('finished');
@@ -281,9 +280,7 @@ export function useSuddenDeath({ playerIds, apiParams }) {
     fetchBatch();
   }, [fetchBatch]);
 
-  /* ── Public API ────────────────────────────────────────── */
   return {
-    // state
     phase,
     error,
     questions,
@@ -299,26 +296,17 @@ export function useSuddenDeath({ playerIds, apiParams }) {
     lastCommitted,
     draft,
     setDraft,
-
-    // actions
     commitAnswer,
     advanceToNextPlayer,
     nextQuestion,
     nextBatch,
     retry,
-
-    // computed
     totals,
     isLastPlayer: playerIndex + 1 >= playerCount,
     isLastQuestion: qIndex + 1 >= questions.length,
   };
 }
 
-
-/**
- * Commit an empty answer — used when the timer expires.
- * Normalizes to a wrong answer without any special casing.
- */
 export function timeoutAnswer() {
   return '';
 }

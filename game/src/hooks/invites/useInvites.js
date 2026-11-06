@@ -1,7 +1,7 @@
 // game/src/hooks/invites/useInvites.js
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { inviteApi } from '../../lib/inviteApi.js';
-import { useProfileContext } from '../../context/ProfileContext.jsx';
+import { inviteApi } from '@/lib/inviteApi.js';
+import { useProfileContext } from '@/context/ProfileContext.jsx';
 
 const PENDING_KEY = (me) => ['invites', 'pending', me];
 

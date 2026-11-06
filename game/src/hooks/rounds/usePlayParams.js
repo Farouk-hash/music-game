@@ -1,67 +1,39 @@
 // game/src/hooks/usePlayParams.js
 import { useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
-
-export const TIMER_SECONDS = {
-  off: 0,
-  choose: 5,
-  type:   15,
-};
-
-const VALID_TYPES = new Set([
-  // Audio
-  'name-track',
-  'name-artist',
-  'name-album',
-  'name-featured',
-  'name-position',
-  // Lyrics
-  'lyrics-track',
-  'lyrics-artist',
-  'lyrics-album',
-]);
+import { TIMER_SECONDS } from '../../constants/timer.js';
+import { VALID_QUESTION_TYPES as VALID_TYPES } from '../../constants/questionTypes.js';
 
 const VALID_REVERSED = new Set(['no', 'some', 'all']);
 const VALID_INSTRUMENTS = new Set(['none', 'mixed', 'all']);
 
-function parseTypes(searchParams) {
-  const typesCsv = searchParams.get('types');
-  if (typesCsv) {
-    const arr = typesCsv.split(',').map(s => s.trim()).filter(Boolean);
-    const valid = arr.filter(t => VALID_TYPES.has(t));
-    return valid.length === arr.length ? valid : [];
-  }
-
-  const single = searchParams.get('type');
-  if (!single || single === 'mixed') return [];
-  return VALID_TYPES.has(single) ? [single] : [];
-}
-
 export function usePlayParams() {
-  const [searchParams] = useSearchParams();
-
   return useMemo(() => {
-    const genres = (searchParams.get('genres') || '')
-      .split(',').filter(Boolean).map(Number);
-    const artists = (searchParams.get('artists') || '')
-      .split(',').filter(Boolean).map(Number);
-    const years = (searchParams.get('years') || '')
-      .split(',').filter(Boolean).map(Number);
-    const rendition = searchParams.get('rendition') === 'reverse' ? 'reverse' : 'forward';
-    const types = parseTypes(searchParams);
-    const answerMode = searchParams.get('answerMode') === 'type' ? 'type' : 'choose';
-    const timer = searchParams.get('timer') === 'on' ? 'on' : 'off';
-    const count = Math.min(
-      20,
-      Math.max(1, Number(searchParams.get('count')) || 5)
-    );
+    let raw = {};
+    try {
+      const saved = sessionStorage.getItem('game.lastPlayParams');
+      if (saved) raw = JSON.parse(saved);
+    } catch {
+      // fallback to empty object
+    }
 
-    const reversedRaw = searchParams.get('reversed');
-    const reversed = VALID_REVERSED.has(reversedRaw) ? reversedRaw : 'no';
+    // Ensure values are valid
+    const genres = Array.isArray(raw.genres) ? raw.genres.map(Number) : [];
+    const artists = Array.isArray(raw.artists) ? raw.artists.map(Number) : [];
+    const years = Array.isArray(raw.years) ? raw.years.map(Number) : [];
+    
+    const rendition = raw.rendition === 'reverse' ? 'reverse' : 'forward';
+    
+    const types = Array.isArray(raw.types) 
+      ? raw.types.filter(t => VALID_TYPES.has(t)) 
+      : [];
+      
+    const answerMode = raw.answerMode === 'type' ? 'type' : 'choose';
+    const timer = raw.timer === 'on' ? 'on' : 'off';
+    
+    const count = Math.min(20, Math.max(1, Number(raw.count) || 5));
 
-    // NEW: instruments mode
-    const instrumentsRaw = searchParams.get('instruments');
-    const instruments = VALID_INSTRUMENTS.has(instrumentsRaw) ? instrumentsRaw : 'none';
+    const reversed = VALID_REVERSED.has(raw.reversed) ? raw.reversed : 'no';
+    const instruments = VALID_INSTRUMENTS.has(raw.instruments) ? raw.instruments : 'none';
 
     const timerSeconds = timer === 'on'
       ? (answerMode === 'type' ? TIMER_SECONDS.type : TIMER_SECONDS.choose)
@@ -71,6 +43,10 @@ export function usePlayParams() {
       genres, artists, years, types, rendition,
       answerMode, timer, timerSeconds, count, reversed,
       instruments,
+      // Expose level and players if they exist (for multiplayer)
+      level: raw.level,
+      players: Array.isArray(raw.players) ? raw.players : [],
+      roundsPerPlayer: raw.roundsPerPlayer,
     };
-  }, [searchParams]);
+  }, []);
 }

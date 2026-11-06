@@ -1,22 +1,7 @@
 // game/src/components/domain/Setup/ReversedAnswersPicker/ReversedAnswersPicker.jsx
 
-const OPTIONS = [
-  {
-    value: 'no',
-    label: 'No',
-    hint: 'Answers shown normally',
-  },
-  {
-    value: 'some',
-    label: 'Some',
-    hint: 'About half the rounds reversed',
-  },
-  {
-    value: 'all',
-    label: 'All',
-    hint: 'Every round reversed',
-  },
-];
+import { REVERSED_ANSWER_OPTIONS } from "@/constants/reversedAnswers";
+
 
 /**
  * Segmented control: No / Some / All.
@@ -27,7 +12,7 @@ export function ReversedAnswersPicker({ value = 'no', onChange }) {
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-3 gap-2">
-        {OPTIONS.map((opt) => {
+        {REVERSED_ANSWER_OPTIONS.map((opt) => {
           const selected = value === opt.value;
           return (
             <button

@@ -14,7 +14,7 @@ export function CollapsibleSection({
   const hasActions = Boolean(secondaryActions || actions);
 
   return (
-    <BorderContainer border="all" className="p-3 sm:p-8 space-y-3 sm:space-y-4">
+    <BorderContainer border="all" className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3 sm:gap-4">
         
         {/* Title */}

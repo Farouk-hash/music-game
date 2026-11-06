@@ -1,6 +1,6 @@
 // game/src/components/domain/Sporcle/SporcleProgress.jsx
 import { PlayerAvatar } from '../../Avatar/PlayerAvatar.jsx';
-import { SegmentedProgress } from '../../ui/SegmentedProgress.jsx';
+import { SegmentedProgress } from '@/components/ui/SegmentedProgress.jsx';
 import { FollowRing } from '../../Avatar/FollowRing.jsx';
 
 export function SporcleProgress({

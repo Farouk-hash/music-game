@@ -1,14 +1,8 @@
-import { TIMER_SECONDS } from "../../../../hooks/rounds/usePlayParams";
+// game/src/components/domain/TimerPicker.jsx
+import { getTimerOptions } from '@/constants/timer.js';
 
 export function TimerPicker({ value, onChange, answerMode }) {
-  const perQuestion = answerMode === 'type'
-    ? TIMER_SECONDS.type
-    : TIMER_SECONDS.choose;
-
-  const OPTIONS = [
-    { value: 'off', label: 'No timer', hint: 'Take your time' },
-    { value: 'on',  label: 'Timed',    hint: `${perQuestion}s per question` },
-  ];
+  const OPTIONS = getTimerOptions(answerMode);
 
   return (
     <div className="grid grid-cols-2 gap-3">

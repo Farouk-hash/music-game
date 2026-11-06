@@ -6,8 +6,7 @@
 // Every call needs `?as=<myProfileId>` — the profile UUID is the
 // credential in this project.
 
-const RAW_BASE = import.meta.env.VITE_API_BASE0 ?? '/api/game';
-const BASE = RAW_BASE.replace(/\/game\/?$/, '').replace(/\/$/, '');
+import { BASE } from "./api";
 
 async function request(path, options = {}) {
   const res = await fetch(BASE + path, {

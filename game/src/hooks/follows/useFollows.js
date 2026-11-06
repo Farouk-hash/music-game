@@ -1,7 +1,7 @@
 // game/src/hooks/follows/useFollows.js
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { followApi } from '../../lib/followApi.js';
-import { useProfileContext } from '../../context/ProfileContext.jsx';
+import { followApi } from '@/lib/followApi.js';
+import { useProfileContext } from '@/context/ProfileContext.jsx';
 
 const FRIENDS_KEY = (me) => ['follows', 'friends', me];
 const PENDING_KEY = (me) => ['follows', 'pending', me];
@@ -63,6 +63,9 @@ function useInvalidateAll() {
     qc.invalidateQueries({ queryKey: ['follows', 'friends', id] });
     qc.invalidateQueries({ queryKey: ['follows', 'pending', id] });
     qc.invalidateQueries({ queryKey: ['follows', 'status', id] });
+    
+    // NEW: Invalidate collections so the followStatus updates in the lists
+    qc.invalidateQueries({ queryKey: ['collections'] });
   };
 }
 

@@ -6,7 +6,7 @@ export function Loader({
   variant = 'inline',
   size = 'md',
   label,
-  icon = <SpinnerMusicNote />,  // <-- Default is now the SVG note
+  icon = <SpinnerMusicNote />,  
   count = 3,
   skeletonClassName = 'h-6 w-full',
   className = '',

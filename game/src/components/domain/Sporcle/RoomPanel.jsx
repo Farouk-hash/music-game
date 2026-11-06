@@ -1,7 +1,7 @@
 // game/src/components/domain/Sporcle/RoomPanel.jsx
 import { useEffect, useState } from 'react';
 import { BorderContainer } from '../../layout/BorderContainer.jsx';
-import { Button } from '../../ui/Button.jsx';
+import { Button } from '@/components/ui/Button.jsx';
 import { PlayerRoster } from './PlayerRoster.jsx';
 import { LoadingOverlay } from './LoadingOverlay.jsx';
 import { CountdownOverlay } from './CountdownOverlay.jsx';
@@ -9,7 +9,7 @@ import { ChatButton } from './ChatButton.jsx';
 import { ChatModal } from './ChatModal.jsx';
 import { AutoCloseBar } from './AutoCloseBar.jsx';
 import { InviteFriendsModal } from '../Follow/InviteFriendsModal.jsx';
-import { getLastReadId, countUnread } from '../../../lib/chatReadState.js';
+import { getLastReadId, countUnread } from '@/lib/chatReadState.js';
 
 const ALONE_TIMEOUT_MS     = 60_000;
 const NO_READY_TIMEOUT_MS  = 60_000;

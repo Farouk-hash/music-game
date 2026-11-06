@@ -1,6 +1,6 @@
 // game/src/components/Avatar/FollowRing.jsx
 import { PlayerAvatar } from './PlayerAvatar.jsx';
-import { useFollowStatus } from '../../hooks/follows/useFollows.js';
+import { useFollowStatus } from '@/hooks/follows/useFollows.js';
 
 /**
  * Wraps PlayerAvatar and overlays a follow indicator.

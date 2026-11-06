@@ -1,5 +1,5 @@
 // game/src/components/domain/Setup/Years/StrictModeToggle.jsx
-import { IconStrict } from '../../../../lib/icons.jsx';
+import { IconStrict } from "@/icons";
 
 /**
  * Strict years toggle — pill style with a funnel icon.

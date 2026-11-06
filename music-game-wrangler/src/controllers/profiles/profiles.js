@@ -5,16 +5,22 @@ import {
   validateNickname,
   FAVORITES_PER_KIND_MAX,
   FAVORITES_TOTAL_MAX,
+  normalizeEmail,
+  normalizePhone,
 } from '../../utilities/profile/profileLimits.js';
 
+
+
 export const PROFILE_FIELDS =
-  'id, nickname, avatar_kind, avatar_style, avatar_seed, avatar_r2_key, created_at, updated_at';
+  'id, nickname, recovery_code, email, phone, avatar_kind, avatar_style, avatar_seed, avatar_r2_key, created_at, updated_at';
 
 export function serializeProfile(row) {
   if (!row) return null;
   return {
     id: row.id,
     nickname: row.nickname,
+    email: row.email ?? null,
+    phone: row.phone ?? null,
     avatar: {
       kind:  row.avatar_kind,
       style: row.avatar_style,
@@ -37,10 +43,6 @@ export function serializeFavorites(rows) {
   return favorites;
 }
 
-/**
- * Fetch a profile + its favorites, serialized for the API response.
- * Shared by every write handler that returns the full profile.
- */
 export async function buildProfileResponse(env, id) {
   const row = await env.DB.prepare(
     `SELECT ${PROFILE_FIELDS} FROM profiles WHERE id = ?`
@@ -66,8 +68,13 @@ export async function createProfile(request, env) {
   const nick = validateNickname(body?.nickname);
   if (!nick.ok) return error(nick.error, 400);
 
-  const id = crypto.randomUUID();
+  const emailV = normalizeEmail(body?.email);
+  if (!emailV.ok) return error(emailV.error, 400);
 
+  const phoneV = normalizePhone(body?.phone);
+  if (!phoneV.ok) return error(phoneV.error, 400);
+
+  const id = crypto.randomUUID();
   let recoveryCode = null;
   for (let attempt = 0; attempt < 5; attempt++) {
     const candidate = generateRecoveryCode();
@@ -80,10 +87,20 @@ export async function createProfile(request, env) {
     return error('Could not allocate a recovery code, try again', 500);
   }
 
-  await env.DB.prepare(
-    `INSERT INTO profiles (id, nickname, recovery_code)
-     VALUES (?, ?, ?)`
-  ).bind(id, nick.value, recoveryCode).run();
+  try {
+    await env.DB.prepare(
+      `INSERT INTO profiles (id, nickname, recovery_code, email, phone)
+       VALUES (?, ?, ?, ?, ?)`
+    ).bind(id, nick.value, recoveryCode, emailV.value, phoneV.value).run();
+  } catch (e) {
+    if (String(e.message).includes('UNIQUE constraint failed: profiles.email')) {
+      return error('That email is already in use', 409);
+    }
+    if (String(e.message).includes('UNIQUE constraint failed: profiles.phone')) {
+      return error('That phone number is already in use', 409);
+    }
+    throw e;
+  }
 
   const profile = await buildProfileResponse(env, id);
   return json({ profile, recoveryCode });
@@ -91,14 +108,30 @@ export async function createProfile(request, env) {
 
 export async function recoverProfile(request, env) {
   const body = await request.json().catch(() => null);
+
   const code = normalizeRecoveryCode(body?.recoveryCode);
-  if (!code) return error('recoveryCode is required', 400);
+  const emailV = normalizeEmail(body?.email);
+  const phoneV = normalizePhone(body?.phone);
 
-  const row = await env.DB.prepare(
-    'SELECT id FROM profiles WHERE recovery_code = ?'
-  ).bind(code).first();
+  let row = null;
 
-  if (!row) return error('Invalid recovery code', 404);
+  if (code) {
+    row = await env.DB.prepare(
+      'SELECT id FROM profiles WHERE recovery_code = ?'
+    ).bind(code).first();
+  } else if (emailV.ok && emailV.value) {
+    row = await env.DB.prepare(
+      'SELECT id FROM profiles WHERE email = ?'
+    ).bind(emailV.value).first();
+  } else if (phoneV.ok && phoneV.value) {
+    row = await env.DB.prepare(
+      'SELECT id FROM profiles WHERE phone = ?'
+    ).bind(phoneV.value).first();
+  } else {
+    return error('recoveryCode, email, or phone required', 400);
+  }
+
+  if (!row) return error('Profile not found', 404);
   return json({ id: row.id });
 }
 
@@ -127,6 +160,20 @@ export async function patchProfile(request, env, { id }) {
     binds.push(nick.value);
   }
 
+  if (body.email !== undefined) {
+    const v = normalizeEmail(body.email);
+    if (!v.ok) return error(v.error, 400);
+    updates.push('email = ?');
+    binds.push(v.value);
+  }
+
+  if (body.phone !== undefined) {
+    const v = normalizePhone(body.phone);
+    if (!v.ok) return error(v.error, 400);
+    updates.push('phone = ?');
+    binds.push(v.value);
+  }
+
   if (body.avatar_style !== undefined) {
     updates.push('avatar_style = ?');
     binds.push(body.avatar_style ? String(body.avatar_style) : null);
@@ -145,9 +192,19 @@ export async function patchProfile(request, env, { id }) {
 
   updates.push("updated_at = datetime('now')");
 
-  await env.DB.prepare(
-    `UPDATE profiles SET ${updates.join(', ')} WHERE id = ?`
-  ).bind(...binds, id).run();
+  try {
+    await env.DB.prepare(
+      `UPDATE profiles SET ${updates.join(', ')} WHERE id = ?`
+    ).bind(...binds, id).run();
+  } catch (e) {
+    if (String(e.message).includes('profiles.email')) {
+      return error('That email is already in use', 409);
+    }
+    if (String(e.message).includes('profiles.phone')) {
+      return error('That phone number is already in use', 409);
+    }
+    throw e;
+  }
 
   const profile = await buildProfileResponse(env, id);
   return json({ profile });
@@ -170,6 +227,20 @@ export async function saveProfile(request, env, { id }) {
     if (!nick.ok) return error(nick.error, 400);
     updates.push('nickname = ?');
     binds.push(nick.value);
+  }
+
+  if (body.email !== undefined) {
+    const v = normalizeEmail(body.email);
+    if (!v.ok) return error(v.error, 400);
+    updates.push('email = ?');
+    binds.push(v.value);
+  }
+
+  if (body.phone !== undefined) {
+    const v = normalizePhone(body.phone);
+    if (!v.ok) return error(v.error, 400);
+    updates.push('phone = ?');
+    binds.push(v.value);
   }
 
   if (body.avatar !== undefined) {
@@ -270,22 +341,29 @@ export async function saveProfile(request, env, { id }) {
     return error('No updates provided', 400);
   }
 
-  await env.DB.batch(statements);
+  try {
+    await env.DB.batch(statements);
+  } catch (e) {
+    if (String(e.message).includes('profiles.email')) {
+      return error('That email is already in use', 409);
+    }
+    if (String(e.message).includes('profiles.phone')) {
+      return error('That phone number is already in use', 409);
+    }
+    throw e;
+  }
 
   const profile = await buildProfileResponse(env, id);
   return json({ profile });
 }
 
-
 export async function deleteProfile(request, env, { id }) {
   if (!id) return error('id required', 400);
 
-  // Read the R2 key first — we need it to clean up storage.
   const row = await env.DB.prepare(
     'SELECT avatar_r2_key FROM profiles WHERE id = ?'
   ).bind(id).first();
 
-  // Idempotent: deleting a missing profile is a no-op success.
   if (!row) return json({ ok: true, deleted: false });
 
   await env.DB.batch([

@@ -1,8 +1,8 @@
 // game/src/components/domain/SuddenDeath/PassAndPlayInput.jsx
 import { useEffect, useRef, useState } from 'react';
-import { Button } from '../../ui/Button.jsx';
-import { BorderContainer } from '../../layout/BorderContainer.jsx';
-import { IconEye, IconEyeOff } from '../../../lib/icons.jsx';
+import { Button } from '@/components/ui/Button.jsx';
+import { BorderContainer } from '@/components/layout/BorderContainer.jsx';
+import { IconEye, IconEyeOff } from '@/icons/index.js';
 
 /**
  * Pass-and-play input, styled to match the multiplayer question card.

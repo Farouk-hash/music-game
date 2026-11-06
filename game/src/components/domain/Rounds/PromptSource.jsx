@@ -1,20 +1,29 @@
 // game/src/components/domain/Rounds/PromptSource.jsx
 import { AudioPlayer } from './AudioPlayer.jsx';
 import { LyricsSnippet } from './LyricsSnippet.jsx';
+import { Reveal } from '@/components/ui/Reveal.jsx'; 
 
-/**
- * Renders the prompt media for a round.
- *
- *   - round.clip   → audio clip (existing behavior)
- *   - round.lyrics → text snippet (new lyrics questions)
- *
- * The Play routes pass the current round object straight through,
- * so this component is the only place that decides which renderer
- * to use.
- */
 export function PromptSource({ round }) {
   if (!round) return null;
-  if (round.lyrics) return <LyricsSnippet text={round.lyrics} />;
-  if (round.clip)   return <AudioPlayer src={round.clip.serveUrl} />;
+  
+  // Create a key based on what's being rendered to trigger animation on change
+  const revealKey = round.clip?.serveUrl || round.lyrics;
+
+  if (round.lyrics) {
+    return (
+      <Reveal key={`lyrics-${revealKey}`} direction="down" delay={0} distance={30}>
+        <LyricsSnippet text={round.lyrics} />
+      </Reveal>
+    );
+  }
+
+  if (round.clip) {
+    return (
+      <Reveal key={`clip-${revealKey}`} direction="down" delay={0} distance={30}>
+        <AudioPlayer src={round.clip.serveUrl} />
+      </Reveal>
+    );
+  }
+
   return null;
 }

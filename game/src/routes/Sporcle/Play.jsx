@@ -1,24 +1,24 @@
 // game/src/routes/Sporcle/Play.jsx
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { BorderContainer } from '../../components/layout/BorderContainer.jsx';
-import { Button } from '../../components/ui/Button.jsx';
-import { Loader } from '../../components/ui/Loader.jsx';
-import { PlayerRoster } from '../../components/domain/Sporcle/PlayerRoster.jsx';
-import { SporcleProgress } from '../../components/domain/Sporcle/SporcleProgress.jsx';
-import { SporcleTimer } from '../../components/domain/Sporcle/SporcleTimer.jsx';
-import { QuestionPanel } from '../../components/domain/Sporcle/QuestionPanel.jsx';
-import { PromptSource } from '../../components/domain/Rounds/PromptSource.jsx';
-import { SporcleModal } from '../../components/domain/Setup/Modals/SporcleModal.jsx';
-import { useHostSporcle } from '../../hooks/sporcle/useHostSporcle.js';
-import { useHostSporcleIdentity } from '../../hooks/sporcle/useHostSporcleIdentity.js';
-import { useHostSporcleActions } from '../../hooks/sporcle/useHostSporcleActions.js';
-import { useSporclePresence } from '../../hooks/sporcle/useSporclePresence.js';
-import { useRoundReversal } from '../../hooks/rounds/useRoundReversal.js';
-import { useRoomProfiles } from '../../hooks/sporcle/useRoomProfiles.js';
-import { ChatButton } from '../../components/domain/Sporcle/ChatButton.jsx';
-import { ChatModal } from '../../components/domain/Sporcle/ChatModal.jsx';
-import { getLastReadId, countUnread } from '../../lib/chatReadState.js';
+import { BorderContainer } from '@/components/layout/BorderContainer.jsx';
+import { Button } from '@/components/ui/Button.jsx';
+import { Loader } from '@/components/ui/Loader.jsx';
+import { PlayerRoster } from '@/components/domain/Sporcle/PlayerRoster.jsx';
+import { SporcleProgress } from '@/components/domain/Sporcle/SporcleProgress.jsx';
+import { SporcleTimer } from '@/components/domain/Sporcle/SporcleTimer.jsx';
+import { QuestionPanel } from '@/components/domain/Sporcle/QuestionPanel.jsx';
+import { PromptSource } from '@/components/domain/Rounds/PromptSource.jsx';
+import { SporcleModal } from '@/components/domain/Setup/Modals/SporcleModal';
+import { useHostSporcle } from '@/hooks/sporcle/useHostSporcle.js';
+import { useHostSporcleIdentity } from '@/hooks/sporcle/useHostSporcleIdentity.js';
+import { useHostSporcleActions } from '@/hooks/sporcle/useHostSporcleActions.js';
+import { useSporclePresence } from '@/hooks/sporcle/useSporclePresence.js';
+import { useRoundReversal } from '@/hooks/rounds/useRoundReversal.js';
+import { useRoomProfiles } from '@/hooks/sporcle/useRoomProfiles.js';
+import { ChatButton } from '@/components/domain/Sporcle/ChatButton.jsx';
+import { ChatModal } from '@/components/domain/Sporcle/ChatModal.jsx';
+import { getLastReadId, countUnread } from '@/lib/chatReadState.js';
 
 export default function SporclePlay() {
   const { code } = useParams();

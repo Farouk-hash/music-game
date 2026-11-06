@@ -6,6 +6,8 @@ import { RequestsTab } from './RequestsTab.jsx';
 import { usePending } from '../../../hooks/follows/useFollows.js';
 import { InvitesTab } from './InvitesTab.jsx';
 import { usePendingInvites } from '../../../hooks/invites/useInvites.js';
+import { TabStrip } from '../../ui/TabStrip.jsx';
+import { IconClose } from '../../../icons/index.js';
 
 const TABS = [
   { key: 'friends',  label: 'Friends' },
@@ -47,50 +49,17 @@ export function FriendsModal({ open, onClose }) {
             className="text-ink-subtle hover:text-ink text-sm shrink-0"
             aria-label="Close"
           >
-            ✕
+            <IconClose />
           </button>
         </header>
 
-        <div className="flex flex-wrap gap-2">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setTab(t.key)}
-              aria-pressed={tab === t.key}
-              className={[
-                'px-4 h-10 rounded-md border text-sm font-medium transition-colors inline-flex items-center gap-2',
-                tab === t.key
-                  ? 'bg-accent text-bg border-accent'
-                  : 'bg-surface-2 text-ink-muted border-border hover:border-accent-2 hover:text-ink',
-              ].join(' ')}
-            >
-              {t.label}
-              {t.key === 'requests' && requestCount > 0 && (
-                <span
-                  className={[
-                    'inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full text-[10px] font-semibold tabular-nums',
-                    tab === t.key
-                      ? 'bg-bg text-accent'
-                      : 'bg-accent text-bg',
-                  ].join(' ')}
-                >
-                  {requestCount}
-                </span>
-              )}
-              {t.key === 'invites' && inviteCount > 0 && (
-                <span
-                  className={[
-                    'inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full text-[10px] font-semibold tabular-nums',
-                    tab === t.key ? 'bg-bg text-accent' : 'bg-accent text-bg',
-                  ].join(' ')}
-                >
-                  {inviteCount}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
+        <TabStrip
+          tabs={TABS}
+          value={tab}
+          onChange={setTab}
+          cols={3}
+          mode="grid"
+        />
 
         {tab === 'friends' && <FriendsListTab />}
         {tab === 'requests' && <RequestsTab />}

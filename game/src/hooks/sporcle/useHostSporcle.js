@@ -1,6 +1,6 @@
 // game/src/hooks/sporcle/useHostSporcle.js
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { sporcleApi } from '../../lib/sporcleApi.js';
+import { sporcleApi } from '@/lib/sporcleApi.js';
 
 export function useHostSporcle(code, { enabled = true, playerId = null } = {}) {
   const [state, setState] = useState(null);

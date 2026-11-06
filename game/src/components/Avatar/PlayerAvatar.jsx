@@ -1,6 +1,6 @@
 // game/src/components/Avatar/PlayerAvatar.jsx
 import { getAvatarUrl, DEFAULT_AVATAR_STYLE } from './AvatarProvider.jsx';
-import { absoluteAvatarUrl } from '../../lib/profileApi.js';
+import { absoluteAvatarUrl } from '@/lib/profileApi.js';
 
 /**
  * Renders a player's avatar.

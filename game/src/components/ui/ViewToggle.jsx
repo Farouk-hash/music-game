@@ -1,5 +1,6 @@
 // game/src/components/ui/ViewToggle.jsx
-import { IconDense, IconGrid, IconList } from '../../lib/icons.jsx';
+
+import { IconDense, IconGrid, IconList } from "../../icons";
 
 /**
  * A two-button toggle for switching between grid and list layouts.

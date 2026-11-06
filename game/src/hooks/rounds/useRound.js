@@ -1,18 +1,7 @@
 // game/src/hooks/useRound.js
 import { useQuery } from '@tanstack/react-query';
-import { api } from '../../lib/api.js';
+import { api } from '@/lib/api.js';
 
-/**
- * Fetches a batch of rounds from the Worker.
- *
- * `types` is an array of question type strings. Empty array = all types.
- * `years` is an array of integers. Empty array = no year filter.
- * `instruments` is 'none' | 'mixed' | 'all' — default 'none'.
- *
- * Note: artists and genres are mutually exclusive in the query string
- * (artists replace genres when both are set). `years` composes with
- * whichever won.
- */
 export function useRound({
   genres = [],
   artists = [],
@@ -23,22 +12,23 @@ export function useRound({
   instruments = 'none',
   enabled = true,
 } = {}) {
-  const params = new URLSearchParams();
-  if (artists.length > 0)      params.set('artists', artists.join(','));
-  else if (genres.length > 0)  params.set('genres', genres.join(','));
-  if (years.length > 0)        params.set('years', years.join(','));
-  if (types.length > 0)        params.set('types', types.join(','));
-  if (rendition === 'reverse') params.set('rendition', 'reverse');
-  if (instruments && instruments !== 'none') {
-    params.set('instruments', instruments);
-  }
-  params.set('count', String(count));
+  // Build the JSON payload
+  const payload = {
+    genres,
+    artists,
+    years,
+    types,
+    count,
+    rendition,
+    instruments,
+  };
 
-  const qs = params.toString();
+  // Stringify for the query key so it updates when params change
+  const queryKey = ['game-round', JSON.stringify(payload)];
 
   return useQuery({
-    queryKey: ['game-round', qs],
-    queryFn: () => api.get(`/round?${qs}`),
+    queryKey,
+    queryFn: () => api.post('/round', payload), // Changed to POST
     staleTime: 0,
     refetchOnWindowFocus: false,
     enabled,

@@ -1,9 +1,4 @@
 // game/tailwind.config.js
-//
-// IMPORTANT: no hex values here. Every color maps to a CSS variable
-// defined in src/styles/tokens.css. To re-theme the whole app, edit
-// tokens.css only — this file stays unchanged.
-
 export default {
   content: ['./index.html', './src/**/*.{js,jsx}'],
   theme: {
@@ -39,7 +34,11 @@ export default {
         lg: 'var(--shadow-lg)',
       },
       fontFamily: {
-        sans: ['Cairo', 'system-ui', 'sans-serif'],
+        // This applies to the whole site
+        sans: ['"Kaushan Script"', 'cursive', 'system-ui', 'sans-serif'],
+        
+        // Separate utility if you ever need a readable UI font for small text
+        ui: ['system-ui', '-apple-system', 'sans-serif'],
       },
     },
   },
