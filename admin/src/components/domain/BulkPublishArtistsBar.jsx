@@ -7,6 +7,7 @@ export function BulkPublishArtistsBar({
   onPublish,
   onGenerateInstruments,
   onUploadInstruments,
+  onSplitLocally,
   disabled = false,
 }) {
   if (count === 0) return null;
@@ -41,6 +42,17 @@ export function BulkPublishArtistsBar({
             title="Upload local MP3s to R2 + D1"
           >
             ⬆️ Upload
+          </Button>
+        )}
+        {onSplitLocally && (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={onSplitLocally}
+            disabled={disabled}
+            title="Separate full song + 30s slices → local only"
+          >
+            ✂️ Split 30s
           </Button>
         )}
         <Button

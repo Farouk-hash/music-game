@@ -15,6 +15,10 @@ import SporclePlay from '@/routes/Sporcle/Play.jsx';
 import SporcleResult from '@/routes/Sporcle/Result.jsx';
 import Library from '@/routes/Library/Library.jsx';
 import LibraryOthers from '@/routes/Library/LibraryOthers';
+import StreakChallenge from './routes/Streak/Challenge';
+import StreakResult from './routes/Streak/Result';
+import StreakHub from './routes/Streak/Hub';
+import Templates from './routes/Templates/Templates';
 
 export default function App() {
   return (
@@ -33,6 +37,12 @@ export default function App() {
           <Route path="/library" element={<Library />} />
           <Route path="/library/:id" element={<Library />} />
           <Route path="/library/others" element={<LibraryOthers />} />
+
+          <Route path="/streak" element={<StreakHub />} />
+          <Route path="/streak/play/:genreKey" element={<StreakChallenge />} />
+          <Route path="/streak/result/:genreKey" element={<StreakResult />} />
+          
+          <Route path="/templates" element={<Templates />} />
 
           <Route path="*" element={<NotFound />} /> 
         </Routes>

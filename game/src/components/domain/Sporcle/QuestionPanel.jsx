@@ -1,6 +1,6 @@
 // game/src/components/domain/Sporcle/QuestionPanel.jsx
 import { AudioPlayer } from '../Rounds/AudioPlayer.jsx';
-import { OptionsGrid } from '../Rounds/OptionsGrid.jsx';
+import { QuestionCard } from '../Rounds/QuestionCard.jsx';
 
 const POSITION_LABELS = {
   start: 'البداية',
@@ -10,24 +10,10 @@ const POSITION_LABELS = {
 };
 
 /**
- * The question card for Sporcle — options mode only.
- *
- * Handles both audio and lyrics questions:
- *
- *   Audio questions  — have `question.clip.serveUrl`
- *   Lyrics questions — have `question.revealClip.serveUrl` (the song
- *                      the lyric came from, played at reveal).
- *                      `question.clip` is null.
- *
- * Props:
- *   question   — full question payload
- *   reveal     — `state.reveal` (has `answers`; only set in reveal phase)
- *   phase      — 'question' | 'reveal'
- *   myId       — local player ID
- *   myPick     — my submitted pick (or null)
- *   onPick     — (value) => void
- *   reversal   — { reversed, style }
- *   rendition  — 'forward' | 'reverse' (controls reveal-audio visibility)
+ * The Sporcle question card. Reuses <QuestionCard> for the prompt +
+ * options + reveal-audio, and layers Sporcle-specific pieces on top:
+ *   - locked-in hint while waiting for other players / timer
+ *   - per-player reveal block (correct answer banner + picks list)
  */
 export function QuestionPanel({
   question,
@@ -40,6 +26,7 @@ export function QuestionPanel({
   rendition = 'forward',
 }) {
   if (!question) return null;
+  console.log('[QP] question.source =', question?.source, 'question.type =', question?.type);
 
   const type = question.type;
   const eyebrow = type ? type.replace('name-', '').replace('lyrics-', '') : '';
@@ -55,12 +42,8 @@ export function QuestionPanel({
   const isRevealed = phase === 'reveal';
   const hasAnswered = myPick != null;
 
-  // Reveal audio:
-  //   - Audio questions with `rendition === 'reverse'`: play the clip
-  //     forwards (the question played it backwards).
-  //   - Lyrics questions: play the song the lyric came from. The URL
-  //     lives in `revealClip` because lyrics rounds don't have a
-  //     top-level `clip`.
+  // Reveal audio: same logic as before — audio questions with reverse
+  // rendition play forwards on reveal; lyrics questions play the source song.
   const revealClipUrl =
     question.clip?.serveUrl ?? question.revealClip?.serveUrl ?? null;
   const showRevealAudio =
@@ -68,39 +51,34 @@ export function QuestionPanel({
 
   return (
     <div className="space-y-6">
-      {/* Eyebrow */}
-      {eyebrow && (
-        <p className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">
-          {eyebrow}
-        </p>
-      )}
+      <QuestionCard
+        eyebrow={eyebrow}
+        prompt={question.prompt}
+        options={options}
+        correctValue={correctValue ?? undefined}
+        picked={myPick}
+        revealed={isRevealed}
+        onPick={onPick}
+        labelFor={labelFor}
+        source={question.source ?? null} 
+        answerMode="choose"
+        questionType={type}
+        reversal={reversal}
+        showNextButton={false}
+        disabled={!isRevealed && hasAnswered}
+        revealExtra={
+          isRevealed && showRevealAudio
+            ? <AudioPlayer src={revealClipUrl} autoPlay={false} />
+            : null
+        }
+      />
 
-      {/* Prompt */}
-      <p className="text-xl font-bold text-ink leading-snug">
-        {question.prompt}
-      </p>
-
-      {/* Options */}
-      {options.length > 0 && (
-        <OptionsGrid
-          options={options}
-          correctValue={correctValue ?? undefined}
-          picked={myPick}
-          revealed={isRevealed}
-          onPick={isRevealed || hasAnswered ? () => {} : onPick}
-          labelFor={labelFor}
-          reversal={reversal}
-        />
-      )}
-
-      {/* Waiting hint */}
       {!isRevealed && hasAnswered && (
         <div className="rounded-md border border-accent-2 bg-accent-soft p-3 text-sm text-ink-muted">
           Locked in. Waiting for other players or the timer…
         </div>
       )}
 
-      {/* Reveal block */}
       {isRevealed && reveal && (
         <RevealBlock
           reveal={reveal}
@@ -108,16 +86,6 @@ export function QuestionPanel({
           labelFor={labelFor}
           options={options}
         />
-      )}
-
-      {/* Reveal audio */}
-      {isRevealed && showRevealAudio && (
-        <div className="rounded-md border border-border bg-surface-2 p-3 space-y-2">
-          <p className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">
-            Track
-          </p>
-          <AudioPlayer src={revealClipUrl} autoPlay={false} />
-        </div>
       )}
     </div>
   );
@@ -129,7 +97,6 @@ function RevealBlock({ reveal, myId, labelFor, options }) {
 
   return (
     <>
-      {/* Correct answer banner */}
       <div className="rounded-md border border-correct bg-correct-soft p-3 space-y-1">
         <p className="text-xs font-semibold text-correct uppercase tracking-[0.2em]">
           Correct answer
@@ -139,7 +106,6 @@ function RevealBlock({ reveal, myId, labelFor, options }) {
         </p>
       </div>
 
-      {/* Per-player picks */}
       <ul className="space-y-2">
         {reveal.answers.map((a) => {
           const isMe = a.playerId === myId;

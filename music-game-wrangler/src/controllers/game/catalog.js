@@ -2,6 +2,7 @@ import { json } from '../../lib/response.js';
 
 /**
  * GET /game/catalog
+ *
  * Returns everything the game client needs to render its pickers:
  *   genres, artists, years, and aggregate counts.
  *
@@ -9,18 +10,26 @@ import { json } from '../../lib/response.js';
  * publishes new data.
  *
  * Count semantics:
- *   genres  — every row in genres
- *   artists — artists with tracks_count > 0 (i.e. actually playable)
- *   tracks  — distinct (artist_id, name) — one per song, regardless of positions
- *   clips   — every rendition (forward + reversed) across all slots
-  albums  — distinct (artist_id, album_name) in tracks with a non-null album_name
- *   lyrics  — every row in lyrics
- *   instruments — distinct (artist_id, track_name) in the instruments table
- *                 (a track with both 'middle' and 'custom' counts once)
+ *   genres          — every row in genres
+ *   artists         — artists with tracks_count > 0 (i.e. actually playable)
+ *   tracks          — distinct (artist_id, name) — one per song
+ *   clips           — every rendition (forward + reversed)
+ *   albums          — distinct (artist_id, album_name) with non-null album
+ *   lyrics          — distinct (artist_id, track_name) in lyrics table
+ *   instruments     — distinct (artist_id, track_name) in instruments table
+ *   reversedClips   — tracks with a reversed rendition
+ *
+ * Per-artist fields (used by the Setup screen to gate capabilities):
+ *   tracks_count      — distinct track names with r2_key
+ *   lyrics_count      — distinct track names in lyrics table
+ *   instruments_count — distinct track names in instruments table
+ *
+ * The client sums the per-artist counts across the currently-selected
+ * scope and disables the corresponding settings (lyrics question types,
+ * instruments picker, etc.) when the sum is zero.
+ *
  * Years shape (S3 — nested by year):
  *   years: [{ year: 1998, artist_ids: [1, 5, 9] }, ...]
- *   Built from all album_years rows. The year picker in Setup filters
- *   by intersecting artist_ids with the currently-selected artists.
  */
 export async function getCatalog(request, env) {
   const [genresRes, artistsRes, countsRow, yearsRes] = await Promise.all([
@@ -29,9 +38,12 @@ export async function getCatalog(request, env) {
     ).all(),
     env.DB.prepare(
       `
-      SELECT id, name, genre_ids, image, tracks_count 
-      FROM artists 
-      WHERE tracks_count > 0  
+      SELECT id, name, genre_ids, image,
+             tracks_count,
+             lyrics_count,
+             instruments_count
+      FROM artists
+      WHERE tracks_count > 0
       ORDER BY name ASC`
     ).all(),
     env.DB.prepare(`
@@ -50,11 +62,18 @@ export async function getCatalog(request, env) {
            FROM tracks
            WHERE album_name IS NOT NULL AND TRIM(album_name) <> ''
          ))                           AS albums,
-        (SELECT COUNT(1) FROM lyrics)  AS lyrics,
+        (SELECT COUNT(1) FROM (
+           SELECT DISTINCT artist_id, track_name FROM lyrics
+         ))                           AS lyrics,
         (SELECT COUNT(1) FROM tracks WHERE r2_reversed_key IS NOT NULL) AS reversedClips,
         (SELECT COUNT(1) FROM (
            SELECT DISTINCT artist_id, track_name FROM instruments
-         ))                           AS instruments
+         ))                           AS instruments,
+        -- Capability aggregates (whole-catalog) used when the user
+        -- hasn't narrowed to specific artists. Same grain as the
+        -- per-artist columns so the client math lines up.
+        (SELECT COALESCE(SUM(lyrics_count), 0)      FROM artists) AS lyricsTotal,
+        (SELECT COALESCE(SUM(instruments_count), 0) FROM artists) AS instrumentsTotal
     `).first(),
     env.DB.prepare(`
       SELECT released_year, artist_id
@@ -79,12 +98,13 @@ export async function getCatalog(request, env) {
       name: row.name,
       genre_ids,
       image: row.image ?? null,
-      tracks_count: row.tracks_count ?? 0,
+      tracks_count:      row.tracks_count      ?? 0,
+      lyrics_count:      row.lyrics_count      ?? 0,
+      instruments_count: row.instruments_count ?? 0,
     };
   });
 
   // Group (year, artist_id) rows into { year, artist_ids: [...] }.
-  // Rows are already sorted by year, so this is a single pass.
   const yearMap = new Map();
   for (const row of yearsRes.results ?? []) {
     const year = Number(row.released_year);
@@ -112,9 +132,13 @@ export async function getCatalog(request, env) {
         tracks:  countsRow?.tracks  ?? 0,
         clips:   countsRow?.clips   ?? 0,
         albums:  countsRow?.albums  ?? 0,
-        lyrics:  countsRow?.lyrics  ?? 0,
-        reversedClips: countsRow?.reversedClips ?? 0,
-        instruments:   countsRow?.instruments   ?? 0,
+        lyrics:         countsRow?.lyrics         ?? 0,
+        reversedClips:  countsRow?.reversedClips  ?? 0,
+        instruments:    countsRow?.instruments    ?? 0,
+        // Whole-catalog capability totals (grain-matched with per-artist
+        // lyrics_count / instruments_count).
+        lyricsTotal:      countsRow?.lyricsTotal      ?? 0,
+        instrumentsTotal: countsRow?.instrumentsTotal ?? 0,
       },
       version,
     },

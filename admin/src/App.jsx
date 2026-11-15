@@ -1,3 +1,4 @@
+// admin/src/App.jsx
 import { Routes, Route } from 'react-router-dom';
 import AppShell from './components/layout/AppShell';
 import Home from './routes/Home';
@@ -16,8 +17,11 @@ import PublishedUpload from './routes/PublishedUploads';
 import PublishedLyrics from './routes/PublishedLyrics';
 import PublishedAlbumaty from './routes/PublishedAlbumaty';
 import PublishedAlbumYears from './routes/PublishedAlbumYears';
-import YoutubeImport from './routes/Youtube/YoutubeImport';   // ← new
+import YoutubeImport from './routes/Youtube/YoutubeImport';
 import PublishedInstruments from './routes/PublishedInstruments';
+import TemplateEditor from './routes/Templates/TemplateEditor';
+import Templates from './routes/Templates/Templates';
+
 
 export default function App() {
   return (
@@ -43,6 +47,10 @@ export default function App() {
 
         <Route path="/youtube/import" element={<YoutubeImport />} />   
         <Route path="/published/instruments" element={<PublishedInstruments />} />
+
+        {/* NEW: Templates */}
+        <Route path="/templates"       element={<Templates />} />
+        <Route path="/templates/:id"   element={<TemplateEditor />} />
 
         <Route path="*" element={<NotFound />} />
       </Routes>

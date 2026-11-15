@@ -1,34 +1,21 @@
 // game/src/components/domain/RoundCountPicker.jsx
-//
-// Round-count selector. Sends the chosen number as `count` to /play.
-
 import { ROUND_COUNT_OPTIONS } from "@/constants/roundCount";
+import { HorizontalScroll } from '@/components/ui/HorizontalScroll';
+import { ChoiceCard } from "../Modals/ChoiceCard";
 
-
-
-export function RoundCountPicker({ value, onChange }) {
+export function RoundCountPicker({ value, onChange, disabled = false }) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-      {ROUND_COUNT_OPTIONS.map((opt) => {
-        const selected = value === opt.value;
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => onChange(opt.value)}
-            aria-pressed={selected}
-            className={[
-              'rounded-md border px-4 py-3 text-left transition-colors',
-              selected
-                ? 'bg-accent-soft border-accent text-ink'
-                : 'bg-surface-2 border-border text-ink-muted hover:border-accent-2 hover:text-ink',
-            ].join(' ')}
-          >
-            <p className="text-sm font-semibold">{opt.label}</p>
-            <p className="text-xs mt-0.5 opacity-80">{opt.hint}</p>
-          </button>
-        );
-      })}
-    </div>
+    <HorizontalScroll size="sm">
+      {ROUND_COUNT_OPTIONS.map((opt) => (
+        <ChoiceCard
+          key={opt.value}
+          active={value === opt.value}
+          onClick={() => onChange(opt.value)}
+          title={opt.label}
+          description={opt.hint}
+          disabled={disabled}
+        />
+      ))}
+    </HorizontalScroll>
   );
 }

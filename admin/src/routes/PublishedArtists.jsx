@@ -19,6 +19,7 @@ import { BackLink } from '../components/layout/BackLink';
 import { artistDetailPath } from '../lib/quran';
 import { InstrumentalBatchModal } from '../components/domain/Instrumental/InstrumentalBatchModal';
 import { InstrumentalUploadModal } from '../components/domain/Instrumental/InstrumentalUploadModal.jsx';
+import { SplitLocallyModal } from '../components/domain/InstrumentsLocally/SplitLocallyModal'; // NEW
 
 const PER_PAGE = 60;
 
@@ -34,7 +35,7 @@ export default function PublishedArtists() {
 
   const [instrOpen, setInstrOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
-
+  const [splitOpen, setSplitOpen] = useState(false); // NEW
 
   const { genres: cloudflareGenres } = useCloudflareGenres();
   const { artists, loading, error, count } = useCloudflareArtists({
@@ -42,8 +43,6 @@ export default function PublishedArtists() {
     source: sourceFilter,
   });
 
-
-  // Client-side filter: search + clip state
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return artists.filter(a => {
@@ -65,7 +64,6 @@ export default function PublishedArtists() {
     });
   }, [artists, search, clipFilter, instrumentsFilter]);
 
-  // Pagination
   const filterKey = `${search}|${genreFilter}|${sourceFilter}|${clipFilter}|${instrumentsFilter}`;
   const pg = usePagination(filtered, {
     perPage: PER_PAGE,
@@ -84,7 +82,6 @@ export default function PublishedArtists() {
     (artist) => artistDetailPath(artist),
     []
   );
-
 
   const toggleArtistSelection = useCallback((artist) => {
     setSelectedArtistIds(prev => {
@@ -137,9 +134,7 @@ export default function PublishedArtists() {
             <Button variant="primary" size="sm" onClick={admin.openCustom}>
               + Add Custom Artist
             </Button>
-            
           </div>
-          
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -174,7 +169,7 @@ export default function PublishedArtists() {
             <option value="with">Has clips</option>
             <option value="without">No clips</option>
           </select>
-          
+
           <select
             value={instrumentsFilter}
             onChange={e => setInstrumentsFilter(e.target.value)}
@@ -184,7 +179,7 @@ export default function PublishedArtists() {
             <option value="with">Has instruments</option>
             <option value="without">No instruments</option>
           </select>
-          
+
           <select
             value={sourceFilter}
             onChange={e => setSourceFilter(e.target.value)}
@@ -204,6 +199,7 @@ export default function PublishedArtists() {
         onPublish={handleOpenBulkFlow}
         onGenerateInstruments={() => setInstrOpen(true)}
         onUploadInstruments={() => setUploadOpen(true)}
+        onSplitLocally={() => setSplitOpen(true)} // NEW
       />
 
       {loading && !artists.length ? (
@@ -292,6 +288,17 @@ export default function PublishedArtists() {
           open
           onClose={() => {
             setUploadOpen(false);
+            clearArtistSelection();
+          }}
+          artists={selectedArtists}
+        />
+      )}
+
+      {splitOpen && (
+        <SplitLocallyModal
+          open
+          onClose={() => {
+            setSplitOpen(false);
             clearArtistSelection();
           }}
           artists={selectedArtists}

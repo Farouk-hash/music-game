@@ -8,11 +8,14 @@ import { queryClient } from '@/lib/queryClient.js';
 import { GameSettingsProvider } from '@/context/GameSettingsContext.jsx';
 import { ProfileProvider } from '@/context/ProfileContext.jsx';
 import { ToastProvider } from '@/hooks/ui/useToast';
+import { ChallengeConfigProvider } from './context/ChallengeConfigContext';
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <ProfileProvider>
+        <ChallengeConfigProvider>
+
         <GameSettingsProvider>
           <ToastProvider>
             <BrowserRouter>
@@ -20,6 +23,7 @@ createRoot(document.getElementById('root')).render(
             </BrowserRouter>
           </ToastProvider>
         </GameSettingsProvider>
+        </ChallengeConfigProvider>
       </ProfileProvider>
     </QueryClientProvider>
   </StrictMode>

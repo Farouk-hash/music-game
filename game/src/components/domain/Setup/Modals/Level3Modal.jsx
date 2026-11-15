@@ -2,19 +2,19 @@
 import { LevelModalWrapper } from './LevelModalWrapper.jsx';
 
 export function Level3Modal({
-  open,
-  onClose,
-  onPlay,
+  open, onClose, onPlay,
   disabledTypes = new Set(),
+  disabledReasons,
   reversedClipsCount = 0,
+  allowInstruments = false,   // L3 doesn't support instruments yet
   genreMode,
   effectiveSelectedArtistsCount,
+  onQuestionTypeUnfavorited,
 }) {
   const noGenre = genreMode === 'idle';
   const singleArtist = effectiveSelectedArtistsCount === 1;
   const canPlay = !noGenre && !singleArtist;
 
-  // Build the error message block if needed
   const errorMessage = (
     <>
       {noGenre && (
@@ -38,10 +38,12 @@ export function Level3Modal({
       level="3"
       title="Mixed tracks, set questions"
       disabledTypes={disabledTypes}
+      disabledReasons={disabledReasons}
       reversedClipsCount={reversedClipsCount}
-      allowInstruments={false}
+      allowInstruments={allowInstruments}
       canPlay={canPlay}
       errorMessage={errorMessage}
+      onQuestionTypeUnfavorited={onQuestionTypeUnfavorited}
     />
   );
 }

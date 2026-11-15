@@ -1,3 +1,4 @@
+// game/src/components/domain/Setup/Timer/Timerbar.jsx
 export function TimerBar({ timeLeft, total, timedOut }) {
   if (!total || total <= 0) return null;
 
@@ -5,8 +6,8 @@ export function TimerBar({ timeLeft, total, timedOut }) {
   const urgent = timeLeft / total <= 0.25;
 
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-center justify-between text-xs">
+    <div className="w-full min-w-0 space-y-1.5">
+      <div className="flex items-center justify-between text-xs w-full">
         <span className={urgent ? 'text-wrong font-medium' : 'text-ink-muted'}>
           {timedOut ? "Time's up" : 'Time'}
         </span>
@@ -14,7 +15,7 @@ export function TimerBar({ timeLeft, total, timedOut }) {
           {Math.ceil(timeLeft)}s
         </span>
       </div>
-      <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden">
+      <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden w-full">
         <div
           className={`h-full transition-[width] duration-200 ${
             urgent ? 'bg-wrong' : 'bg-accent'

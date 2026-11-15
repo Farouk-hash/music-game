@@ -1,7 +1,9 @@
 // game/src/hooks/collections/useCollectionDraft.js
 import { useState, useCallback } from 'react';
+import { TIMER_SECONDS } from '@/constants/timer.js';
 
-const DEFAULT_TIMER = 20;
+// Default: timer ON, using the "choose" preset (matches the game's actual timer).
+const DEFAULT_TIMER = TIMER_SECONDS.short;   // 5
 const DEFAULT_ROUNDS = 5;
 const VALID_REVERSED_ANSWERS = ['no', 'some', 'all'];
 
@@ -12,7 +14,7 @@ function makeDefaultRound(level = 1) {
     answerMode: 'choose',
     mode: 'speed',
     rounds: DEFAULT_ROUNDS,
-    reversedAnswers: 'no',        // 'no' | 'some' | 'all'
+    reversedAnswers: 'no',
     reversedAudio: false,
     instruments: 'none',
     timer: DEFAULT_TIMER,
@@ -27,18 +29,22 @@ function emptyDraft() {
     genresIds: new Set(),
     artistsIds: new Set(),
     rounds: [makeDefaultRound(1)],
-    coverFile: null,                                       // staged new File
-    cover: { kind: 'generated', url: null },               // existing cover
+    coverFile: null,
+    cover: { kind: 'generated', url: null },
   };
 }
 
-// Defensive read for the tri-state — tolerates legacy boolean values
-// from a cached API response or an older server.
 function readReversedAnswers(raw) {
   if (raw === 'no' || raw === 'some' || raw === 'all') return raw;
   if (raw === true) return 'some';
   if (raw === false) return 'no';
   return 'no';
+}
+
+function readTimer(raw, fallback) {
+  if (raw === null) return null;        // explicitly no timer
+  if (raw === undefined) return fallback;
+  return raw;
 }
 
 export function draftFromCollection(collection) {
@@ -54,7 +60,7 @@ export function draftFromCollection(collection) {
     reversedAnswers: readReversedAnswers(r.reversedAnswers),
     reversedAudio: Boolean(r.reversedAudio),
     instruments: r.instruments ?? 'none',
-    timer: r.timer ?? DEFAULT_TIMER,
+    timer: readTimer(r.timer, DEFAULT_TIMER),
   }));
 
   return {
@@ -84,7 +90,7 @@ export function draftToBody(draft) {
       answerMode: r.answerMode,
       mode: r.mode,
       rounds: r.rounds,
-      reversedAnswers: r.reversedAnswers,        // string passthrough
+      reversedAnswers: r.reversedAnswers,
       reversedAudio: Boolean(r.reversedAudio),
       instruments: r.instruments,
       timer: r.timer ?? null,
@@ -102,7 +108,6 @@ export function useCollectionDraft(initialDraft) {
     []
   );
 
-  // Update the existing-cover mirror after a remove-cover action (edit mode).
   const setCover = useCallback(
     (cover) => setDraft((d) => ({ ...d, cover })),
     []

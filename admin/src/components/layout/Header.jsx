@@ -29,6 +29,8 @@ export function Header({ actions = null }) {
               <NavLink to="/quran" className={linkClass}>Quran</NavLink>
               <NavLink to="/published/genres"  className={linkClass}>Published Genres</NavLink>
               <NavLink to="/published/artists" className={linkClass}>Published Artists</NavLink>
+              <NavLink to="/templates" className={linkClass}>Templates</NavLink>
+
               <NavLink to="/published/tracks" className={linkClass}>Published Tracks</NavLink>
               <NavLink to="/published/instruments" className={linkClass}>Published Instruments</NavLink>
 

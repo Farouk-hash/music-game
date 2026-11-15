@@ -13,9 +13,13 @@ export function GameSettingsProvider({ children }) {
   const [reversedAnswers, setReversedAnswers] = useState(() =>
     localStorage.getItem('game.reversedAnswers') || 'no'
   );
-  const [timer, setTimer] = useState(() =>
-    localStorage.getItem('game.timer') || 'off'
-  );
+  
+  // UPDATED: Read as number or null, fallback to null (No timer)
+  const [timer, setTimer] = useState(() => {
+    const saved = localStorage.getItem('game.timer');
+    if (!saved || saved === 'off') return null; 
+    return Number(saved) || null;
+  });
 
   const [audioRendition, setAudioRendition] = useState(() =>
     localStorage.getItem('game.audioRendition') || 'forward'
@@ -29,7 +33,10 @@ export function GameSettingsProvider({ children }) {
   useEffect(() => {
     localStorage.setItem('game.answerMode', answerMode);
     localStorage.setItem('game.reversedAnswers', reversedAnswers);
-    localStorage.setItem('game.timer', timer);
+    
+    // UPDATED: Store 'off' if timer is null, otherwise store the number
+    localStorage.setItem('game.timer', timer === null ? 'off' : String(timer));
+    
     localStorage.setItem('game.audioRendition', audioRendition);
     localStorage.setItem('game.instruments', instruments);
   }, [answerMode, reversedAnswers, timer, audioRendition, instruments]);
@@ -40,7 +47,7 @@ export function GameSettingsProvider({ children }) {
     if (partial.answerMode !== undefined) setAnswerMode(partial.answerMode);
     if (partial.roundCount !== undefined) setRoundCount(partial.roundCount);
     if (partial.reversedAnswers !== undefined) setReversedAnswers(partial.reversedAnswers);
-    if (partial.timer !== undefined) setTimer(partial.timer);
+    if (partial.timer !== undefined) setTimer(partial.timer === 'off' ? null : partial.timer);
     if (partial.audioRendition !== undefined) setAudioRendition(partial.audioRendition);
     if (partial.instruments !== undefined) setInstruments(partial.instruments);
   }, []);

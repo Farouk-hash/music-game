@@ -11,3 +11,6 @@ CREATE TABLE artists (
 
 CREATE INDEX idx_artists_name         ON artists(name);
 CREATE INDEX idx_artists_tracks_count ON artists(tracks_count);
+
+ALTER TABLE artists ADD COLUMN lyrics_count      INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE artists ADD COLUMN instruments_count INTEGER NOT NULL DEFAULT 0;

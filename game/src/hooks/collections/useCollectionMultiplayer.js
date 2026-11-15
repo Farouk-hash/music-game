@@ -11,26 +11,24 @@ export function useCollectionMultiplayer() {
 
   const [multiplayerCollection, setMultiplayerCollection] = useState(null);
 
-  // Opens the modal for a given collection. Seeds the shared settings
-  // context with the collection's first-level round, so the modal's
-  // settings UI reflects the collection defaults (user can still tweak).
   const openMultiplayerFor = useCallback((collection, { onCloseReadOnly } = {}) => {
     const rounds = Array.isArray(collection.rounds) ? collection.rounds : [];
-    const levels = Array.isArray(collection.levels) ? collection.levels : [];
+    // Normalize levels to an array
+    const levels = collection.levels 
+      ? Array.from(collection.levels).sort((a, b) => a - b) 
+      : [];
 
-    // Prefer the round matching the smallest available level. Fall back
-    // to any round if there's no level metadata.
-    const firstLevel = levels.length > 0 ? [...levels].sort((a, b) => a - b)[0] : null;
+    const firstLevel = levels.length > 0 ? levels[0] : null;
     const seedRound = firstLevel != null
       ? rounds.find(r => Number(r.level) === Number(firstLevel))
-      : rounds.find(() => true);
+      : rounds[0]; // fallback to first round if no levels array
 
     if (seedRound) {
       settings.applySettings({
         questionTypes: seedRound.questionTypes || [],
         answerMode: seedRound.answerMode || 'choose',
         reversedAnswers: seedRound.reversedAnswers || 'no',
-        timer: seedRound.timer ? 'on' : 'off',
+        timer: seedRound.timer ?? null,
         audioRendition: seedRound.reversedAudio ? 'reverse' : 'forward',
         instruments: seedRound.instruments || 'none',
         roundCount: seedRound.rounds || 10,
@@ -52,16 +50,32 @@ export function useCollectionMultiplayer() {
       return;
     }
 
-    const levelsAvailable = Array.isArray(col.levels) ? col.levels : [];
-    const effectiveLevel = levelsAvailable.includes(level) ? level : (levelsAvailable[0] ?? level);
+    // 1. Normalize levels properly
+    const levelsAvailable = col.levels 
+      ? Array.from(col.levels).sort((a, b) => a - b) 
+      : [];
 
+    // 2. Determine the effective level
+    const effectiveLevel = levelsAvailable.length > 0
+      ? (levelsAvailable.includes(level) ? level : levelsAvailable[0])
+      : 1;
+
+    // 3. Find the round
     const rounds = Array.isArray(col.rounds) ? col.rounds : [];
-    const targetRound = rounds.find(r => Number(r.level) === Number(effectiveLevel));
+    let targetRound = rounds.find(r => Number(r.level) === Number(effectiveLevel));
+    
+    // 4. Fallback: if not found (e.g. empty levels array), just use the first available round
+    if (!targetRound && rounds.length > 0) {
+      targetRound = rounds[0];
+    }
 
     if (!targetRound) {
       show({ message: `No round config found for Level ${effectiveLevel}.` });
       return;
     }
+
+    // 5. Use the ACTUAL level of the round we found
+    const actualLevel = targetRound.level || effectiveLevel;
 
     const payload = {
       genres: col.genresIds || [],
@@ -69,13 +83,13 @@ export function useCollectionMultiplayer() {
       years: col.years?.values || [],
       types: targetRound.questionTypes || [],
       answerMode: targetRound.answerMode || 'choose',
-      timer: targetRound.timer ? 'on' : 'off',
+      timer: targetRound.timer ?? null,
       reversed: targetRound.reversedAnswers || 'no',
       instruments: targetRound.instruments || 'none',
       rendition: targetRound.reversedAudio ? 'reverse' : 'forward',
       count: targetRound.rounds || 10,
       players: names,
-      level: effectiveLevel,
+      level: actualLevel,
       roundsPerPlayer,
     };
 

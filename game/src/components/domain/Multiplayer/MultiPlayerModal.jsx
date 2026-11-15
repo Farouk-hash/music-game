@@ -1,7 +1,6 @@
 // game/src/components/domain/Multiplayer/MultiplayerModal.jsx
 import { useState } from 'react';
 import { LevelModalWrapper } from '../Setup/Modals/LevelModalWrapper.jsx';
-import { SharedGameSettings } from '../Setup/Modals/SharedGameSettings.jsx';
 import { LEVELS, PLAYER_COUNTS, ROUND_CHOICES } from '@/constants/MultiPlayers.js';
 
 function defaultNames(n) {
@@ -14,12 +13,15 @@ export function MultiplayerModal({
   onStart,
   starting,
   disabledTypes = new Set(),
+  disabledReasons,
   reversedClipsCount = 0,
+  allowInstruments = true,
+  defaultRoundsPerPlayer = 5,
 }) {
   const [playerCount, setPlayerCount] = useState(2);
   const [names, setNames] = useState(() => defaultNames(2));
   const [level, setLevel] = useState(1);
-  const [roundsPerPlayer, setRoundsPerPlayer] = useState(5);
+  const [roundsPerPlayer, setRoundsPerPlayer] = useState(defaultRoundsPerPlayer);
 
   function changePlayerCount(n) {
     setPlayerCount(n);
@@ -61,8 +63,10 @@ export function MultiplayerModal({
       eyebrow="Multiplayer"
       title="Pass the device between turns"
       disabledTypes={disabledTypes}
+      disabledReasons={disabledReasons}
       reversedClipsCount={reversedClipsCount}
-      allowInstruments={true}
+      allowInstruments={allowInstruments}
+      hideRoundCount={true} 
       canPlay={canStart}
       playLabel={starting ? 'Starting…' : 'Play'}
     >
@@ -142,39 +146,7 @@ export function MultiplayerModal({
         </div>
       </div>
 
-      {/* Rounds per player */}
-      <div className="space-y-2">
-        <p className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">
-          Rounds per player
-        </p>
-        <div className="flex gap-2">
-          {ROUND_CHOICES.map(n => (
-            <button
-              key={n}
-              type="button"
-              onClick={() => setRoundsPerPlayer(n)}
-              aria-pressed={roundsPerPlayer === n}
-              className={[
-                'flex-1 h-10 rounded-md border text-sm font-medium transition-colors',
-                roundsPerPlayer === n
-                  ? 'bg-accent text-bg border-accent'
-                  : 'bg-surface-2 text-ink-muted border-border hover:border-accent-2 hover:text-ink',
-              ].join(' ')}
-            >
-              {n}
-            </button>
-          ))}
-        </div>
-        <p className="text-xs text-ink-subtle">
-          {playerCount * roundsPerPlayer} rounds total.
-        </p>
-      </div>
-
-      <SharedGameSettings
-        disabledTypes={disabledTypes}
-        hideRoundCount
-        reversedClipsCount={reversedClipsCount}
-      />
+     
     </LevelModalWrapper>
   );
 }

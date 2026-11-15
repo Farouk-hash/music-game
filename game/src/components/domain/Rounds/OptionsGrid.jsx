@@ -1,23 +1,6 @@
 // game/src/components/game/OptionsGrid.jsx
-import { applyReversal } from '../../../lib/reverseText.js';
+import { applyReversal } from '@/lib/reverseText.js';
 
-/**
- * The 2×2 answer grid.
- *
- * `reversal` — optional { reversed: bool, style: 'words'|'letters'|null }
- *              If reversed, every option label is transformed and the
- *              displayed text uses dir="ltr" so the scramble is visible.
- *
- * `labelFor` — transforms an option object into its display string
- *              (e.g. position label translation). Runs BEFORE reversal.
- *
- * Three visual states:
- *   - idle            — default. Hoverable, all clickable.
- *   - locked in       — `picked != null && !revealed`. Picked option is
- *                       accent-filled; others dimmed; all disabled.
- *   - revealed        — correct highlighted green; wrong pick highlighted
- *                       red; others dimmed; all disabled.
- */
 export function OptionsGrid({
   options,
   correctValue,
@@ -35,13 +18,11 @@ export function OptionsGrid({
     return applyReversal(base, style);
   };
 
-  // Mid-question: the local player has answered, the round hasn't
-  // revealed yet. Dim everything except the pick, and disable all
-  // clicks so the grid reflects "locked in".
   const locked = picked != null && !revealed;
 
   return (
-    <div className="grid grid-cols-2 gap-2 sm:gap-3">
+    // 1. Ensure the grid takes full width and columns can shrink
+    <div className="grid grid-cols-2 gap-2 sm:gap-3 w-full min-w-0">
       {options.map((option) => {
         const isPicked = picked === option.value;
         const isCorrect = option.value === correctValue;
@@ -65,12 +46,19 @@ export function OptionsGrid({
             disabled={revealed || locked}
             onClick={() => onPick(option.value)}
             className={[
-              'rounded-md border px-4 py-3 text-left text-sm font-medium',
+              // 2. Add w-full, min-w-0, and text wrapping
+              'w-full min-w-0 rounded-md border px-4 py-3 text-left text-sm font-medium',
               'transition-colors disabled:cursor-not-allowed',
+              'break-words whitespace-normal', // <-- Fixes long text breaking layout
               buttonStyle,
             ].join(' ')}
           >
-            <span dir={reversed ? 'ltr' : 'auto'}>{label}</span>
+            <span 
+              dir={reversed ? 'ltr' : 'auto'} 
+              className="block w-full"
+            >
+              {label}
+            </span>
           </button>
         );
       })}

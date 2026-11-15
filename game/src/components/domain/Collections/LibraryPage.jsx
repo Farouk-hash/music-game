@@ -15,18 +15,19 @@ import { useCollections, useOtherCollections, useDeleteCollection, useCloneColle
 import { useCollectionFilters } from '@/hooks/collections/useCollectionFilters.js';
 import { useCollectionMultiplayer } from '@/hooks/collections/useCollectionMultiplayer.js';
 import { useToast } from '@/hooks/ui/useToast.jsx';
-import { IconPlus, IconCollection, IconClose } from '@/icons';
+import { IconPlus, IconCollection } from '@/icons';
 import { Loader } from '@/components/ui/Loader';
 import { Reveal } from '@/components/ui/Reveal';
-import { BorderContainer } from '@/components/layout/BorderContainer.jsx'; 
+import { BorderContainer } from '@/components/layout/BorderContainer.jsx';
 import { useCatalog } from '@/hooks/setup/useCatalog';
 import { Button } from '@/components/ui/Button';
+import { useCapabilityGates } from '@/hooks/setup/useCapabilityGates';
 
 export function LibraryPage({ mode = 'mine' }) {
   const isMine = mode === 'mine';
   const title = isMine ? 'Library' : 'Community';
-  const subtitle = isMine 
-    ? 'Save, edit and replay your favourite setups.' 
+  const subtitle = isMine
+    ? 'Save, edit and replay your favourite setups.'
     : 'Discover and save public collections from other players.';
   const storageKey = isMine ? 'game.libraryView' : 'game.libraryOthersView';
 
@@ -35,8 +36,17 @@ export function LibraryPage({ mode = 'mine' }) {
   const navigate = useNavigate();
   const { id: profileId } = useProfileContext();
 
-   const { data: catalog } = useCatalog(); 
-  const reversedClipsCount = catalog?.counts?.reversedClips ?? 0; 
+  const { data: catalog } = useCatalog();
+  const reversedClipsCount = catalog?.counts?.reversedClips ?? 0;
+
+  const gates = useCapabilityGates({
+    lyricsCount: catalog?.counts?.lyricsTotal ?? 0,
+    instrumentsCount: catalog?.counts?.instrumentsTotal ?? 0,
+    selectedArtistsCount: 0,
+    reasonLyrics: 'No lyrics available in the catalogue.',
+  });
+
+  const { disabledTypes, disabledReasons } = gates;
 
   const collectionsQuery = useCollections(profileId);
   const othersQuery = useOtherCollections(profileId);
@@ -45,10 +55,8 @@ export function LibraryPage({ mode = 'mine' }) {
   const deleteMutation = useDeleteCollection(profileId);
   const cloneMutation = useCloneCollection(profileId);
 
-  // Multiplayer state machine lives in the hook — reused across pages
   const mp = useCollectionMultiplayer();
 
-  // --- Filter & Search State ---
   const [query, setQuery] = useState('');
   const [activeFilters, setActiveFilters] = useState({
     genres: new Set(), artists: new Set(), questionTypes: new Set(),
@@ -76,7 +84,6 @@ export function LibraryPage({ mode = 'mine' }) {
 
   const { filtered, facets } = useCollectionFilters(rawCollections, { query, activeFilters });
 
-  // --- UI State ---
   const [view, setView] = useState(() => {
     const v = localStorage.getItem(storageKey);
     return v === 'list' || v === 'dense' ? v : 'grid';
@@ -87,8 +94,7 @@ export function LibraryPage({ mode = 'mine' }) {
   }, [storageKey]);
 
   const [isOpen, setIsOpen] = useState(true);
-  
-  // Modals state
+
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingCollection, setEditingCollection] = useState(null);
   const [readOnlyTarget, setReadOnlyTarget] = useState(null);
@@ -96,7 +102,6 @@ export function LibraryPage({ mode = 'mine' }) {
 
   const isPlayingRef = useRef(false);
 
-  // Deep link logic
   useEffect(() => {
     if (isPlayingRef.current) return;
     if (!isMine || !id || isLoading || error) return;
@@ -167,10 +172,13 @@ export function LibraryPage({ mode = 'mine' }) {
     handleCloseReadOnly();
   }
 
-  // Delegates to the hook — closes read-only, opens the multiplayer modal
   function handleMultiplayerFromReadOnly(collection) {
     mp.openMultiplayerFor(collection, {
-      onCloseReadOnly: () => setReadOnlyTarget(null),
+      onCloseReadOnly: () => {
+        setReadOnlyTarget(null);
+        setEditorOpen(false);
+        setEditingCollection(null);
+      },
     });
   }
 
@@ -192,6 +200,7 @@ export function LibraryPage({ mode = 'mine' }) {
 
   return (
     <BorderContainer border="all" padding="lg" className="space-y-8 pb-32">
+      {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-4xl font-extrabold tracking-tight text-ink leading-tight">{title}</h1>
@@ -199,15 +208,10 @@ export function LibraryPage({ mode = 'mine' }) {
         </div>
         <div className="flex items-center gap-2">
           {isMine ? (
-           <Button
-            variant="primary"
-            size="md"
-            onClick={handleCreate}
-            className="h-9 px-3"
-          >
-            <IconPlus className="w-4 h-4 shrink-0" />
-            <span className="hidden sm:inline ml-1.5">New</span>
-          </Button>
+            <Button variant="primary" size="md" onClick={handleCreate} className="h-9 px-3">
+              <IconPlus className="w-4 h-4 shrink-0" />
+              <span className="hidden sm:inline ml-1.5">New</span>
+            </Button>
           ) : (
             <Link to="/library" className="text-sm text-ink-muted hover:text-ink transition-colors">
               ← Back to my collections
@@ -216,6 +220,7 @@ export function LibraryPage({ mode = 'mine' }) {
         </div>
       </div>
 
+      {/* Toolbar */}
       <div className="flex items-center gap-2 flex-wrap">
         <div className="flex-1 min-w-[200px]">
           <SearchBar value={query} onChange={setQuery} placeholder="Search collections…" />
@@ -223,6 +228,7 @@ export function LibraryPage({ mode = 'mine' }) {
         <ViewToggle value={view} onChange={changeView} />
       </div>
 
+      {/* Body */}
       <div className="flex flex-col lg:flex-row gap-6 items-start">
         <div className="w-full lg:w-64 shrink-0">
           <div className="rounded-lg border border-border bg-surface p-4 lg:sticky lg:top-6">
@@ -272,22 +278,26 @@ export function LibraryPage({ mode = 'mine' }) {
         </div>
       </div>
 
-      <CollectionEditorModal 
-        open={editorOpen} 
-        onClose={handleCloseEditor} 
+      <CollectionEditorModal
+        open={editorOpen}
+        onClose={handleCloseEditor}
         onPlay={handlePlayFromEditor}
         onMultiplayer={handleMultiplayerFromReadOnly}
-        initialCollection={editingCollection} 
+        initialCollection={editingCollection}
+        disabledTypes={disabledTypes}
+        disabledReasons={disabledReasons}
       />
-      
-      <CollectionReadOnlyModal 
-        open={!!readOnlyTarget} 
-        onClose={handleCloseReadOnly} 
+
+      <CollectionReadOnlyModal
+        open={!!readOnlyTarget}
+        onClose={handleCloseReadOnly}
         onPlay={handlePlayFromReadOnly}
         onMultiplayer={handleMultiplayerFromReadOnly}
-        collection={readOnlyTarget} 
+        collection={readOnlyTarget}
+        disabledTypes={disabledTypes}
+        disabledReasons={disabledReasons}
       />
-      
+
       <WarningModal
         open={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={handleConfirmDelete}
         title="Delete collection?" description={deleteTarget ? `"${deleteTarget.name}" will be permanently removed.` : ''}

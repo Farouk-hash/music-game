@@ -6,7 +6,7 @@ export function ChoiceCard({ active, onClick, title, description, disabled }) {
       disabled={disabled}
       aria-pressed={active}
       className={[
-        'text-left p-3 rounded-md border transition-colors space-y-1',
+        'w-full h-full text-left p-3 rounded-md border transition-colors space-y-1', // <-- w-full h-full
         active
           ? 'bg-accent-soft border-accent text-ink'
           : 'bg-surface-2 border-border text-ink-muted hover:border-accent-2',
@@ -14,7 +14,7 @@ export function ChoiceCard({ active, onClick, title, description, disabled }) {
       ].join(' ')}
     >
       <p className="text-sm font-semibold">{title}</p>
-      <p className="text-[11px]">{description}</p>
+      <p className="text-[11px] leading-tight">{description}</p>
     </button>
   );
 }

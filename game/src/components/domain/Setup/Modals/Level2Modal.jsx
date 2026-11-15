@@ -1,7 +1,14 @@
 // game/src/components/domain/Setup/Modals/Level2Modal.jsx
 import { LevelModalWrapper } from './LevelModalWrapper.jsx';
 
-export function Level2Modal({ open, onClose, onPlay, disabledTypes = new Set(), reversedClipsCount = 0 }) {
+export function Level2Modal({
+  open, onClose, onPlay,
+  disabledTypes = new Set(),
+  disabledReasons,
+  reversedClipsCount = 0,
+  allowInstruments = true,
+  onQuestionTypeUnfavorited,
+}) {
   return (
     <LevelModalWrapper
       open={open}
@@ -10,8 +17,10 @@ export function Level2Modal({ open, onClose, onPlay, disabledTypes = new Set(), 
       level="2"
       title="Multiple questions per clip"
       disabledTypes={disabledTypes}
+      disabledReasons={disabledReasons}
       reversedClipsCount={reversedClipsCount}
-      allowInstruments={true}
+      allowInstruments={allowInstruments}
+      onQuestionTypeUnfavorited={onQuestionTypeUnfavorited}
     />
   );
 }

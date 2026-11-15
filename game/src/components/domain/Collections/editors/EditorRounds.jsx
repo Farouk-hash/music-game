@@ -1,15 +1,23 @@
 // game/src/components/domain/Collections/editor/EditorRounds.jsx
 import { RoundRow } from './RoundRow.jsx';
 import { CollapsibleSection } from '@/components/layout/CollapsibleSection.jsx';
-import { IconList , IconPlus } from '@/icons';
+import { IconList, IconPlus } from '@/icons';
 
 export function EditorRounds({
-  draft, disabledTypes, reversedClipsCount, addRound, removeRound, updateRound, moveRound, readOnly = false,
+  draft, 
+  disabledTypes, 
+  disabledReasons, // <-- Accept it
+  reversedClipsCount, 
+  addRound, 
+  removeRound, 
+  updateRound, 
+  moveRound, 
+  readOnly = false,
 }) {
   return (
     <CollapsibleSection
       open={true}
-      onToggle={() => {}} // In a modal, we can keep it always open, or add state if needed
+      onToggle={() => {}}
       title="Rounds"
       icon={<IconList className="w-5 h-5" />}
       meta={draft.rounds.length > 0 ? `(${draft.rounds.length})` : null}
@@ -24,6 +32,7 @@ export function EditorRounds({
               total={draft.rounds.length}
               levels={draft.levels}
               disabledTypes={disabledTypes}
+              disabledReasons={disabledReasons} // <-- Pass down to RoundRow
               reversedClipsCount={reversedClipsCount}
               onUpdate={(patch) => updateRound(i, patch)}
               onRemove={() => removeRound(i)}

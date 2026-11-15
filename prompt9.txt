@@ -1,4 +1,4 @@
-Here's the consolidated v72 handoff. It supersedes v70 and folds in everything from this session — the Sporcle heartbeat/lobby-wait work, the `force_close` action, the `AutoCloseBar`, and the matb3aa URL migration fix.
+Here is the complete, consolidated v78 prompt. It captures the fully refactored state of the project, including the tunable config system, the smart artist selection, and the final state of the streak system.
 
 ---
 
@@ -7,22 +7,22 @@ You are continuing a working project. **Do not re-derive the setup or re-verify 
 
 ## The Project
 
-Six pieces, plus a data pipeline:
+Six pieces, plus a data pipeline, plus a card game in design:
 
 1. **`admin/`** — build tool for curating audio clips, lyrics, artists, album years. Port 5173.
 2. **`game/`** — the player-facing quiz app. Port 5174 locally; deployed to Cloudflare Pages.
 3. **`server/`** — local Express + orchestration. Port 3001.
-4. **`music-game-wrangler/`** — Cloudflare Worker holding D1 + R2 (tracks, artists, lyrics, instruments, profiles, follows, invites).
+4. **`music-game-wrangler/`** — Cloudflare Worker holding D1 + R2 (tracks, artists, lyrics, instruments, profiles, follows, invites, streaks).
 5. **`host-sporcle-wrangler/`** — Durable Object service for Sporcle multiplayer.
 6. **`tools/ACE-Step-1.5/`** — Local AI model for style-transfer.
 
-The game does **not** go through Express. It fetches `music-game-wrangler` directly for solo/co-op, profiles, follows, and invites, and `host-sporcle-wrangler` for Sporcle.
+The game does **not** go through Express. It fetches `music-game-wrangler` directly for solo/co-op, profiles, follows, invites, **and streaks**, and `host-sporcle-wrangler` for Sporcle.
 
 ## Repository
 
 **GitHub:** `https://github.com/Farouk-hash/music-game` (private, monorepo)
 **Local repo root:** `E:\matb3aa-game\.git`
-**Last committed state:** v28 (initial commit `c2a9ad3`). Work from v29–v72 is **uncommitted**.
+**Last committed state:** v28 (initial commit `c2a9ad3`). Work from v29–v78 is **uncommitted**.
 
 **`.gitignore`:** Ignores `tools/`, `server/style-transfer-output/`, `server/instrumental-output/`, `*.mp3`, `*.wav`, `venv/`, `.venv/`, Python caches, `server/tmp-preview-test/`.
 
@@ -36,8 +36,8 @@ The game does **not** go through Express. It fetches `music-game-wrangler` direc
 | Admin app | `admin/` | 5173 | `http://localhost:5173` |
 | Game (local) | `game/` | 5174 | `http://localhost:5174` |
 | Game (deployed) | Pages | — | `https://music-game-9vn.pages.dev` |
-| Worker (music) | `music-game-wrangler/` | 8787 | `https://music-game-wrangler…workers.dev` |
-| Worker (Sporcle) | `host-sporcle-wrangler/` | 8788 | `https://host-sporcle-wrangler…workers.dev` |
+| Worker (music) | `music-game-wrangler/` | 8787 | `https://music-game-wrangler.abdulrahman-muhammad2090.workers.dev` |
+| Worker (Sporcle) | `host-sporcle-wrangler/` | 8788 | `https://host-sporcle-wrangler.abdulrahman-muhammad2090.workers.dev` |
 | ACE-Step API | `tools/ACE-Step-1.5/` | 8001 | `http://127.0.0.1:8001` |
 
 ## Styling System
@@ -52,7 +52,7 @@ The game does **not** go through Express. It fetches `music-game-wrangler` direc
 - `html, body, #root` uses `min-height: 100%` (not `height: 100%`) to allow native window scrolling.
 - `Shell.jsx` uses `flex-1 flex flex-col` on `<main>` and `flex-1` on the inner route wrapper.
 - `Play.jsx` and `Result.jsx` do **not** use `h-[calc(100vh)]` or inner `overflow-y-auto`. They rely on native window scroll with `pb-24` bottom padding.
-- `ChatModal` and `ReplaySettingsModal` are **always siblings** of the main route container so their `fixed` layouts don't interfere with page scrolling.
+- `ChatModal` and `ReplaySettingsModal` are **always siblings** of the main route container.
 
 ## Icons (`game/src/lib/icons.jsx`)
 
@@ -139,12 +139,6 @@ game/src/
     └── ChatModal.jsx             # modal with messages + input
 ```
 
-### Chat button behaviour
-
-- Unread count only counts messages from **other** players.
-- `lastReadId` persisted per room in `localStorage['sporcle:<code>:chat:lastReadId']`.
-- Style: `h-9 px-3` — matches utility buttons.
-
 ### Chat placement
 
 | Screen | Location |
@@ -189,11 +183,9 @@ Host-only, from `finished`:
 1. Mid-game roster wasn't updating when a player left.
 2. Result screen didn't reflect host leaves.
 3. Mobile tab-close is unreliable → needs server-side sweep.
-4. Rooms sat idle forever (host alone / nobody ready / host not starting) → wasted DO requests.
+4. Rooms sat idle forever → wasted DO requests.
 
-### The full design
-
-**Players have `left` values:**
+### Players have `left` values
 
 | Value | Meaning |
 |---|---|
@@ -201,13 +193,12 @@ Host-only, from `finished`:
 | `1` | explicit leave (button / tab-close beacon) — never auto-rejoined |
 | `2` | timed out (heartbeat) — auto-rejoins on next poll / ping |
 
-**Heartbeat = existing long-poll.** No separate heartbeat hook. Every `GET /state?since=N&playerId=X` updates X's `last_seen`. The DO sweeps stale players every 5s (SWEEP_INTERVAL_MS).
+**Heartbeat = existing long-poll.** No separate heartbeat hook. Every `GET /state?since=N&playerId=X` updates X's `last_seen`. The DO sweeps stale players every 5s (`SWEEP_INTERVAL_MS`).
 
 ### DO schema additions
 
 ```sql
 players.last_seen INTEGER NOT NULL DEFAULT 0
-
 room.lobby_wait_started_at INTEGER
 room.lobby_wait_reason     TEXT   -- 'alone' | 'no-ready' | 'host-idle' | NULL
 ```
@@ -217,72 +208,44 @@ Both are `ALTER TABLE`-migrated in the constructor with try/catch.
 ### Constants
 
 ```js
-const HEARTBEAT_TIMEOUT_MS       = 30000;   // 30s → mark left=2
-const LOBBY_HEARTBEAT_TIMEOUT_MS = 2*60000; // 2min in lobby (share code = slow)
+const HEARTBEAT_TIMEOUT_MS       = 30000;
+const LOBBY_HEARTBEAT_TIMEOUT_MS = 2 * 60000;
 const SWEEP_INTERVAL_MS          = 5000;
-const ALONE_TIMEOUT_MS           = 60000;   // client — alone window
-const NO_READY_TIMEOUT_MS        = 60000;   // client — nobody-ready window
-const HOST_IDLE_TIMEOUT_MS       = 60000;   // client — all ready, host not starting
+const ALONE_TIMEOUT_MS           = 60000;
+const NO_READY_TIMEOUT_MS        = 60000;
+const HOST_IDLE_TIMEOUT_MS       = 60000;
 ```
 
-### Lobby-wait reasons (server-side, `#refreshLobbyWaitWindow`)
+### Lobby-wait reasons
 
-Called after every player-list or ready-flag change:
-- `init`, `join`, `#leave`, `#rejoin`, `#ready`
+Called after `init`, `join`, `#leave`, `#rejoin`, `#ready`. `#refreshLobbyWaitWindow()`:
+- `'alone'` — `activeCount === 1 && hostCount === 1`
+- `'no-ready'` — `nonHostActive > 0 && readyNonHost === 0`
+- `'host-idle'` — `nonHostActive > 0 && readyNonHost === nonHostActive`
+- `null` — otherwise
 
-Logic:
-- **`'alone'`** — `activeCount === 1 && hostCount === 1`
-- **`'no-ready'`** — `nonHostActive > 0 && readyNonHost === 0`
-- **`'host-idle'`** — `nonHostActive > 0 && readyNonHost === nonHostActive` (all non-hosts ready, host hasn't started)
-- **`null`** — all other cases
+**If reason unchanged, timer preserved. If reason changes, `lobby_wait_started_at` resets to now.**
 
-**If reason is unchanged, timer is preserved.** If reason changes, `lobby_wait_started_at` resets to `now`.
-
-The reason + timestamp are exposed in state as:
-```js
-lobbyWaitStartedAt: room.lobby_wait_started_at ?? null,
-lobbyWaitReason:    room.lobby_wait_reason     ?? null,
-```
+Exposed in state as `lobbyWaitStartedAt` and `lobbyWaitReason`.
 
 ### `force_close` action
 
-Host-only, destroys the room:
-```js
-async #forceClose(player, room) {
-  if (!player.is_host) return { ok: false, error: 'Host only' };
-  await this.ctx.storage.deleteAll();
-  return { ok: true, version: 0 };
-}
-```
-
-Used by `no-ready` and `host-idle` expiry. `alone` uses `leave` (which naturally destroys when the host is the last player).
+Host-only, `deleteAll()`. Used for `no-ready` and `host-idle` expiry.
 
 ### `handleAction` idempotency (v72)
 
-When the room is already gone or the player row was hard-deleted, `leave` / `ping` / `rejoin` / `force_close` return `{ ok: true, version: 0 }` instead of `400`. This silences the `POST /action 400` that happened when a client's beacon raced with room destruction.
+When room or player is gone, `leave` / `ping` / `rejoin` / `force_close` return `{ ok: true, version: 0 }` instead of `400`. Silences the `POST /action 400` race with beacon.
 
-### Client-side: `AutoCloseBar.jsx`
+### Client-side `AutoCloseBar.jsx`
 
-```jsx
-<AutoCloseBar
-  startedAt={waitStartedAt}
-  durationMs={waitDurationMs}
-  onExpire={handleWaitExpired}
-  label={waitLabel}
-  sublabel={waitSublabel}
-/>
-```
+Green > 50%, yellow 20–50%, red < 20%. Fires `onExpire` once.
 
-- Green > 50%, yellow 20–50%, red < 20%.
-- Fires `onExpire` once when `remainingMs <= 0`.
+### Client-side `RoomPanel.jsx`
 
-### Client-side: `RoomPanel.jsx`
+Reads `state.lobbyWaitStartedAt` + `state.lobbyWaitReason`, renders `AutoCloseBar` when both set and phase is `lobby`. **Only the host** triggers the destroy. Non-hosts rely on the resulting `404` from their next poll.
 
-Reads `state.lobbyWaitStartedAt` + `state.lobbyWaitReason`, renders `AutoCloseBar` when both are set and phase is `lobby`. Only the **host** triggers the destroy (`leave` for `'alone'`, `forceClose` for `'no-ready'` / `'host-idle'`). Non-hosts rely on the resulting `404` from their next poll.
+### Client-side `Play.jsx`
 
-### Client-side: `Play.jsx`
-
-Added:
 ```jsx
 useEffect(() => {
   if (error?.status === 404) {
@@ -292,13 +255,11 @@ useEffect(() => {
 }, [error, navigate]);
 ```
 
-Non-host clients close their modal when the host destroys the room.
-
-### Client-side: `useSporclePresence.js`
+### Client-side `useSporclePresence.js`
 
 - **1. Instant leave** — beacon on `beforeunload` / `pagehide` → `left = 1`.
 - **2. Heartbeat fallback** — ping every 10s (skipped when tab hidden).
-- **3. Comeback** — auto-rejoin on `left === 2` unless the player explicitly left (`intentionalRef`).
+- **3. Comeback** — auto-rejoin on `left === 2` unless intentional.
 
 `leaveBeaconRaw(code, playerId)` in `sporcleApi.js` sends `text/plain` (no CORS preflight) with `keepalive: true` fallback.
 
@@ -313,35 +274,15 @@ const next = await sporcleApi.state(code, sinceRef.current, {
 
 `playerIdRef` (not in effect deps) so late-arriving identity doesn't restart the loop.
 
-### `sporcleApi.state` — sends `playerId` in query string
-
-```js
-state: (code, since = 0, { signal, playerId } = {}) => {
-  const qs = new URLSearchParams({ since: String(since) });
-  if (playerId) qs.set('playerId', playerId);
-  return request(`/host-sporcle/${code}/state?${qs.toString()}`, { signal });
-},
-```
-
 ### Route layer — `routes/state.js` uses `(ctx)` signature
 
-```js
-export async function handleState(ctx) {
-  const { env, url, code } = ctx;
-  const since = Number(url.searchParams.get('since') ?? '0');
-  const playerId = url.searchParams.get('playerId') ?? null;
-  const stub = getStub(env, code);
-  return json(await stub.getState(since, playerId));
-}
-```
-
-**⚠️ Router passes `ctx = { request, env, url, code, action, execCtx }` as a single arg.** Handler signatures must be `(ctx)`.
+**⚠️ Router passes `ctx = { request, env, url, code, action, execCtx }` as a single arg.**
 
 ### Behaviour matrix
 
 | Situation | `lobby_wait_reason` | Bar label | Destroy path |
 |---|---|---|---|
-| Host alone | `'alone'` | "Waiting for players…" | `leave` (deletes room when last player) |
+| Host alone | `'alone'` | "Waiting for players…" | `leave` |
 | ≥2 players, none ready | `'no-ready'` | "Waiting for everyone to ready up…" | `force_close` |
 | ≥2 players, all ready, host hasn't started | `'host-idle'` | "Everyone is ready…" | `force_close` |
 | Host clicks Start before 60s | cleared | bar disappears | game starts |
@@ -351,27 +292,11 @@ export async function handleState(ctx) {
 
 **Every reason transition resets the 60s window.**
 
-### Client files summary
-
-```
-game/src/
-├── components/domain/Sporcle/
-│   ├── AutoCloseBar.jsx         # NEW v71
-│   ├── RoomPanel.jsx            # updated
-│   └── ... (unchanged)
-├── hooks/sporcle/
-│   ├── useHostSporcle.js        # updated — passes playerId
-│   ├── useHostSporcleActions.js # updated — forceClose
-│   └── useSporclePresence.js    # updated — beacon + ping + rejoin
-└── lib/
-    └── sporcleApi.js            # updated — state w/ playerId, leaveBeaconRaw
-```
-
 ## MATB3AA MEDIA URL MIGRATION (v72)
 
 ### The bug
 
-matb3aa migrated from `/media/<file>.mp3` to **`/storage/media/<file>.mp3`** when they moved to a BeMusic-powered SPA. Old URLs return `200 text/html` (SPA shell), so `download()` in `server/scripts/instrumental/batch.js` silently saved HTML to `source.mp3`. `ffprobe` failed with "Failed to find two consecutive MPEG audio frames."
+matb3aa migrated from `/media/<file>.mp3` to **`/storage/media/<file>.mp3`** when they moved to a BeMusic-powered SPA. Old URLs return `200 text/html` (SPA shell). `download()` in `server/scripts/instrumental/batch.js` silently saved HTML to `source.mp3`. `ffprobe` failed with "Failed to find two consecutive MPEG audio frames."
 
 ### The fix
 
@@ -393,58 +318,511 @@ function absolutizeSrc(src) {
 
 ### Strict audio validation in `download()`
 
-Now rejects non-audio BEFORE saving:
+Rejects non-audio BEFORE saving:
 - Size `< 200_000` bytes → throw with preview
 - Magic bytes not MP3 (`0xFF 0xE0..`) / ID3 / MP4 (`ftyp`) → throw with preview
 
-Silent HTML-to-MP3 corruption is no longer possible.
+**Silent HTML-to-MP3 corruption is no longer possible.**
 
-### Confirmed working
+## NETWORK — NODE.JS HAPPY EYEBALLS FIX (v73)
+
+### The bug
+
+`GET /api/cloudflare/artists?limit=500` and `/api/cloudflare/genres` returned `502` with `AggregateError [ETIMEDOUT]`. Worker responds in a **browser**, but fails from Node. Node.js v20+ Happy Eyeballs bug.
+
+### The fix
+
+Added `--no-network-family-autoselection` to `package.json` scripts:
+
+```json
+"scripts": {
+  "dev": "concurrently -n server,admin -c blue,magenta \"npm:dev:server\" \"npm:dev:admin\"",
+  "dev:server": "node --no-network-family-autoselection --watch server/index.js",
+  "dev:admin": "npm --prefix admin run dev",
+  "build": "npm --prefix admin run build",
+  "start": "node --no-network-family-autoselection server/index.js",
+  "install:all": "npm install && npm --prefix admin install"
+}
+```
+
+**Entry point:** `E:\matb3aa-game\server\index.js`.
+
+**Fallback if flag unsupported (Node 18):** `--dns-result-order=ipv4first`.
+
+## STREAK SYSTEM v1 (v78 — COMPLETE & TUNABLE)
+
+### The model
+
+Three independent metrics:
+
+| Metric | Meaning | When it changes |
+|---|---|---|
+| **Streak** | Consecutive days showing up | +1 per **daily attempt** (pass or fail) |
+| **Points** | Skill / performance | + per correct answer, bonus on pass |
+| **Power** | Extra attempts to grind | 3 free/day + up to 3 bonus via ads |
+
+**Streak resets when you skip a day. Points never reset. Power resets daily.**
+
+### Multi-streak architecture
+
+- **Each player can have up to 3 active streaks.**
+- **Default** (`genre_id = NULL`) — game-picked daily rotation. Can be started any time. Cannot be abandoned.
+- **Genre streak** (`genre_id = X`) — player-picked. Can be abandoned. Abandoning **deletes its attempts** (fresh restart).
+- **Power pool is shared** across all streaks (3 base + 3 bonus per day, total 6 max).
+
+### D1 schema (three tables)
+
+```sql
+-- 1. Daily challenge config — one row per (date, genre)
+CREATE TABLE challenges (
+  challenge_date  TEXT NOT NULL,
+  genre_id        INTEGER,                         -- NULL = Default rotation
+  genre_name      TEXT NOT NULL,
+  artist_ids      TEXT NOT NULL,                   -- JSON
+  artist_names    TEXT NOT NULL,                   -- JSON
+  config          TEXT NOT NULL,                   -- JSON
+  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (challenge_date, genre_id)
+);
+
+-- 2. Streak state — one row per (profile, genre)
+CREATE TABLE profile_streaks (
+  profile_id           TEXT NOT NULL,
+  genre_id             INTEGER,
+  genre_name           TEXT,
+  current_streak       INTEGER NOT NULL DEFAULT 0,
+  longest_streak       INTEGER NOT NULL DEFAULT 0,
+  last_challenge_date  TEXT,
+  streak_points        INTEGER NOT NULL DEFAULT 0,
+  consecutive_failures INTEGER NOT NULL DEFAULT 0,
+  freeze_tokens        INTEGER NOT NULL DEFAULT 0,
+  power_attempts_used  INTEGER NOT NULL DEFAULT 0,
+  bonus_power_attempts INTEGER NOT NULL DEFAULT 0,
+  power_reset_date     TEXT,
+  updated_at           TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (profile_id, genre_id)
+);
+
+-- 3. Attempt log
+CREATE TABLE challenge_attempts (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  profile_id      TEXT NOT NULL,
+  challenge_date  TEXT NOT NULL,
+  genre_id        INTEGER,
+  mode            TEXT NOT NULL DEFAULT 'daily',
+  passed          INTEGER NOT NULL DEFAULT 0,
+  batches_done    INTEGER NOT NULL DEFAULT 0,
+  correct_count   INTEGER NOT NULL DEFAULT 0,
+  total_count     INTEGER NOT NULL DEFAULT 0,
+  points_earned   INTEGER NOT NULL DEFAULT 0,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- One daily attempt per (profile, date, genre). Power is unlimited.
+CREATE UNIQUE INDEX idx_attempts_daily_unique
+  ON challenge_attempts(profile_id, challenge_date, genre_id)
+  WHERE mode = 'daily';
+
+-- 4. profiles.total_points — shared currency
+ALTER TABLE profiles ADD COLUMN total_points INTEGER NOT NULL DEFAULT 0;
+```
+
+**Migrations:**
+- `0008_streaks.sql` — original tables (superseded)
+- `0009_power_mode.sql` — `mode` column (superseded)
+- `0010_power_limits.sql` — power columns on streaks
+- `0011_attempts_partial_unique.sql` — partial unique index
+- `0012_consecutive_failures.sql` — easy mode tracking
+- `0013_streaks_v2.sql` — **current schema** (multi-streak, clean slate)
+
+### The Challenge Config (SINGLE SOURCE OF TRUTH)
+
+`music-game-wrangler/src/controllers/streaks/challenge-config.js` holds **all tunable values**:
+
+```js
+export const CHALLENGE_CONFIG = {
+  // Power
+  powerAttemptsPerDay: 3,
+  maxBonusPower:       3,
+
+  // Streaks
+  maxActiveStreaks:    5,
+  roundsPerBatch: 1,
+  // Points rates
+  pointsPerCorrect:      2,     // daily
+  pointsPerCorrectPower: 1,     // power
+  dailyPassBonus:        5,
+  powerPassBonus:        2,
+  defaultGenreMultiplier: 1.5,  // Default mode worth 1.5× (harder)
+
+  // Challenge sizing
+  maxTotalQuestions:      30,   // hard cap per session
+  baseTotalQuestions:     6,    // Day 0 has 6 questions
+  perDayMultiplier:       2,    // growth per streak day
+  easyModeTotalQuestions: 6,    // when in easy mode
+  easyModeFailures:       3,    // fails before easy mode kicks in
+
+  // Batch sizing
+  earlyBatches: 2,              // day 0
+  lateBatches:  12,             // plateau
+  minQuestionsPerBatch: 3,
+  maxQuestionsPerBatch: 5,
+
+  // Levels
+  levelMultipliers: {
+    1: 1.0,
+    2: 1.2,
+    3: 1.5,
+  },
+};
+```
+
+**Zero hardcoded config anywhere in the client.** The client fetches this via `GET /streaks/config` and caches it in `ChallengeConfigContext.jsx`.
+
+### The 12-slot PRESET_DECK
+
+Also in `challenge-config.js`. Each preset has `requires` tags used for smart artist selection:
+
+```js
+export const PRESET_DECK = [
+  // Slot 0-1: Warm-up
+  { key: 'warmup_track', level: 2, types: ['name-track', 'name-album'], instruments: 'none', rendition: 'forward', reversed: 'no', answerMode: 'choose', timer: 20, requires: [] },
+  { key: 'warmup_artist', level: 2, types: ['name-artist', 'name-album'], instruments: 'none', rendition: 'forward', reversed: 'no', answerMode: 'choose', timer: 18, requires: [] },
+  // Slot 2-3: Foundations
+  { key: 'featured', level: 2, types: ['name-featured', 'name-position'], instruments: 'none', rendition: 'forward', reversed: 'no', answerMode: 'choose', timer: 18, requires: [] },
+  { key: 'mixed_audio', level: 2, types: ['name-track', 'name-artist', 'name-album'], instruments: 'none', rendition: 'forward', reversed: 'no', answerMode: 'choose', timer: 15, requires: [] },
+  // Slot 4-5: Lyrics
+  { key: 'lyrics_track', level: 2, types: ['lyrics-track'], instruments: 'none', rendition: 'forward', reversed: 'no', answerMode: 'choose', timer: 20, requires: ['lyrics'] },
+  { key: 'lyrics_mixed', level: 2, types: ['lyrics-artist', 'lyrics-album', 'lyrics-track'], instruments: 'none', rendition: 'forward', reversed: 'no', answerMode: 'choose', timer: 18, requires: ['lyrics'] },
+  // Slot 6-7: Instruments
+  { key: 'mixed_instruments', level: 2, types: ['name-track', 'name-artist'], instruments: 'mixed', rendition: 'forward', reversed: 'no', answerMode: 'choose', timer: 18, requires: ['instruments'] },
+  { key: 'all_instruments', level: 2, types: ['name-track', 'name-artist', 'name-album'], instruments: 'all', rendition: 'forward', reversed: 'no', answerMode: 'choose', timer: 20, requires: ['instruments'] },
+  // Slot 8-9: Reverse
+  { key: 'reversed_audio', level: 2, types: ['name-track', 'name-artist'], instruments: 'none', rendition: 'reverse', reversed: 'no', answerMode: 'choose', timer: 20, requires: [] },
+  { key: 'reversed_text', level: 2, types: ['name-track', 'name-artist'], instruments: 'none', rendition: 'forward', reversed: 'all', answerMode: 'choose', timer: 22, requires: [] },
+  // Slot 10-11: L3 finale
+  { key: 'l3_mix', level: 3, types: [], instruments: 'none', rendition: 'forward', reversed: 'no', answerMode: 'choose', timer: 25, requires: ['lyrics'] },
+  { key: 'l3_instruments', level: 3, types: [], instruments: 'all', rendition: 'forward', reversed: 'no', answerMode: 'choose', timer: 25, requires: ['lyrics', 'instruments'] },
+];
+```
+
+### The generator (`generator.js`)
+
+- `ensureChallenge(env, dateStr, genreId = null)` — generate or fetch for (date, genre).
+- **`genreId = null`** → game-picked rotation: rank viable genres by distinct track count, cycle by `(date - '2026-01-01') % genreCount`.
+- **`genreId = X`** → player-picked: use that genre, same daily artist rotation.
+- **`tracks` do NOT have `genre_id`.** Use `json_each(artists.genre_ids)`.
+- **Artist pick is smart**:
+  - Uses `COUNT(DISTINCT t.name)` (not rows — avoids counting multi-position clips twice)
+  - Uses `COUNT(DISTINCT i.track_name)` for instruments
+  - **Only requires lyrics if the challenge needs lyrics** (checks `PRESET_DECK` slice)
+  - **Only requires instruments if the challenge needs instruments**
+  - Top 30 by distinct track count
+  - Seeded shuffle
+  - **Anchor = #1 artist by track count** (always included for recognizability)
+- **`buildConfig(seed)`** shuffles presets **within phases** (2 slots each) for daily variety while preserving escalation.
+
+### The 12-slot escalation
 
 ```
-HTTP 200, Content-Type: audio/mpeg, Content-Length: 2523993
+Streak day 0 → 2 batches (warmup_track, warmup_artist)
+Streak day 1 → 3 batches
+Streak day 2 → 4 batches
+Streak day 3 → 5 batches
+...
+Streak day 10+ → 12 batches (full deck)
 ```
 
-Downloaded correctly through `batch.js` → demucs → segment output.
+Formula (client-side, from config):
+```js
+const easyMode = consecutiveFailures >= config.easyModeFailures;
+const totalBatches = easyMode
+  ? config.earlyBatches
+  : Math.min(streakDay + config.earlyBatches, config.lateBatches);
+const maxTotalQuestions = easyMode
+  ? config.easyModeTotalQuestions
+  : Math.min(config.baseTotalQuestions + streakDay * config.perDayMultiplier, config.maxTotalQuestions);
+const questionsPerBatch = Math.max(
+  config.minQuestionsPerBatch,
+  Math.min(config.maxQuestionsPerBatch, Math.floor(maxTotalQuestions / totalBatches))
+);
+```
 
-### What to remember for future pipelines
+**Easy mode** (3+ consecutive fails): `earlyBatches` warm-up batches. Pass resets failures to 0.
 
-**Any new pipeline that reads matb3aa media must use `/storage/media/`.** The API's `src` field still returns `/media/` (legacy) for backward compat. `src_local: true` in the API response is a hint that matb3aa's own frontend would rewrite the URL client-side.
+### Points formula
 
-## ENVIRONMENT — SETUP TRAPS
+**Per-attempt points:**
+- **Daily:** `round(correct × pointsPerCorrect × totalMultiplier) + dailyPassBonus` on pass
+- **Power:** `round(correct × pointsPerCorrectPower) + powerPassBonus` on pass
 
-- **Vite proxies:** `/api/game`, `/api/profiles`, `/api/follows`, `/api/invites`. Any new prefix needs an entry.
-- **JSX extension:** `.jsx` mandatory.
-- **PowerShell encoding:** ASCII-only, or save as UTF-8 with BOM.
-- **PowerShell + Arabic:** use `-Body ([System.Text.Encoding]::UTF8.GetBytes($json))` OR `[System.Uri]::EscapeDataString(...)` before building the URL. **Never pass Arabic inline through `cmd` curl.**
-- **`curl -I` with Arabic URLs** returns `400 Bad Request` (encoding error). Use `Invoke-WebRequest -UseBasicParsing` or open in a browser.
-- **`Invoke-WebRequest` needs `-UseBasicParsing`** on this system (IE engine unavailable).
-- **Windows pagefile:** Set to 32 GB, restart, for ACE-Step model loading.
-- **Node 18+**, Python 3.14 (venv), Python 3.12 (ACE-Step uv env).
-- **`yt-dlp.exe` at `C:\Tools\yt-dlp.exe`**, **ffmpeg.exe + ffprobe.exe at `C:\Tools\ffmpeg\bin\`**.
-- **`host-sporcle-wrangler` route handlers take `(ctx)`, not `(request, env, { code })`.** Router passes `ctx = { request, env, url, code, action, execCtx }`.
+**`totalMultiplier`** = `levelMultiplier × genreMultiplier`:
+- `levelMultiplier`: from `CHALLENGE_CONFIG.levelMultipliers` (1.0 / 1.2 / 1.5)
+- `genreMultiplier`: `defaultGenreMultiplier` (1.5×) for Default, `1.0` for genre streaks
 
-## STYLE TRANSFER PIPELINE
+**Critical:** `challenge.config` is a JSON **string** in D1. Must be `JSON.parse()`d before passing to `totalMultiplier`.
 
-Status: **working** with 20-second clips and `inference_steps: 10`. Full pipeline documented in v67. Known issues:
-- VAE decode OOMs on 3-minute clips (use 20-second clips).
-- `/query_result` returns empty `data: []` even after success (file exists at `tools/ACE-Step-1.5/.cache/acestep/tmp/api_audio/<uuid>.mp3`). The script currently hangs here.
-- Fix needed: poll the filesystem for the newest `.mp3` after submission.
+### `submitAttempt` flow (correct order)
+
+1. Validate input + `genre_id`
+2. Verify challenge exists for (date, genre)
+3. Fetch specific `profile_streaks` row
+4. Check shared power limit (summed across all streaks)
+5. Compute points
+6. **INSERT `challenge_attempts` FIRST** — UNIQUE constraint = source of truth
+7. Compute streak + failure changes
+8. Upsert `profile_streaks`
+9. Update `profiles.total_points`
+
+**`IS` operator** (not `=`) for NULL matching:
+```js
+'SELECT * FROM profile_streaks WHERE profile_id = ? AND genre_id IS ?'
+```
+
+### Streak logic
+
+```js
+if (mode === 'daily') {
+  if (lastDate === yesterday)   newStreak += 1;
+  else if (lastDate !== dateStr) newStreak = 1;
+  if (passed) newFailures = 0;
+  else        newFailures += 1;
+}
+```
+
+**Power doesn't touch streak or failures.**
+
+### API endpoints
+
+```
+GET  /streaks/config                       → return CHALLENGE_CONFIG
+GET  /streaks/challenge/:date?genreId=X    → generate + cache challenge
+GET  /streaks/list/:profileId              → all active streaks + shared power + total_points
+POST /streaks/attempt/:date                → submit (daily or power)
+POST /streaks/bonus-power/:date            → grant +1 bonus power (ad reward)
+POST /streaks/new                          → create new streak (genreId=null or X)
+POST /streaks/abandon                      → abandon genre streak (deletes attempts too)
+```
+
+**`/streaks/list/:profileId` response:**
+```json
+{
+  "ok": true,
+  "streaks": [
+    {
+      "genre_id": 21,
+      "genre_name": "اغاني-راب",
+      "is_default": false,
+      "current_streak": 1,
+      "longest_streak": 1,
+      "streak_points": 6,
+      "consecutive_failures": 1,
+      "last_challenge_date": "2026-11-06",
+      "daily_attempted": true
+    }
+  ],
+  "total_points": 18,
+  "power": {
+    "used": 1,
+    "limit": 3,
+    "remaining": 2,
+    "bonus": 0,
+    "max_bonus": 3,
+    "base_limit": 3
+  },
+  "today": "2026-11-06"
+}
+```
+
+**`max_bonus` and `base_limit` come from server-side `CHALLENGE_CONFIG`** — client never hardcodes them.
+
+### Server files
+
+```
+music-game-wrangler/src/
+├── controllers/streaks/
+│   ├── challenge-config.js     # CHALLENGE_CONFIG + PRESET_DECK (single source)
+│   ├── constants.js            # compatibility shim, re-exports from config
+│   ├── generator.js            # generateChallenge, ensureChallenge
+│   ├── attempt.js              # submitAttempt
+│   └── bonus-power.js          # grantBonusPower
+├── routes/
+│   └── streaks.js              # streakRoutes array
+└── routes/index.js             # imports streakRoutes
+```
+
+### Client files
+
+```
+game/src/
+├── context/
+│   └── ChallengeConfigContext.jsx    # Provider + useChallengeConfig hook
+├── lib/
+│   └── streakApi.js                  # fetch wrapper
+├── hooks/streaks/
+│   ├── useStreak.js                  # per-genre streak hook (uses context)
+│   └── useStreakList.js              # list all streaks (uses context)
+└── routes/Streak/
+    ├── Hub.jsx                       # streak list + genre picker
+    ├── Challenge.jsx                 # play a specific streak
+    ├── Result.jsx                    # post-challenge summary
+    └── fetchQuestions.js             # calls /round-dynamic per batch
+```
+
+**⚠️ CRITICAL:**
+- `ChallengeConfigProvider` **must** wrap the app in `main.jsx`
+- `useChallengeConfig()` returns fallback until server fetch completes
+- `staleTime: 60 * 60 * 1000` on the config query (1 hour cache)
+- `Challenge.jsx` **must** navigate to `/streak/result/${genreKey}` after submit
+- `App.jsx` **must** have `/streak/result/:genreKey` route (not just `/streak/result`)
+
+### Client routing
+
+```jsx
+<Route path="/streak" element={<StreakHub />} />
+<Route path="/streak/play/:genreKey" element={<StreakChallenge />} />
+<Route path="/streak/result/:genreKey" element={<StreakResult />} />
+```
+
+### `useStreak` returns
+
+`challenge, streak, power, dailyAttempted, loading, error, streakDay, consecutiveFailures, easyMode, totalBatches, questionsPerBatch, config, submit, submitting, grantBonus, grantingBonus`.
+
+### `useStreakList` returns
+
+`streaks, totalPoints, power, loading, error, startStreak, abandonStreak, grantBonus, grantingBonus, starting, abandoning`.
+
+### `Hub.jsx` — card states
+
+| State | Buttons shown |
+|---|---|
+| Daily not done | "Play daily" + "⚡ Power (N)" if power remains |
+| Daily done, power left | "✓ Daily done" + "⚡ Power (N)" |
+| Daily done, out of power (bonus available) | "✓ Daily done" + top banner "🎬 Watch a video for +1 attempt" |
+| Daily done, out of power (bonus capped) | "✓ Daily done" + "Max N streaks" fallback |
+
+**Cards are clickable** — clicking anywhere on the card navigates to `/streak/play/:genreKey`. Inner buttons stop propagation.
+
+**Abandon** button on genre streaks only. Points stay. Attempts deleted.
+
+### `Result.jsx` — power card states
+
+| State | UI |
+|---|---|
+| Power > 0 | "Play power (N left)" button |
+| Power = 0, bonus < max_bonus | "🎬 Watch a video for +1 attempt" button |
+| Power = 0, bonus = max_bonus | "Come back tomorrow" message |
+
+### Challenge → Result navigation
+
+**⚠️ Common bug:** `Challenge.jsx` must include `genreKey` in the result URL:
+
+```jsx
+navigate(`/streak/result/${genreKey}`);
+```
+
+Otherwise `Result.jsx` receives `undefined` and defaults to the wrong genre.
+
+### Abandon behavior
+
+```js
+async function abandonStreakHandler(request, env, params) {
+  // ... verify streak exists ...
+
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM challenge_attempts WHERE profile_id = ? AND genre_id = ?')
+      .bind(profileId, genreId),
+    env.DB.prepare('DELETE FROM profile_streaks WHERE profile_id = ? AND genre_id = ?')
+      .bind(profileId, genreId),
+  ]);
+
+  // Points stay in profiles.total_points (shared currency)
+  // challenges rows stay (shared config, not per-profile)
+
+  return json({ ok: true });
+}
+```
+
+**Abandon deletes attempts too** — restarting the genre gives a clean slate (no "Daily done" ghost).
+
+### Server-tunable, client-agnostic
+
+**Change a number in `challenge-config.js` → `npx wrangler deploy` → hard refresh client. No client rebuild needed.**
+
+Tested tunables:
+- `maxActiveStreaks: 3` → `5` → Hub shows "Up to 5 active streaks"
+- `baseTotalQuestions: 6` → `12` → Challenge shows 4 batches × 3 = 12 questions
+- `powerAttemptsPerDay: 3` → `5` → Hub shows 5 power attempts
+
+## CARD GAME — DESIGN ONLY (v73)
+
+A new game category, in design phase. **Not related to Sporcle or the streak system.**
+
+### Ground rules
+
+| Rule | Value |
+|---|---|
+| **Device** | Single device, pass-around |
+| **Players** | 2–4 |
+| **Win condition** | Last player alive |
+| **Turn** | Draw 1 card → challenge → resolve → pass |
+| **HP** | 10 per player |
+| **Points** | Tracked, secondary |
+| **Question source** | Existing D1 catalog |
+| **Suppository** | Attacker gets a card, defender gets a matching counter-card |
+
+### The Suppository mechanic
+
+| A wins | B wins | Outcome |
+|---|---|---|
+| ✓ | ✓ | BLOCKED |
+| ✓ | ✗ | DAMAGE DEALT |
+| ✗ | ✓ | ATTACKER TAKES PENALTY |
+| ✗ | ✗ | BOTH take 1 damage |
+
+### Deck structure
+
+- **Main** (30 cards) — Greed (~8), Attack (~12), Utility (~6)
+- **Counter** (10 cards) — Shield, Heal, Reflect, Dodge, Fortify, Counter, Sacrifice, Mirror, Revenge, Nope
+- **Wild** (2 cards) — Echo, Roulette
+
+### Status
+
+**Design only. No code has been written.**
 
 ## Environment & Known Open
 
-- **`wmic`** reports ~15 GB free RAM. Close dev servers before heavy CPU tasks.
-- **Arabic in curl:** Never via `cmd -d`. See PowerShell gotchas above.
-- **Leaderboard, L3 instruments, PublishedInstruments, Rendition chain:** Carried over, not built.
+- **`wmic`** reports ~15 GB free RAM.
+- **Arabic in curl:** Never via `cmd -d`. Use PowerShell `[System.Uri]::EscapeDataString` or open in browser.
+- **`curl -I` with Arabic URLs** returns `400`.
+- **Cloudflare D1 `datetime('now')` returns UTC.** Egypt is UTC+3 (EEST, April–October), UTC+2 (EET, rest of year).
+- **Node 18+**, Python 3.14 (venv), Python 3.12 (ACE-Step uv env).
+- **`yt-dlp.exe` at `C:\Tools\yt-dlp.exe`**, **ffmpeg + ffprobe at `C:\Tools\ffmpeg\bin\`**.
+- **`host-sporcle-wrangler` route handlers take `(ctx)`**. `music-game-wrangler` route handlers take `(request, env, params)`.
+
+### Known Open / Broken
+
+1. **Streak — batches may have <3 questions** (v78). `/round-dynamic` needs server-side top-up to enforce `minQuestions`. Client requests `minQuestions: N` but server ignores it.
+2. **Streak — L3 instruments not supported** by `round-sets.js`. Silent fallback to traditional.
+3. **Streak — reversed text untested.** Scrambled Arabic may not render.
+4. **Streak — typed input not wired.** `answerMode: 'type'` slot exists, unused.
+5. **Streak — date mismatch risk.** Server uses UTC date. Players near midnight local time see off-by-one.
+6. **Card game — design only.**
+7. **Style transfer polling** — `/query_result` returns empty `data: []`.
+8. **Anti-skew round-robin** — unverified.
+9. **L3 instruments** — `Level3Modal` sets `allowInstruments={false}`.
+10. **PublishedInstruments.jsx** — not built.
+11. **Rendition chain** — `useRoundMultiplayer.js` + `PlayMulti.jsx` missing.
+12. **Favourite cap feedback** — silent 400.
+13. **Orphaned profiles** — placeholder nicknames accumulate.
 
 ## Commands
 
 ```cmd
-:: Local dev
+:: Local dev (root)
 cd E:\matb3aa-game && npm run dev
-cd E:\matb3aa-game\game && npm run dev
 
-:: Workers (dev)
+:: Workers
 cd E:\matb3aa-game\music-game-wrangler && npx wrangler dev --port 8787
 cd E:\matb3aa-game\host-sporcle-wrangler && npx wrangler dev --port 8788
 
@@ -456,21 +834,22 @@ cd E:\matb3aa-game\game
 npm run build
 npx wrangler pages deploy dist --project-name=music-game --branch=production
 
-:: Instrumental pipeline
-cd E:\matb3aa-game\server\scripts\instrumental
-node batch.js --tracks-file=<path>
-node upload.js --tracks-file=<path>
+:: D1 migrations
+cd E:\matb3aa-game\music-game-wrangler
+npx wrangler d1 execute music-game-db --remote --file=./migrations/0013_streaks_v2.sql
 ```
 
 ## Most Likely Next Tasks
 
-1. **Fix the style-transfer polling** — patch `style_cover.py` to detect the generated MP3 in `.cache/acestep/tmp/api_audio/` when `/query_result` returns empty.
-2. **Anti-skew round-robin verification** — 5× L1 curl with `instruments=all`, count artist slugs.
-3. **Enable L3 instruments** — flip `allowInstruments={true}` on `Level3Modal`, add `source` to `Play3.jsx`'s `QuestionCard`.
-4. **Build `PublishedInstruments.jsx`** — browse/delete uploaded instruments.
-5. **Favourite cap feedback** — toast on 100/kind, 300 total limits.
+1. **Server-side top-up in `/round-dynamic`** — enforce `minQuestions: N`. Currently 1-question batches make the 60% threshold binary.
+2. **Test the tunable config pipeline end-to-end** — change `baseTotalQuestions` on server, deploy, verify client picks it up without rebuild.
+3. **Test smart artist selection** — verify warmup-only challenges don't filter out artists without lyrics, but lyrics challenges do.
+4. **Card game** — finalize design questions.
+5. **Fix style-transfer polling.**
+6. **Anti-skew round-robin verification.**
+7. **L3 instruments.**
 
-**Recommended next step:** item 1 — fix the style-transfer polling script so it doesn't hang when the API doesn't report the final file path.
+**Recommended next step:** item 2 — verify the tunable config system works end-to-end. It's the milestone that makes all future tuning trivial.
 
 Ask what the user wants to work on next.
 
@@ -478,26 +857,31 @@ Ask what the user wants to work on next.
 
 ## END OF PROMPT
 
-Save this as `E:\matb3aa-game\handoff-v72.md`. Paste it as the first message of your next session.
+Save this as `E:\matb3aa-game\handoff-v78.md`. Paste it as the first message of your next session.
 ```
 
 ---
 
-## What's new in v72 (vs v70)
+## What's new in v78 (vs v77)
 
 | Section | Change |
 |---|---|
-| **SPORCLE — HEARTBEAT + LOBBY-WAIT TIMERS** | New full section — `last_seen` + `left=2` semantics, `lobby_wait_started_at` + `lobby_wait_reason` with three reasons (`alone` / `no-ready` / `host-idle`), `force_close` action, `AutoCloseBar` component, `RoomPanel` integration, `Play.jsx` 404 close, `useHostSporcle` `playerId` plumbing, `state.js` `(ctx)` signature, `handleAction` idempotency |
-| **MATB3AA MEDIA URL MIGRATION** | New section — `/media/` → `/storage/media/` migration, `absolutizeSrc` normalization, strict audio validation in `download()` |
-| **ENVIRONMENT — SETUP TRAPS** | Added PowerShell `-UseBasicParsing`, `EscapeDataString`, curl `400` on Arabic, route `(ctx)` signature |
-| **Most Likely Next Tasks** | Unchanged — still #1 style-transfer polling |
-| **Repository** | "Work from v29–v72 is uncommitted" |
+| **STREAK SYSTEM v1** | Marked **TUNABLE**. All values in `challenge-config.js`. Server-tunable. |
+| **Challenge Config** | Full `CHALLENGE_CONFIG` and `PRESET_DECK` documented with `requires` tags |
+| **Smart Artist Selection** | Phase-aware counting (DISTINCT tracks), conditional lyrics/instruments filters, anchor + shuffle |
+| **Generator** | Uses `PRESET_DECK.length` instead of hardcoded `MAX_BATCHES`. PHASES auto-derives. |
+| **BuildConfig** | Shuffles within phases for daily variety while preserving escalation |
+| **Client** | `ChallengeConfigContext.jsx` is the single source. No hardcoded numbers anywhere. |
+| **Known Open** | Streak items listed first (batches <3, L3 instruments, reversed text, typed input, date mismatch) |
+| **Most Likely Next Tasks** | Reordered — verify config pipeline is #1 |
 
 The document is self-contained. A fresh model knows:
-- The full Sporcle heartbeat + lobby-wait timer system (three reasons, four actions, six files)
-- The DO schema (players.last_seen, room.lobby_wait_*)
-- matb3aa media lives at `/storage/media/`, not `/media/`
-- The `download()` function rejects non-audio before saving
-- Route handlers in `host-sporcle-wrangler` take `(ctx)`
-- PowerShell `Invoke-WebRequest` needs `-UseBasicParsing`
-- Exactly what remains: style-transfer polling fix, anti-skew verification, L3 instruments, PublishedInstruments, favourite cap feedback
+- The streak system is **complete and tunable** — all numbers in `challenge-config.js`
+- The client fetches config via `/streaks/config` and caches it in `ChallengeConfigContext`
+- Changing a value in `challenge-config.js` + redeploying worker is the entire tuning workflow
+- Smart artist selection: `COUNT(DISTINCT t.name)` for accurate counts, phase-aware lyrics/instruments filters, anchor + shuffle
+- `PRESET_DECK` has 12 slots with `requires` tags
+- The 3 metrics (streak/points/power), the 4 API endpoints, the 3 DB tables
+- The `:genreKey` URL param is critical for result screen matching
+- Abandon deletes attempts (clean slate)
+- The known issues and next steps

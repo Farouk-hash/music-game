@@ -4,15 +4,14 @@ import { HeartButton } from "../../Profile/HeartButton";
 import { useFavoriteToggles } from '@/hooks/setup/useFavoriteToggles.js';
 import { DISABLED_HINTS } from "@/constants/questionTypes";
 
-
 const ALL_VALUES = ALL_TYPES.map(t => t.value);
 
-
-
 export function QuestionTypePicker({
-    value = [],
+  value = [],
   onChange,
   disabledTypes = new Set(),
+  disabledReasons,
+  disabled = false,
   onUnfavorited,
 }) {
   const { isQuestionTypeFavorite, toggleQuestionType } = useFavoriteToggles();
@@ -25,7 +24,7 @@ export function QuestionTypePicker({
     value.every(v => availableValues.includes(v));
 
   function toggle(type) {
-    if (disabledTypes.has(type)) return;
+    if (disabled || disabledTypes.has(type)) return;
     const next = value.includes(type)
       ? value.filter(v => v !== type)
       : [...value, type];
@@ -33,6 +32,7 @@ export function QuestionTypePicker({
   }
 
   function chooseAll() {
+    if (disabled) return;
     if (allSelected) onChange([]);
     else onChange([...availableValues]);
   }
@@ -40,11 +40,10 @@ export function QuestionTypePicker({
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-2">
-        {/* Mixed preset */}
         <button
           type="button"
           onClick={chooseAll}
-          disabled={availableValues.length === 0}
+          disabled={disabled || availableValues.length === 0}
           aria-pressed={allSelected}
           className={[
             'rounded-md border px-4 py-3 text-left transition-colors',
@@ -62,29 +61,41 @@ export function QuestionTypePicker({
           </p>
         </button>
 
-        {/* Individual types */}
         {ALL_TYPES.map((opt) => {
-          const disabled = disabledTypes.has(opt.value);
-          const selected = !disabled && value.includes(opt.value);
+          // 1. Visually "unavailable" if it's in disabledTypes
+          const isUnavailable = disabledTypes.has(opt.value);
+          
+          // 2. Can click only if not disabled (readOnly) and not unavailable
+          const canClick = !disabled && !isUnavailable;
+          
+          // 3. Selected only if it's in the value array
+          const selected = value.includes(opt.value);
+          
           const favourite = isQuestionTypeFavorite(opt.value);
+          const reason = disabledReasons?.get(opt.value) ?? DISABLED_HINTS[opt.value] ?? 'Not available.';
+          
           return (
             <div
               key={opt.value}
               className={[
                 'relative rounded-md border transition-colors',
-                'disabled:opacity-40 disabled:cursor-not-allowed',
                 selected
                   ? 'bg-accent-soft border-accent text-ink'
-                  : 'bg-surface-2 border-border text-ink-muted hover:border-accent-2 hover:text-ink',
-                disabled ? 'opacity-40 cursor-not-allowed' : '',
+                  : 'bg-surface-2 border-border text-ink-muted',
+                // Apply "unavailable" visual style if it's missing data
+                isUnavailable ? 'opacity-40 cursor-not-allowed' : '',
+                // Apply "read-only" visual style (slightly muted but not greyed)
+                disabled && !isUnavailable ? 'opacity-80 cursor-default' : '',
+                // Hover only if clickable
+                canClick && !selected ? 'hover:border-accent-2 hover:text-ink' : '',
               ].join(' ')}
             >
               <button
                 type="button"
                 onClick={() => toggle(opt.value)}
-                disabled={disabled}
+                disabled={!canClick}
                 aria-pressed={selected}
-                title={disabled ? DISABLED_HINTS[opt.value] : undefined}
+                title={isUnavailable ? reason : undefined}
                 className="w-full text-left px-4 py-3 disabled:cursor-not-allowed"
               >
                 <p className="text-sm font-semibold flex items-center gap-1.5 pr-8">
@@ -92,13 +103,11 @@ export function QuestionTypePicker({
                   {opt.label}
                 </p>
                 <p className="text-xs mt-0.5 opacity-80 pr-8">
-                  {disabled ? DISABLED_HINTS[opt.value] : opt.hint}
+                  {isUnavailable ? reason : opt.hint}
                 </p>
               </button>
 
-              {/* Heart — absolutely positioned top-right */}
               <div className="absolute top-2 right-2">
-                
                 <HeartButton
                   variant="chip"
                   active={favourite}
@@ -106,9 +115,8 @@ export function QuestionTypePicker({
                     try {
                       await toggleQuestionType(opt.value);
                       if (favourite) onUnfavorited?.(opt.value);
-                    } catch {
-                      // ignore                    
-                  }}}
+                    } catch {}
+                  }}
                   label={
                     favourite
                       ? 'Remove question type from favourites'

@@ -1,10 +1,15 @@
 # server/scripts/style-transfer/style_cover.py
 #
-# End-to-end: source audio → instrumental stem → style-transfer instrumental.
+# End-to-end: source audio → instrumental stem → style-transfer cover.
 #
 # Pipeline:
 #   1. Demucs --two-stems=vocals → keeps the "no_vocals" stem as instrumental.mp3
-#   2. ACE-Step API (localhost:8001) in cover mode → styled instrumental
+#   2. ACE-Step API (localhost:8001) in cover mode → styled remix
+#
+# Critical parameters (learned from ACE-Step bug reports):
+#   cover_noise_strength = 0.0   → >0 can silence or garble the output
+#   audio_cover_strength = 0.65  → recognizable but transformed
+#   inference_steps = 50         → official recommendation for base model
 
 import os
 import sys
@@ -72,7 +77,7 @@ def extract_instrumental(input_audio: Path, output_dir: Path) -> Path:
 
     track_slug = input_audio.stem
     no_vocals_mp3 = output_dir / "htdemucs" / track_slug / "no_vocals.mp3"
-    
+
     if not no_vocals_mp3.exists():
         # Fallback check for WAV
         no_vocals_wav = output_dir / "htdemucs" / track_slug / "no_vocals.wav"
@@ -103,8 +108,8 @@ def render_cover(instrumental_mp3: Path, output_dir: Path, style: str) -> Path:
 
     output_mp3 = output_dir / f"cover-{slugify(style)}.mp3"
 
-    # ── 1. Init the DiT model
-    print("  Loading ACE-Step model...")
+    # ── 1. Init the DiT model (base — cover works best on base)
+    print("  Loading ACE-Step model (acestep-v15-base)...")
     try:
         init_resp = requests.post(
             f"{ACE_API_BASE}/v1/init",
@@ -121,26 +126,29 @@ def render_cover(instrumental_mp3: Path, output_dir: Path, style: str) -> Path:
     # ACE-Step project root and send a relative path.
     staged_audio_name = "src_audio.mp3"
     staged_audio_path = ACE_STEP_ROOT / staged_audio_name
-    
+
     print(f"  Staging audio for API...")
     shutil.copy(str(instrumental_mp3), str(staged_audio_path))
 
-    # ── 3. Submit the cover job
-    caption = f"{style} instrumental cover, {style_prompt(style)}"
+    # ── 3. Submit the cover job (with the critical parameter fixes)
+    caption = f"{style} cover, {style_prompt(style)}"
     payload = {
         "prompt": caption,
         "lyrics": "[instrumental]",
-        "src_audio_path": staged_audio_name,  # Relative path!
+        "src_audio_path": staged_audio_name,   # Relative path!
         "task_type": "cover",
-        "audio_cover_strength": 0.7,
-        "cover_noise_strength": 0.5,
-        "inference_steps": 20,
+        # ── Critical fixes ──
+        "cover_noise_strength": 0.0,           # was 0.5 — bug: >0 silences output
+        "audio_cover_strength": 0.65,          # was 0.7 — recognizable but transformed
+        "inference_steps": 50,                 # was 20 — official rec. for base model
+        # ── Standard ──
         "audio_format": "mp3",
         "guidance_scale": 7.0,
         "batch_size": 1,
     }
-    print(f"  Submitting job (this may take a few minutes on CPU)...")
-    
+    print(f"  Submitting job (this may take 15–30 min on CPU for a full song)...")
+    print(json.dumps(payload, indent=2))
+
     try:
         resp = requests.post(f"{ACE_API_BASE}/release_task", json=payload, timeout=30)
         if not resp.ok:
@@ -165,23 +173,29 @@ def render_cover(instrumental_mp3: Path, output_dir: Path, style: str) -> Path:
 
     # ── 4. Poll /query_result
     audio_url = None
+    attempts = 0
     while True:
+        attempts += 1
         try:
-            poll = requests.post(f"{ACE_API_BASE}/query_result", json={"task_id": task_id}, timeout=30)
+            poll = requests.post(
+                f"{ACE_API_BASE}/query_result",
+                json={"task_id": task_id},
+                timeout=30,
+            )
             poll.raise_for_status()
             status = poll.json()
         except requests.exceptions.RequestException as e:
-            print(f"  Poll error: {e}. Retrying...")
+            print(f"  [{attempts}] poll error: {e}. retrying...")
             time.sleep(5)
             continue
 
         if isinstance(status, dict) and "data" in status and isinstance(status["data"], dict):
             status = status["data"]
 
-                # Log the full response periodically so we can see what's happening
-        print(f"  … {status}")
+        # Log every 6th poll (30s) to reduce console noise
+        if attempts % 6 == 1:
+            print(f"  [{attempts}] {json.dumps(status)[:300]}")
 
-        # Some servers return "progress: 0.5" and status "processing"
         state = str(
             status.get("status")
             or status.get("state")
@@ -189,7 +203,7 @@ def render_cover(instrumental_mp3: Path, output_dir: Path, style: str) -> Path:
             or "unknown"
         ).lower()
 
-        # Broad "done" detection
+        # Broad "done" detection — any URL-like field
         if any(k in status for k in ("audio_url", "result_url", "output_url", "url")):
             audio_url = (
                 status.get("audio_url")
@@ -203,7 +217,6 @@ def render_cover(instrumental_mp3: Path, output_dir: Path, style: str) -> Path:
                 break
 
         if state in ("completed", "success", "done", "finished", "complete"):
-            # Try once more to find the URL
             audio_url = (
                 status.get("audio_url")
                 or status.get("url")
@@ -213,7 +226,6 @@ def render_cover(instrumental_mp3: Path, output_dir: Path, style: str) -> Path:
             )
             if audio_url:
                 break
-            # If no URL but marked done, log and keep going
             print(f"  ⚠ status={state} but no URL found — continuing")
             time.sleep(5)
             continue
@@ -222,7 +234,7 @@ def render_cover(instrumental_mp3: Path, output_dir: Path, style: str) -> Path:
             raise SystemExit(f"Generation failed: {status.get('error') or status}")
 
         time.sleep(5)
-        
+
     if not audio_url:
         raise SystemExit(f"No audio URL in completed result: {status}")
 
@@ -230,7 +242,7 @@ def render_cover(instrumental_mp3: Path, output_dir: Path, style: str) -> Path:
     print(f"  Downloading: {audio_url}")
     if not audio_url.startswith("http"):
         audio_url = f"{ACE_API_BASE}{audio_url}"
-    
+
     try:
         audio_resp = requests.get(audio_url, timeout=120)
         audio_resp.raise_for_status()
@@ -249,6 +261,7 @@ def render_cover(instrumental_mp3: Path, output_dir: Path, style: str) -> Path:
 def style_prompt(style: str) -> str:
     presets = {
         "jazz":     "smooth saxophone, upright bass, brushed drums, lounge piano, warm vinyl",
+        "saxophone":"warm tenor saxophone lead, smooth jazz, brushed drums, upright bass, lounge piano",
         "rock":     "distorted electric guitar, driving drums, punchy bass, arena rock feel",
         "lofi":     "warm tape hiss, mellow keys, soft breakbeat, relaxed hip-hop groove",
         "synth":    "retro synthwave, pulsing analog bass, gated drums, neon pads",
@@ -262,7 +275,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", help="Path to the source audio file (mp3/wav)")
     ap.add_argument("--instrumental", help="Path to an already-extracted no_vocals.mp3 (skips Demucs)")
-    ap.add_argument("--style", default="jazz", help="Target style (jazz, rock, lofi, etc.)")
+    ap.add_argument("--style", default="jazz", help="Target style (jazz, saxophone, rock, lofi, synth, acoustic)")
     ap.add_argument("--out", default=str(DEFAULT_OUT), help="Output root directory")
     ap.add_argument("--skip-cover", action="store_true", help="Only run instrumental separation")
     args = ap.parse_args()
@@ -280,8 +293,6 @@ def main():
         if not instrumental.exists():
             raise SystemExit(f"Instrumental file not found: {instrumental}")
 
-        # Derive the slug from the Demucs layout:
-        #   <out_root>/<slug>/htdemucs/<track>/no_vocals.mp3
         p = instrumental.parent
         while p.name and p.name != "htdemucs" and p.parent != p:
             p = p.parent
@@ -293,8 +304,6 @@ def main():
         print(f"  Source: {instrumental}")
         print(f"  Output: {output_dir}")
 
-        # Normalize to <output_dir>/instrumental.mp3 so ACE-Step has a stable
-        # path and the cover lands next to a known file.
         instrumental_final = output_dir / "instrumental.mp3"
         if instrumental.resolve() != instrumental_final.resolve():
             run([
@@ -330,6 +339,13 @@ def main():
         "style":        args.style,
         "instrumental": str(instrumental),
         "cover":        str(cover) if cover else None,
+        "parameters": {
+            "task_type": "cover",
+            "cover_noise_strength": 0.0,
+            "audio_cover_strength": 0.65,
+            "inference_steps": 50,
+            "guidance_scale": 7.0,
+        },
         "elapsed_s":    elapsed,
     }
     (output_dir / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")

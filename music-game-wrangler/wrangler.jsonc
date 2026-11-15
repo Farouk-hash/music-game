@@ -3,6 +3,8 @@
   "name": "music-game-wrangler",
   "main": "src/index.js",
   "compatibility_date": "2026-09-26" , 
+  
+
 
    "d1_databases": [
     {
@@ -12,7 +14,7 @@
       "remote": true
     }
   ],
-  
+
    "r2_buckets": [
     {
       "binding": "AUDIO",

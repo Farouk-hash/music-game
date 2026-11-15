@@ -17,7 +17,7 @@ export default {
         const result = await env.DB
           .prepare('SELECT COUNT(1) AS count FROM genres')
           .first();
-        
+
         const res = json({ ok: true, time: new Date().toISOString(), genres: result.count });
         Object.entries(CORS_HEADERS).forEach(([k, v]) => res.headers.set(k, v));
         return res;
@@ -39,13 +39,12 @@ export default {
     // ── Invoke the controller ───────────────────────────────
     try {
       const response = await match.handler(request, env, match.params);
-      // Inject CORS headers into the successful response
       Object.entries(CORS_HEADERS).forEach(([k, v]) => response.headers.set(k, v));
       return response;
     } catch (e) {
       console.error('[worker error]', e);
       const res = error(e.message, 500);
-      Object.entries(CORS_HEADERS).forEach(([k, v]) => response.headers.set(k, v));
+      Object.entries(CORS_HEADERS).forEach(([k, v]) => res.headers.set(k, v));  // ← FIXED
       return res;
     }
   },

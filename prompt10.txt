@@ -1,4 +1,4 @@
-Here is the consolidated **v76 handoff**. Save as `E:\matb3aa-game\handoff-v76.md`, paste as the first message of the next session. It supersedes v75.
+Here is the consolidated **v77 handoff**. Save as `E:\matb3aa-game\handoff-v77.md`, paste as the first message of the next session. It supersedes v75 and v76.
 
 ---
 
@@ -9,24 +9,37 @@ You are continuing a working project. **Do not re-derive the setup or re-verify 
 
 Six pieces, plus a data pipeline, plus a card game in design:
 
-1. **`admin/`** — build tool for curating audio clips, lyrics, artists, album years. Port 5173.
+1. **`admin/`** — build tool for curating audio clips, lyrics, artists, album years, templates. Port 5173.
 2. **`game/`** — the player-facing quiz app. Port 5174 locally; deployed to Cloudflare Pages.
 3. **`server/`** — local Express + orchestration. Port 3001.
-4. **`music-game-wrangler/`** — Cloudflare Worker holding D1 + R2 (tracks, artists, lyrics, instruments, profiles, follows, invites, collections).
+4. **`music-game-wrangler/`** — Cloudflare Worker holding D1 + R2 (tracks, artists, lyrics, instruments, profiles, follows, invites, collections, templates).
 5. **`host-sporcle-wrangler/`** — Durable Object service for Sporcle multiplayer.
 6. **`tools/ACE-Step-1.5/`** — Local AI model for style-transfer.
 
-The game does **not** go through Express. It fetches `music-game-wrangler` directly for solo/co-op, profiles, follows, invites, and collections, and `host-sporcle-wrangler` for Sporcle.
+The game does **not** go through Express. It fetches `music-game-wrangler` directly for solo/co-op, profiles, follows, invites, collections, and templates, and `host-sporcle-wrangler` for Sporcle.
 
 ## Repository
 
 **GitHub:** `https://github.com/Farouk-hash/music-game` (private, monorepo)
 **Local repo root:** `E:\matb3aa-game\.git`
-**Last committed state:** v28 (initial commit `c2a9ad3`). Work from v29–v76 is **uncommitted**.
+**Last committed state:** v28 (initial commit `c2a9ad3`). Work from v29–v77 is **uncommitted**.
 
 **`.gitignore`:** Ignores `tools/`, `server/style-transfer-output/`, `server/instrumental-output/`, `*.mp3`, `*.wav`, `venv/`, `.venv/`, Python caches, `server/tmp-preview-test/`.
 
 **`.env.production` is TRACKED** and contains `VITE_API_BASE0`, `VITE_API_BASE`, `VITE_SPORCLE_BASE`.
+
+**`admin/.env.local` is NOT tracked** and contains:
+```
+VITE_CF_BASE=https://music-game-wrangler.abdulrahman-muhammad2090.workers.dev
+VITE_ADMIN_KEY=<secret>
+```
+
+**`music-game-wrangler/.dev.vars` is NOT tracked** and contains:
+```
+ADMIN_KEY=dev-secret-change-me
+```
+
+The deployed Worker's `ADMIN_KEY` is a **Cloudflare secret** (`npx wrangler secret put ADMIN_KEY`), NOT a `vars` entry.
 
 ## Architecture & Ports
 
@@ -44,172 +57,146 @@ The game does **not** go through Express. It fetches `music-game-wrangler` direc
 
 `game/vite.config.js` reads `VITE_API_BASE0` from env via `loadEnv` (falls back to the hardcoded Worker URL).
 
-- **`@/` alias** → `game/src/`.
-  - `resolve.alias` in `vite.config.js` for build.
-  - `jsconfig.json` (`"paths": { "@/*": ["./src/*"] }`) for IDE autocomplete.
-- **`jsconfig.json` uses `./src/*` (no `baseUrl`)** — `baseUrl` is deprecated in TS 5.x.
-- **Restart `npm run dev`** after changing `vite.config.js` or `jsconfig.json` — neither hot-reloads.
-- **No dead proxies.** Only `/api/game` is proxied. `/api/profiles`, `/api/follows`, `/api/invites` were removed (client calls those via `BASE` directly). Collections also uses `BASE` directly.
+- **`@/` alias** → `game/src/`. Uses `resolve.alias` + `jsconfig.json` paths.
+- **`admin/`** — `VITE_CF_BASE` env var points fetches at the Worker directly.
+- **No dead proxies.** Only `/api/game` is proxied. Profiles/follows/invites/collections/templates use `BASE` or `VITE_CF_BASE` directly.
 
 ## Styling System
 
 - `game/src/styles/tokens.css` — the ONE file with hex values.
 - `game/tailwind.config.js` — maps utility classes to CSS variables.
 - **Valid tokens:** `bg-bg`, `bg-surface`, `bg-surface-2`, `text-ink`, `text-accent`, `text-wrong`, `ring-accent`, etc. Opacity modifiers (`/40`) DO NOT WORK on token-mapped classes.
-- **Standard heights:** `h-9` for section actions, `h-10` for tab pills and header buttons, `h-11` for inputs, `h-11`/`h-12` for modal footers.
+- **Standard heights:** `h-9` for section actions, `h-10` for tab pills and header buttons, `h-11` for inputs and modal footers.
 
 ## Layout
 
-- `html, body, #root` uses `min-height: 100%`.
+- `html, body, #root` uses `min-height: 100%` (not `height: 100%`).
 - `Shell.jsx` uses `flex-1 flex flex-col` on `<main>` and `flex-1` on the inner route wrapper.
 - `Play.jsx` and `Result.jsx` do **not** use `h-[calc(100vh)]`. Native window scroll with `pb-24`.
 - Modals are always **siblings** of the main route container.
 
 ## Icons (`game/src/components/icons/`)
 
-**Restructured in v74.** One file per icon, grouped by purpose. All icons use the shared `base` SVG props (`stroke="currentColor"`, `strokeWidth="2"`).
+One file per icon, grouped by purpose. All use `viewBox="0 0 16 16"`, `stroke="currentColor"`, `strokeWidth="2"`.
 
 ```
 game/src/components/icons/
-├── index.js             ← root barrel; import named icons from here
+├── index.js             ← root barrel
 ├── _base.js             ← shared SVG props
-├── navigation/          # IconChevronUp, IconChevronDown, IconChevronLeft, IconChevronRight, IconBurger, IconClose (+ alias IconX)
+├── navigation/          # IconChevronUp, IconChevronDown, IconChevronLeft, IconChevronRight, IconBurger, IconClose (+ IconX)
 ├── profile/             # IconUser, IconUserPlus, IconUserMinus, IconFriends, IconShare, IconDownload
 ├── music/               # IconGenres, IconArtists, IconTracks, IconClips, IconAlbums, IconLyrics, IconInstruments, IconReversed
 ├── collections/         # IconLibrary, IconCollection, IconPlus, IconTrash, IconPencil, IconMinus
 ├── setup/               # IconCalendar, IconStrict, IconSelectAll, IconDice
-└── ui/                  # IconGrid, IconList, IconDense, IconEye, IconEyeOff, IconCheck, IconSearch, IconHeart, IconUsers, IconPlay, IconCloud
+└── ui/                  # IconGrid, IconList, IconDense, IconEye, IconEyeOff, IconCheck, IconSearch, IconHeart, IconUsers, IconPlay, IconCloud, IconFire, IconBolt, IconCoin, IconVideo, IconTarget, IconMic
 ```
 
-**`lib/icons.jsx` is a compat shim** — `export * from '../components/icons/index.js'`. Existing imports keep working.
+**`lib/icons.jsx` is a compat shim** — `export * from '../components/icons/index.js'`.
 
-**Import convention:**
-- Use `import { IconFoo } from '@/components/icons'`.
-- **Not** `'@/icons'` — that path doesn't exist (though aliases vary by file).
-- `.jsx` extension required for direct file imports (barrel resolves automatically).
+## Image Pipeline
 
-## Image Pipeline (`@/lib/workerUrl.js` + `@/hooks/ui/useWorkerImage.js`)
-
-- **`absoluteWorkerUrl(path)`** — prefixes `BASE` to relative paths. **Passes through any scheme-prefixed URL** (http:, https:, blob:, data:) — critical for staged previews.
-- **`resolveCoverUrl(cover)`** — `null` unless `cover.kind === 'uploaded'`; else `absoluteWorkerUrl(cover.url)`.
-- **`resolveAvatarUrl(profile)`** — mirror for avatars.
-- **`useWorkerImage(input)`** — accepts a string or `{ kind, url }`, resolves to `src` + load state. Used by `CollectionCover` and any future Worker asset.
-- **`absoluteAvatarUrl(profile)`** in `profileApi.js` still works — used by `ProfileModal` and `PlayerAvatar`. **Do not migrate these to `useWorkerImage`** — they mix Worker + DiceBear sources.
+- **`absoluteWorkerUrl(path)`** — prefixes `BASE` to relative paths.
+- **`resolveCoverUrl(cover)`** — `null` unless `cover.kind === 'uploaded'`.
+- **`useWorkerImage(input)`** — accepts string or `{ kind, url }`, resolves to `src` + load state.
+- **`absoluteAvatarUrl(profile)`** in `profileApi.js` still works for `ProfileModal` and `PlayerAvatar`.
 
 ## Tiles & Grid
 
 **`TileGrid.jsx`** — grid of tiles.
-- `view` = `'grid' | 'dense' | 'list'` (visual style).
-- `onToggle` — standard click (used by genres/artists for selection).
-- **`onTileClick`** — when provided, replaces `onToggle` for the primary click AND hides the selection check-circle. Used by collections (tile click = open editor).
-- `renderHeart` — the corner action slot. Used for favorites (heart), collection delete (trash), clone toggle (plus/minus).
-- `paginated` (boolean) — when true, disables the mobile "Show more" behavior; caller handles pagination externally.
+- `view` = `'grid' | 'dense' | 'list'`.
+- `onToggle` — standard click (for selection).
+- **`onTileClick`** — replaces `onToggle`, hides the check-circle.
+- `renderHeart` — corner action slot.
+- `paginated` (boolean) — disables mobile "Show more" behavior.
 
-**`Tile.jsx`** — one tile. Three views (grid/dense/list). If `onTileClick` is set, the selection circle doesn't render.
+**`Tile.jsx`** — one tile. Three views. Selection circle hides when `onTileClick` is set.
 
 **`ArtistTileGrid` / `GenreTileGrid`** — wrap `TileGrid` with pagination + `HeartButton`.
-- Responsive page size via `useMediaQuery('(min-width: 640px)')`:
-  - Genres: 5 mobile / 10 desktop.
-  - Artists: 10 mobile / 15 desktop.
-- `pageSize={0}` disables pagination; explicit `pageSize={n}` overrides the responsive default.
+- Responsive page size via `useMediaQuery`.
+- On mobile: renders batches of 4 (grid) or 6 (dense) in a `HorizontalScroll` carousel.
+- On desktop: standard `TileGrid` with pagination.
 
-## Tabs & Primitives
+**`HorizontalScroll.jsx`** — wraps children in `overflow-x-auto snap-x snap-mandatory` with fixed child widths. Used for mobile carousels.
 
-**`TabStrip.jsx`** — controlled tab row.
-```jsx
-<TabStrip tabs={[{ key, label, badge? }]} value={tab} onChange={setTab} cols={3} mode="grid" />
-```
-Used by `CollectionsModal` (3), `ProfileModal` (4), `FriendsModal` (3).
+## TabStrip
 
-**`Button.jsx`** — shared button component.
-- Variants: `primary`, `secondary`, `ghost`, `danger`, `danger-outline`.
-- Sizes: `sm` (`h-8`), `md` (`h-10`), `lg` (`h-12`).
-- Standard for all new buttons going forward.
+**`TabStrip.jsx`** — controlled tab row. Used by `CollectionsModal` (3 tabs), `ProfileModal` (4), `FriendsModal` (3).
+
+## Button.jsx
+
+Shared button component. Variants: `primary`, `secondary`, `ghost`, `danger`, `danger-outline`. Sizes: `sm` (`h-8`), `md` (`h-10`), `lg` (`h-12`).
 
 ## TOAST SYSTEM
 
-`useToast.jsx`. **API: `show({ message, actionLabel?, onAction?, onDismiss?, durationMs? })`.** Method is `show`, NOT `push`. No `tone`/`title` — every toast is single-line, uniformly styled. Dismiss reasons: `cancel` (fires action), `expire` (fires onDismiss). Default duration 6000ms.
+`useToast.jsx`. **API: `show({ message, actionLabel?, onAction?, onDismiss?, durationMs? })`.** Method is `show`, NOT `push`. Dismiss reasons: `cancel` (fires action), `expire` (fires onDismiss). Default 6000ms.
 
-## GAME SETTINGS CONTEXT (v76)
+## GAME SETTINGS CONTEXT
 
 `game/src/context/GameSettingsContext.jsx` exposes:
 - `questionTypes`, `answerMode`, `roundCount`, `reversedAnswers`, `timer`, `audioRendition`, `instruments`
-- Individual setters for each
-- **`applySettings(partial)`** — bulk setter (NEW in v76). Accepts a partial object with any of the above keys and updates state in one call.
+- Individual setters
+- **`applySettings(partial)`** — bulk setter.
 
-Used by `useCollectionMultiplayer` to hydrate the modal with a collection's defaults before opening it.
+`timer` is stored as a **number** (e.g. `5`, `15`, `20`) or `null` (no timer). Storage uses `'off'` for null, else `String(timer)`.
+
+## CAPABILITY GATES (NEW v77)
+
+**`game/src/hooks/setup/useCapabilityGates.js`** — single source of truth for "what types are allowed?"
+
+Inputs:
+- `capabilities` — `{ lyricsCount, instrumentsCount }` (from `useScopeSelection`)
+- OR `lyricsCount`, `instrumentsCount` (raw numbers)
+- `selectedArtistsCount` — if `1`, disables `name-artist` and `lyrics-artist`
+- `reasonLyrics` — custom message
+- **`allowedTypes`** — explicit whitelist (e.g. template's round questionTypes). All other types are disabled.
+- `questionTypes`, `instruments`, `onSanitizeQuestionTypes`, `onSanitizeInstruments` — for auto-reset.
+
+Returns:
+- `allowLyrics`, `allowInstruments`
+- `disabledTypes` — `Set<slug>`
+- `disabledReasons` — `Map<slug, string>`
+- `effectiveQuestionTypes` — filtered types
+- `filterTypes(arr)`, `sanitizeQuestionTypes(arr)`, `sanitizeInstruments(v)` — helpers
+- Internal effects auto-reset instruments/types when blocked
+
+**Usage:**
+- **`Setup.jsx`** — `capabilities: scope.capabilities`, `selectedArtistsCount: scope.effectiveSelectedArtists.size`, auto-reset wired via setters.
+- **`LibraryPage.jsx`** — `lyricsCount: catalog.counts.lyricsTotal`, `instrumentsCount: catalog.counts.instrumentsTotal`, `selectedArtistsCount: 0` (collections don't restrict by artist count).
+- **`Templates.jsx`** — pulls template's counts, `selectedArtistsCount: template.artistsIds.length`, **`allowedTypes: union of template.rounds[].questionTypes`**. This makes the modal disable all types not present in the template.
 
 ## PROFILE / FOLLOW / INVITE SYSTEMS
 
-Unchanged from v75. Profile + recovery code, M2 follows, room invites with 15s poll, room-death cleanup via `waitUntil`.
+- **Profile:** Anonymous UUID, recovery code, silent creation, `restore` deletes old profile.
+- **Follow:** M2 model (two-way). `FollowButton` and `FollowRing` handle states.
+- **Room Invites:** `room_invites` table. `usePendingInvites` (15s poll). Toast dismiss flow: hide row → 30s undo → hard delete or undo.
+- **Room-Death Cleanup:** DO `#leave` returns `version: 0` → route layer calls `execCtx.waitUntil(notifyRoomDestroyed(env, code))` → POSTs to `/invites/cleanup-room`.
+- **⚠️ CRITICAL:** Any fire-and-forget HTTP call from a Worker/DO **must** be wrapped in `execCtx.waitUntil(...)`.
 
-**⚠️ CRITICAL:** Any fire-and-forget HTTP call from a Worker/DO **must** be wrapped in `execCtx.waitUntil(...)`.
+## SPORCLE — full implementation summary (v68–v72)
 
-## SPORCLE — fully implemented (v68–v72)
+- Tie-breaker, all-answered fix, chat (DO-local, 200 cap), play-again-with-settings.
+- Heartbeat: `left` = 0/1/2; 30s/2min timeouts; 5s sweep; `lobby_wait_reason` (`alone`/`no-ready`/`host-idle`); `force_close`; `AutoCloseBar`.
+- Route handlers take `(ctx)`.
+- **⚠️ Router passes `ctx = { request, env, url, code, action, execCtx }`.** Handler signatures must be `(ctx)`.
 
-- Tie-breaker loop, all-answered fix, chat (DO-local, 200 cap), play-again-with-settings (`start_again` + `ReplaySettingsModal`).
-- Heartbeat: `left` = 0/1/2; 30s/2min timeouts; 5s sweep; `lobby_wait_reason` (`alone`/`no-ready`/`host-idle`); `force_close`; idempotent `version: 0` returns; `AutoCloseBar`.
-- Route handlers take `(ctx)`; `playerId` in state query.
-
-## SPORCLE SUDDEN DEATH — Level-aware (v76)
+## SPORCLE SUDDEN DEATH — Level-aware
 
 `useSuddenDeath.js` fetch logic:
 - L1 → `POST /game/round`
-- L2 → `POST /game/round-multi` (multi-question rounds, same clip)
+- L2 → `POST /game/round-multi` (flattens all questions per round)
 - L3 → `POST /game/round` (fallback)
 
-For L2, flatten all questions per round into a single flat array. The state machine (`commitAnswer`, `advanceToNextPlayer`, `nextQuestion`) doesn't care about rounds — it works on the flat question array. **The clip is attached to every question** (same clip repeated for questions in the same round).
-
-Flatten logic (L2 branch):
-```js
-const flattened = [];
-for (const r of rawRounds) {
-  if (flattened.length >= QUESTIONS_PER_BATCH) break;
-  const qs = Array.isArray(r.questions) ? r.questions : [];
-  if (qs.length === 0) continue;
-  const q = qs[Math.floor(Math.random() * qs.length)];
-  flattened.push({
-    slotId: r.slotId,
-    clip: r.clip,
-    lyrics: q.lyrics || r.lyrics,
-    revealClip: q.revealClip || r.revealClip,
-    source: q.source || r.source,
-    type: q.type,
-    prompt: q.prompt,
-    options: q.options,
-    correctValue: q.correctValue,
-  });
-}
-```
-
-**Also fixed in v76:** `SuddenDeath.jsx` must render `PromptSource` when `q?.clip || q?.lyrics` (not just `q?.clip`), otherwise lyrics rounds show a blank prompt area.
-
-**Also fixed in v76:** `SuddenDeath.jsx` `apiParams` is wrapped in `useMemo` to prevent a fetch loop (was causing "loading flashes").
-
-**Also fixed in v76:** `OptionsGrid` has a third visual state (`locked`) for "picked but not revealed" — used during L2 collect mode where the answer window is long.
+Also: `useMemo` on `apiParams`, `PromptSource` renders for `q?.clip || q?.lyrics`, `OptionsGrid` has a third `locked` state.
 
 ## COLLECTIONS — COMPLETE SYSTEM
 
-### Overview
-
 Per-profile saved game configurations. Two flavors:
-- **Original collections** — created by the user, editable.
-- **Clones (Pointers)** — a reference to a published collection by someone else. **Read-only.** Stored in a `collection_clones` join table, NOT duplicated as a new row.
+- **Original collections** — created by user, editable.
+- **Clones** — reference to a published collection by someone else. **Read-only.** Stored in `collection_clones` join table.
 
-"Other Collections" tab shows all public collections, with a `+`/`−` toggle to clone/unclone.
+**Schema:** `collections`, `collection_rounds`, `collection_clones`.
 
-### Database schema
-
-**`collections`:** id, profile_id, name, is_public, cover_kind, cover_r2_key, levels (JSON), years (JSON), genres_ids (JSON), artists_ids (JSON), created_at, updated_at.
-
-**`collection_rounds`:** collection_id, position, level, question_types (JSON), answer_mode, mode, rounds, reversed_answers, reversed_audio, instruments, timer.
-
-**`collection_clones`:** profile_id, collection_id, created_at. PRIMARY KEY (profile_id, collection_id).
-
-**`source_id`** on `collections` is deprecated. Ignore it.
-
-### Worker routes
-
+**Worker routes:**
 ```
 POST   /profiles/:profileId/collections
 POST   /profiles/:profileId/collections/clone       ← must be BEFORE /:id
@@ -222,184 +209,95 @@ DELETE /profiles/:profileId/collections/:id/cover
 GET    /profiles/:profileId/collections/:id/cover
 ```
 
-**Route ordering critical:** `/clone` must be registered BEFORE `/:id`.
+**Canonical response shape** includes `followStatus` on `others[i]` (`friends` | `requested` | `incoming` | `following` | `none`), `isCloned`, `author: { profileId, nickname, avatar: { kind, style, seed, url } }`.
 
-### Canonical response shape
+**Shared shell (`CollectionModalShell`)** — single source for header/footer/body. Both `CollectionReadOnlyModal` and `CollectionEditor` are thin wrappers.
 
-```json
-{
-  "mine": [
-    { "id": 1, "profileId": "uuid", "name": "...", "isPublic": false,
-      "levels": [1,2], "years": {...}, "genresIds": [...], "artistsIds": [...],
-      "cover": { "kind": "uploaded", "url": "/profiles/.../cover" },
-      "rounds": [...], "createdAt": "...", "updatedAt": "..." }
-  ],
-  "others": [
-    { "id": 6, "profileId": "authorUuid", "name": "...", "isPublic": true, ...,
-      "isCloned": true,
-      "followStatus": "friends" | "requested" | "incoming" | "following" | "none", // v76
-      "author": {
-        "profileId": "authorUuid",
-        "nickname": "Farouk",
-        "avatar": { "kind": "uploaded", "style": null, "seed": null, "url": "/profiles/.../avatar" }
-      }
-    }
-  ]
-}
+**`useCollectionMultiplayer` hook** — encapsulates open/close/start:
+- `openMultiplayerFor(collection, { onCloseReadOnly })` — seeds `GameSettingsContext.applySettings()` from the first round, then opens the modal.
+- `startMultiplayer({ names, level, roundsPerPlayer })` — builds payload from `targetRound`, writes `sessionStorage['game.lastPlayParams']`, navigates to `/play-multi`.
+
+**Friends filter** — `useCollectionFilters` extracts `friends` facet (count of `followStatus === 'friends'`). `FilterPanel` shows it. `CollectionTileGrid` shows `(Friend)` suffix in subtitle.
+
+**v76 fix (bug)** — `usePlayCollection.startGame` was converting `timer` to `'on'`/`'off'`. Fixed to pass raw seconds (or null).
+
+## TEMPLATES — COMPLETE SYSTEM (v77)
+
+**Server-curated presets.** Same shape as collections, but no owner. Created by admins. Players pick one to start a game.
+
+### Worker side
+
+**Migration `0017_templates.sql`:**
+- `templates` table: `id, name, description, sort_order, is_public, cover_kind, cover_r2_key, levels, years, genres_ids, artists_ids, created_at, updated_at`
+- `template_rounds` table: mirror of `collection_rounds` with `template_id` FK
+
+**Routes (`/templates/…`):**
+```
+GET    /templates                        ← list all (admin)
+GET    /templates?public=1               ← list public (client)
+GET    /templates/:id
+POST   /templates?admin_key=…            ← create (auth)
+PUT    /templates/:id?admin_key=…        ← update (auth)
+DELETE /templates/:id?admin_key=…        ← delete (auth)
+POST   /templates/:id/cover?admin_key=…  ← upload (auth)
+DELETE /templates/:id/cover?admin_key=…  ← delete (auth)
+GET    /templates/:id/cover              ← serve (public)
 ```
 
-**`cover.url` and `author.avatar.url` are relative paths.** Frontend absolutizes via `resolveCoverUrl` / `absoluteAvatarUrl`.
+**Admin auth:** `?admin_key=<secret>` matching `env.ADMIN_KEY` (Cloudflare secret).
 
-### Client files
+**`music-game-wrangler/src/middleware/adminAuth.js`** — `requireAdmin(request, env)` returns `null` on success, an error Response otherwise.
 
-```
-game/src/
-├── lib/
-│   ├── collectionsApi.js      # list/get/create/save/remove/uploadCover/removeCover/clone
-│   └── ...
-├── hooks/collections/
-│   ├── useCollections.js               # queries + mutations with optimistic updates
-│   ├── useCollectionDraft.js           # draft from/to collection, validate()
-│   ├── useCollectionFilters.js         # search + facets + active filters (incl. friends) — v76
-│   ├── usePlayCollection.js            # startGame(collection, level, onPlay) — solo
-│   └── useCollectionMultiplayer.js     # openMultiplayerFor / closeMultiplayer / startMultiplayer — v76
-├── components/domain/Collections/
-│   ├── modal/
-│   │   ├── CollectionsModal.jsx          # 3 tabs: Mine/Create/Other
-│   │   ├── CollectionReadOnlyModal.jsx   # thin wrapper around CollectionModalShell
-│   │   ├── CollectionEditorModal.jsx     # thin wrapper around CollectionEditor → CollectionModalShell
-│   │   ├── CollectionModalShell.jsx      # SHARED layout (header, body, footer buttons) — v76
-│   │   ├── CollectionMultiplayerModal.jsx # thin wrapper for MultiplayerModal — v76
-│   │   ├── LevelPickerModal.jsx          # "Which level?" mini-modal
-│   │   ├── CreateCollectionTab.jsx
-│   │   └── OtherCollectionsTab.jsx       # v76: accepts onMultiplayer prop
-│   ├── editor/
-│   │   ├── CollectionEditor.jsx          # body + state → renders CollectionModalShell
-│   │   ├── EditorBasics.jsx
-│   │   ├── EditorScope.jsx
-│   │   ├── EditorRounds.jsx
-│   │   └── RoundRow.jsx
-│   ├── tiles/
-│   │   ├── CollectionTileGrid.jsx        # shows (Friend) in subtitle — v76
-│   │   └── CollectionTileAction.jsx
-│   ├── primitives/
-│   │   ├── CollectionCover.jsx
-│   │   └── LevelBadge.jsx
-│   └── filters/
-│       ├── FilterPanel.jsx                # "Friends" filter group — v76
-│       └── FilterGroup.jsx
-├── components/domain/Setup/Modals/
-│   ├── LevelModalWrapper.jsx              # shared shell for Level1/2/3 modals
-│   └── SharedGameSettings.jsx
-├── routes/
-│   ├── Library.jsx                        # /library — own collections
-│   ├── LibraryOthers.jsx                  # /library/others — public collections
-│   └── ...
-└── ...
-```
+**`music-game-wrangler/src/utilities/templates/validate.js`** — re-exports `validateLevels`, `validateYears`, `validateGenresIds`, `validateArtistsIds`, `validateRounds` from `collections/validate.js`, adds `validateTemplateName` (re-uses `validateCollectionName`), `validateDescription`, `validateSortOrder`.
 
-### Client routing
+**`buildReplaceRoundsStatements(env, parentId, rounds, fkColumn, table)`** — updated to accept an optional FK column and table name. Defaults preserve existing collection behavior.
 
-```
-/library              → Library.jsx
-/library/others       → LibraryOthers.jsx (must be registered BEFORE /library/:id)
-/library/:id          → Library.jsx (deep link: opens edit for originals, read-only for clones)
-```
+### Admin side
 
-### Round schema — 10 fields
+**`admin/src/App.jsx`** — adds two routes: `/templates` and `/templates/:id`.
 
-| Field | Type | Notes |
-|---|---|---|
-| `level` | 1/2/3 | must be in `collection.levels` |
-| `questionTypes` | string[] | ≥1, ≤8, from VALID_QUESTION_TYPES |
-| `answerMode` | 'choose'\|'type' | input mode |
-| `mode` | 'speed'\|'collect' | game scoring mode |
-| `rounds` | int 1–50 | questions this round plays |
-| `reversedAnswers` | 'no'\|'some'\|'all' | tri-state |
-| `reversedAudio` | bool | forward/reverse |
-| `instruments` | 'none'\|'mixed'\|'all' | |
-| `timer` | int 5–300 \| null | seconds |
+**`admin/src/lib/templatesApi.js`** — `BASE = VITE_CF_BASE` (Worker), `?admin_key=` on every request. Methods: `list`, `listPublic`, `get`, `create`, `save`, `remove`, `uploadCover`, `deleteCover`, `coverUrl`.
 
-### v76 architecture — shared shell
+**`admin/src/hooks/useTemplates.js`** — `useTemplates()` (list), `useTemplate(id)` (single).
 
-`CollectionModalShell.jsx` is the **single source of truth** for the collection modal's header, body, and footer. It accepts:
+**`admin/src/routes/Templates.jsx`** — list page. Grid of template cards. Each shows cover/name/description/scope/actions. Delete confirmation modal. Link to `/templates/new`.
 
-- `title`, `subtitle`, `collection`, `draft`
-- `mutations` (undefined for read-only)
-- `readOnly`, `isClone`, `isPublic`, `setIsPublic`
-- `disabledTypes`, `reversedClipsCount`, `collectionId`, `isExisting`
-- `onPlay`, `onMultiplayer`, `onSave`, `saving`, `dirty`, `availableLevels`
+**`admin/src/routes/TemplateEditor.jsx`** — parent component that loads the template and passes `initial` prop down.
 
-It renders:
-- Header (cover, title, author + FollowButton, close button)
-- Body — EditorBasics (if not readOnly), EditorScope, EditorRounds, Publish toggle (if applicable)
-- Footer — Close/Cancel (secondary), Multiplayer (secondary + IconUsers), Play (primary + IconPlay), Save (primary + IconCloud, only in edit mode)
+**`admin/src/components/domain/Templates/TemplateEditorForm.jsx`** — uses **lazy `useState`** from `initial` prop. No `useEffect`. This avoids React 19's "setState in effect" warning. The parent (`TemplateEditor`) uses `key={template.id}` to force remount when the template changes.
 
-Both `CollectionReadOnlyModal` and `CollectionEditor` are now **thin wrappers** that compute their specific logic (start game, save validation, dirty state) and pass everything to `CollectionModalShell`.
+**`admin/src/components/domain/Templates/GenreSelector.jsx`** — uses `useAdminCatalog()` to fetch `/game/catalog` from the Worker (single fetch). Filterable genre cards. Multi-select.
 
-### v76 multiplayer flow (Collections → Multiplayer)
+**`admin/src/components/domain/Templates/ArtistSelector.jsx`** — uses `useAdminCatalog()`. Empty until at least one genre is selected. Filters artists by `a.genre_ids.some(id => genresSelected.has(id))`. Uses `ArtistGrid selectable`.
 
-**The hook `useCollectionMultiplayer`** encapsulates the entire state machine:
+**`admin/src/components/domain/Templates/QuestionTypeGrid.jsx`** — visual grid of 8 question types. Multi-select. Shows checkmark on selected.
 
-```js
-const {
-  multiplayerCollection,
-  openMultiplayerFor,   // (collection, { onCloseReadOnly }) → seeds settings + opens modal
-  closeMultiplayer,
-  startMultiplayer,     // ({ names, level, roundsPerPlayer }) → builds payload + navigates
-} = useCollectionMultiplayer();
-```
+**`admin/src/components/domain/Templates/RoundEditor.jsx`** — one round editor: level, mode, answerMode, rounds count, instruments, reversedAnswers, reversedAudio, timer, question types.
 
-**`openMultiplayerFor(collection)`** does:
-1. Finds the seed round (by smallest available level, or any round as fallback)
-2. Calls `settings.applySettings(seedRound settings)` — hydrates `GameSettingsContext`
-3. Calls `onCloseReadOnly()` if provided (closes the read-only modal)
-4. Sets `multiplayerCollection` state
+**`admin/src/components/domain/Templates/YearSelector.jsx`** — three modes: "Any year" / "Range" / "Specific years". Range mode uses two numeric inputs and commits `{ type: 'range', values: '1983-2000' }`. Set mode uses chips and commits `{ type: 'set', values: [...] }`.
 
-**`startMultiplayer({ names, level, roundsPerPlayer })`** does:
-1. Resolves the target round by `level` (`rounds.find(r => Number(r.level) === Number(effectiveLevel))`)
-2. Builds payload from `collection.genresIds`, `collection.artistsIds`, `collection.years`, `targetRound.*`
-3. Writes to `sessionStorage['game.lastPlayParams']`
-4. Clears `multiplayerCollection` and navigates to `/play-multi`
+**`admin/src/lib/imageResize.js`** — `resizeImageToSquare(file, size, quality)` — center-crops to NxN JPEG, ~40–100 KB. Used in `TemplateEditorForm` before upload. **Required** because backend caps covers at 128 KB (`COVER_MAX_BYTES`).
 
-**Wiring in `LibraryPage.jsx` and `CollectionsModal.jsx`:**
+**`admin/src/hooks/useAdminCatalog.js`** — direct fetch to `${VITE_CF_BASE}/game/catalog` (bypasses Express). Returns `{ genres, artists, years, counts, loading, error }`. Cached 5 minutes.
 
-```jsx
-const mp = useCollectionMultiplayer();
+### Client side
 
-<CollectionEditorModal
-  open={editorOpen}
-  onClose={handleCloseEditor}
-  onPlay={handlePlayFromEditor}
-  onMultiplayer={(c) => mp.openMultiplayerFor(c, { onCloseReadOnly: () => setReadOnlyTarget(null) })}
-  initialCollection={editingCollection}
-/>
+**`game/src/lib/templatesApi.js`** — `BASE` from `api.js`. `list()` (public), `get(id)`, `coverUrl(id)`.
 
-<CollectionReadOnlyModal
-  open={!!readOnlyTarget}
-  onClose={handleCloseReadOnly}
-  onPlay={handlePlayFromReadOnly}
-  onMultiplayer={(c) => mp.openMultiplayerFor(c, { onCloseReadOnly: () => setReadOnlyTarget(null) })}
-  collection={readOnlyTarget}
-/>
+**`game/src/hooks/templates/useTemplates.js`** — `useTemplates()`, `useTemplate(id)`. Cached 5 minutes.
 
-<CollectionMultiplayerModal
-  collection={mp.multiplayerCollection}
-  onClose={mp.closeMultiplayer}
-  onStart={mp.startMultiplayer}
-  reversedClipsCount={reversedClipsCount}
-/>
-```
+**`game/src/routes/Templates.jsx`** — dedicated route. Displays `<TemplateRow>` per template. Handles:
+- `seedSettingsFromRound(round)` — writes template round settings to `GameSettingsContext`
+- Multi-level → open `LevelPickerModal` → pick level → open `Level{1,2,3}Modal`
+- Single-level → open the matching `Level{1,2,3}Modal` directly
+- `handlePlay()` — builds payload from `settings` (post-seed), writes to `sessionStorage`, navigates to `/play{,-two,-three}`
+- Uses `useCapabilityGates({ ..., allowedTypes: union of template.rounds[].questionTypes })` — **critical** — makes the modal only enable types the template supports.
 
-**Wiring in `OtherCollectionsTab.jsx`:** accepts `onMultiplayer` prop and forwards it to its own `CollectionReadOnlyModal`.
+**`game/src/components/domain/Templates/TemplateTileGrid.jsx`** — lighter version of `CollectionTileGrid` for templates. Read-only, no clone/delete, just play.
 
-### v76 friends filter in Library
+**`game/src/components/domain/Templates/TemplatesBanner.jsx`** — banner shown at top of Setup. Links to `/templates`. Fetches template count via `useTemplates()`.
 
-`useCollectionFilters.js` was updated to extract a `friends` facet (count of collections where `followStatus === 'friends'`) and filter by it.
-
-`LibraryPage.jsx` adds `friends: new Set()` to `activeFilters` and `handleClearFilters`. `FilterPanel.jsx` renders the "Friends" filter group first (only when `facets.friends.has('true')`).
-
-`CollectionTileGrid.jsx` shows `by {nickname} (Friend)` in the subtitle when `followStatus === 'friends'`.
+**`game/src/routes/Setup.jsx`** — `StreakBanner` and `TemplatesBanner` at top. No "Templates" action in `SelectionBar` (it's a route, not a modal).
 
 ## MATB3AA / NETWORK FIXES
 
@@ -408,23 +306,25 @@ const mp = useCollectionMultiplayer();
 
 ## ENVIRONMENT — SETUP TRAPS
 
-- **Vite proxies:** Only `/api/game` is proxied. Any new prefix needs an entry.
+- **Vite proxies:** Only `/api/game` is proxied. Profiles/follows/invites/collections/templates use `BASE` or `VITE_CF_BASE` directly.
 - **JSX extension:** `.jsx` mandatory.
-- **`@/` alias:** exists (see Vite Configuration above).
-- **PowerShell encoding:** ASCII-only, or save as UTF-8 with BOM.
-- **PowerShell + Arabic:** use `-Body ([System.Text.Encoding]::UTF8.GetBytes($json))` or `[System.Uri]::EscapeDataString(...)`.
+- **`@/` alias:** exists.
+- **PowerShell encoding:** ASCII-only, or UTF-8 with BOM.
+- **PowerShell + Arabic:** `-Body ([System.Text.Encoding]::UTF8.GetBytes($json))` or `[System.Uri]::EscapeDataString(...)`.
 - **`curl -I` with Arabic URLs** returns `400`. Use `Invoke-WebRequest -UseBasicParsing`.
+- **PowerShell backtick line continuation is fragile.** Use single-line commands or here-strings.
 - **Windows pagefile:** 32 GB for ACE-Step.
 - **Node 18+**, Python 3.14 (venv), Python 3.12 (ACE-Step uv env).
 - **`yt-dlp.exe` at `C:\Tools\yt-dlp.exe`**, **ffmpeg.exe + ffprobe.exe at `C:\Tools\ffmpeg\bin\`**.
 - **Cloudflare D1 `datetime('now')` returns UTC.** Egypt is UTC+3 (EEST) / UTC+2 (EET).
-- **`cmd` + `echo` mangles nested JSON.** Use `echo {...}> body.json` (no space before `>`) or Notepad. Verify with `type body.json`.
+- **`cmd` + `echo` mangles nested JSON.** Use `echo {...}> body.json` (no space before `>`) or Notepad.
 - **D1 parameter cap: 100.** Use `chunkedIn` at 90.
 - **D1 bind must never receive `undefined`** — coerce to `null` with `?? null`.
+- **React 19 warns on `setState` inside `useEffect`.** Split the parent (loads) from the child (initializes state lazily from props). Use `key` on the child to force remount when props change.
 
 ## STYLE TRANSFER PIPELINE
 
-Working with 20-second clips, `inference_steps: 10`. Known issue: `/query_result` returns empty `data: []` after success (file exists at `.cache/acestep/tmp/api_audio/<uuid>.mp3`). **Fix needed:** poll the filesystem for the newest `.mp3`.
+Working with 20-second clips, `inference_steps: 10`. Known issue: `/query_result` returns empty `data: []` after success. Fix needed: poll filesystem for the newest `.mp3`.
 
 ## CARD GAME — DESIGN ONLY
 
@@ -438,8 +338,9 @@ Single device, pass-around, 2–4 players, last alive wins, turn = draw → chal
 :: Local dev
 cd E:\matb3aa-game && npm run dev
 cd E:\matb3aa-game\game && npm run dev
+cd E:\matb3aa-game\admin && npm run dev
 
-:: Workers
+:: Workers (dev)
 cd E:\matb3aa-game\music-game-wrangler && npx wrangler dev --port 8787
 cd E:\matb3aa-game\host-sporcle-wrangler && npx wrangler dev --port 8788
 
@@ -451,27 +352,33 @@ cd E:\matb3aa-game\game
 npm run build
 npx wrangler pages deploy dist --project-name=music-game --branch=production
 
-:: Collections migrations (apply in order)
+:: Migrations (apply in order)
 cd E:\matb3aa-game\music-game-wrangler
 npx wrangler d1 execute music-game-db --remote --file=./migrations/0008_collections.sql
 npx wrangler d1 execute music-game-db --remote --file=./migrations/0009_question_types.sql
 npx wrangler d1 execute music-game-db --remote --file=./migrations/0010_collection_rounds_mode.sql
 npx wrangler d1 execute music-game-db --remote --file=./migrations/0011_collection_rounds_reversed_answers.sql
 npx wrangler d1 execute music-game-db --remote --file=./migrations/0014_collection_clones.sql
+npx wrangler d1 execute music-game-db --remote --file=./migrations/0017_templates.sql
+
+:: Set admin secret (prod)
+cd E:\matb3aa-game\music-game-wrangler
+npx wrangler secret put ADMIN_KEY
 ```
 
-## Known open (non-collections)
+## Known open
 
-1. **Style-transfer polling** — patch `style_cover.py` to poll the filesystem for the newest `.mp3`.
+1. **Style-transfer polling** — patch `style_cover.py` to poll the filesystem.
 2. **Anti-skew round-robin verification** — 5× L1 curl with `instruments=all`.
 3. **Enable L3 instruments** — flip `allowInstruments={true}` on `Level3Modal`, add `source` to `Play3.jsx`.
 4. **`PublishedInstruments.jsx`** — browse/delete uploaded instruments.
 5. **Client rendition chain** — `useRoundMultiplayer.js` + `PlayMulti.jsx`.
 6. **Favourite cap feedback** — toast on 100/kind, 300 total.
 7. **Card game** — design only.
-8. **Collections solo Play from `CollectionEditor` (draft state)** — `startGame` currently uses the current draft directly; might want to use `useCollectionMultiplayer` for consistency (single source of truth).
-9. **`CollectionEditorModal` doesn't forward `reversedClipsCount` from parent** — hardcodes 0. Fix: pass through from `LibraryPage` / `CollectionsModal`.
-10. **`CollectionsModal` and `OtherCollectionsTab`** — need `useCollectionMultiplayer` hook wired (v76 refactor in progress). If the Multiplayer button in "Other collections" does nothing, check `OtherCollectionsTab` forwards `onMultiplayer` prop.
+8. **Templates — no client-side multi-level defaulting.** `handleOpenTemplate` picks `levels[0] ?? 2` when no levels — which means single-level templates without explicit levels default to Level 2. Should probably warn or pick 1.
+9. **Templates — lyrics/instruments counts not populated** by the Worker's `GET /templates` response. `Templates.jsx` reads `selectedTemplate.lyricsCount` (defaults to 0) → Lyrics disabled. If templates are created with Lyrics types and the scope has lyrics, the modal will still gray them out. **Fix:** add `lyricsCount`/`instrumentsCount` to the Worker's `serializeTemplate` output, computed from scope (`artist_ids` in scope). Or pass `allowedTypes` from `template.rounds[].questionTypes` (already done) and drop the `lyricsCount: 0` gating.
+10. **`buildReplaceRoundsStatements`** — parametrized version needs to be verified against existing collection writes (defaults should preserve behavior, but check one save after deploy).
+11. **`leftRef.current` in `Play.jsx`** — never set to `true`, beacon fires more than once per unload.
 
 ## Style the User Prefers
 
@@ -485,14 +392,17 @@ npx wrangler d1 execute music-game-db --remote --file=./migrations/0014_collecti
 
 ## Most Likely Next Tasks
 
-1. **Commit everything.** v29–v76 is uncommitted. This is the biggest checkpoint risk.
-2. **Verify the v76 refactor end-to-end** — My Collections multiplayer, Other Collections multiplayer, Solo play from editor, Friends filter, etc.
+1. **Commit everything.** v29–v77 uncommitted. Biggest checkpoint risk.
+2. **Test Templates end-to-end** in production. Verify:
+   - Admin creates a template with cover
+   - User visits `/templates`, sees it
+   - Picks a level, plays, question types match template
+   - Fix #9 above (Lyrics gating).
 3. **Clean up dead code** — `CollectionCardFull.jsx`, `CollectionCardQuick.jsx`, `CollectionDetails.jsx`, `CardItem.jsx` (verify zero imports first).
-4. **Fix `CollectionEditorModal` to pass `reversedClipsCount`** — currently 0.
-5. **Style-transfer polling fix.**
-6. **Enable L3 instruments.**
+4. **Style-transfer polling fix.**
+5. **Enable L3 instruments.**
 
-**Recommended next step:** **Commit.** Then pick from tasks 2–4.
+**Recommended next step:** **Commit.** Then pick task 2 (test Templates in prod) — it's the newest, least-tested feature and likely has edge cases.
 
 Ask what the user wants to work on next.
 
@@ -500,29 +410,29 @@ Ask what the user wants to work on next.
 
 ## END OF PROMPT
 
-Save this as `E:\matb3aa-game\handoff-v76.md`. Paste it as the first message of your next session.
+Save this as `E:\matb3aa-game\handoff-v77.md`. Paste it as the first message of your next session.
 ```
 
 ---
 
-## What's new in v76 (vs v75)
+## What's new in v77 (vs v75)
 
 | Section | Change |
 |---|---|
-| **GAME SETTINGS CONTEXT** | New `applySettings(partial)` bulk setter |
-| **SPORCLE SUDDEN DEATH** | Level-aware endpoints (L1/L2/L3) + flatten logic; `useMemo` on `apiParams`; `PromptSource` renders for `lyrics` not just `clip`; `OptionsGrid` `locked` state |
-| **COLLECTIONS — Complete System** | Rewritten: `CollectionModalShell` shared shell (editor + read-only share header/footer/body); `useCollectionMultiplayer` hook; `CollectionMultiplayerModal` wrapper; `OtherCollectionsTab` accepts `onMultiplayer`; Friends filter in `useCollectionFilters` / `FilterPanel` / `CollectionTileGrid` |
-| **Canonical response shape** | Added `followStatus` field on `others[i]` |
-| **Icons** | Added `IconUsers`, `IconPlay`, `IconCloud` |
-| **Button.jsx** | Documented as shared primitive with variants + sizes |
-| **File tree** | Updated with `CollectionModalShell`, `CollectionMultiplayerModal`, `OtherCollectionsTab` accepting prop |
-| **Known open** | Added collections-specific items (solo play from editor, `reversedClipsCount` forwarding, `OtherCollectionsTab` wiring) |
-| **Most Likely Next Tasks** | Reordered — commit is #1, refactor verification is #2 |
+| **TEMPLATES — COMPLETE SYSTEM** | New section. Full admin + worker + client implementation. |
+| **CAPABILITY GATES** | New `useCapabilityGates` hook, single source of truth for disabled types/reasons across Setup / LibraryPage / Templates. `allowedTypes` enables template-scoped filtering. |
+| **Environment** | Added `VITE_CF_BASE` env, `admin/.env.local`, `.dev.vars`, secret-vs-vars clarification, PowerShell backtick warning, React 19 setState warning. |
+| **Icons** | Added `IconFire`, `IconBolt`, `IconCoin`, `IconVideo`, `IconTarget`, `IconMic`. |
+| **HorizontalScroll** | New section — mobile carousel pattern for tiles. |
+| **Setup.jsx** | Added `StreakBanner` + `TemplatesBanner` at top. Removed Templates action from `SelectionBar`. |
+| **Known open** | Added Templates-specific items (#8, #9, #10). |
+| **Most Likely Next Tasks** | Reordered. Commit is #1, Templates prod test is #2. |
+| **Commands** | Added `admin` dev, migration 0017, `wrangler secret put ADMIN_KEY`. |
 
 The document is self-contained. A fresh model knows:
-- The full collections system including the v76 shared-shell architecture
-- The `useCollectionMultiplayer` hook pattern and how both `LibraryPage` and `CollectionsModal` wire it
-- The friends filter and how it interacts with `followStatus`
-- The sudden-death level-aware endpoint selection and flatten logic
-- The `GameSettingsContext.applySettings` bulk setter
-- Exactly what remains: commit, verify refactor, cleanup, `reversedClipsCount` forwarding, style-transfer, L3
+- The full Templates system (migration, routes, admin UI, client UI, cover pipeline with resize)
+- The `useCapabilityGates` refactor and how `allowedTypes` scopes the modal
+- Why the admin needed `VITE_CF_BASE` and why the Worker uses `?admin_key=`
+- The `TemplateEditorForm` lazy-init pattern (avoids React 19 warning)
+- The `buildReplaceRoundsStatements` parametrization
+- Exactly what remains: commit, test templates in prod, fix Lyrics gating, cleanup, style-transfer, L3.

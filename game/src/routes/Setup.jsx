@@ -1,6 +1,6 @@
 // game/src/routes/Setup.jsx
 import { useState, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useCatalog } from '@/hooks/setup/useCatalog.js';
 import { useGameSettings } from '@/context/GameSettingsContext.jsx';
 import { useProfileContext } from '@/context/ProfileContext.jsx';
@@ -25,12 +25,17 @@ import { ViewToggle } from '@/components/ui/ViewToggle.jsx';
 import { YearRangeModal } from '@/components/domain/Setup/Years/YearRangeModal.jsx';
 import { IconSelectAll, IconGenres, IconCalendar, IconX, IconArtists, IconDice } from '@/icons';
 import { SetupHeader } from '@/components/domain/Setup/SetupHeader';
+import { QUESTION_TYPE_VALUES  } from '@/constants';
+import { StreakBanner } from './Streak/StreakBanner';
+import { TemplatesBanner } from './Templates/TemplatesBanner';
+import { useCapabilityGates } from '@/hooks/setup/useCapabilityGates';
 
 export default function Setup() {
   const navigate = useNavigate();
   const { data, isLoading, error } = useCatalog();
   const settings = useGameSettings();
   const { favorites } = useProfileContext();
+
 
   const reversedClipsCount = data?.counts?.reversedClips ?? 0;
   const genres  = data?.genres  ?? [];
@@ -42,14 +47,34 @@ export default function Setup() {
     artists,
     years,
     favorites,
+    catalogCounts: data?.counts ?? null,          
     onFavoritesApplied: (favs) => {
       if (favs.questionTypes?.length > 0) {
         const current = settings.questionTypes ?? [];
         const union = Array.from(new Set([...current, ...favs.questionTypes]));
         settings.setQuestionTypes(union);
       }
-    }
+    },
   });
+
+  // ── Capabilities ───────────────────────────────────────
+  const gates = useCapabilityGates({
+    capabilities: scope.capabilities,
+    selectedArtistsCount: scope.effectiveSelectedArtists.size,
+    reasonLyrics: 'No lyrics available in the current scope.',
+    questionTypes: settings.questionTypes,
+    instruments: settings.instruments,
+    onSanitizeQuestionTypes: settings.setQuestionTypes,
+    onSanitizeInstruments: settings.setInstruments,
+  });
+
+  const {
+    allowLyrics,
+    allowInstruments,
+    disabledTypes,
+    disabledReasons,
+    effectiveQuestionTypes,
+  } = gates;
 
   // ── UI State ──
   const [genresOpen,  setGenresOpen]  = useState(true);
@@ -82,20 +107,7 @@ export default function Setup() {
   const [multiOpen,  setMultiOpen]  = useState(false);
   const [sporcleOpen, setSporcleOpen] = useState(false);
 
-  const disabledTypes = useMemo(() => {
-    const s = new Set();
-    if (scope.effectiveSelectedArtists.size === 1) {
-      s.add('name-artist');
-      s.add('lyrics-artist');
-    }
-    return s;
-  }, [scope.effectiveSelectedArtists.size]);
-
-  const effectiveQuestionTypes = useMemo(
-    () => settings.questionTypes.filter(t => !disabledTypes.has(t)),
-    [settings.questionTypes, disabledTypes]
-  );
-
+  
   const handleQuestionTypeUnfavorited = useCallback((slug) => {
     const current = settings.questionTypes ?? [];
     if (!current.includes(slug)) return;
@@ -159,6 +171,9 @@ export default function Setup() {
 
       {data && !isLoading && (
         <>
+          <StreakBanner/>
+          <TemplatesBanner />
+
           <CollapsibleSection
             open={genresOpen}
             onToggle={() => setGenresOpen(o => !o)}
@@ -313,18 +328,59 @@ export default function Setup() {
         ]}
       />
 
-      <Level1Modal open={level1Open} onClose={() => setLevel1Open(false)} onPlay={() => handlePlay('one')} disabledTypes={disabledTypes} reversedClipsCount={reversedClipsCount} onQuestionTypeUnfavorited={handleQuestionTypeUnfavorited} />
-      <Level2Modal open={level2Open} onClose={() => setLevel2Open(false)} onPlay={() => handlePlay('two')} disabledTypes={disabledTypes} reversedClipsCount={reversedClipsCount} onQuestionTypeUnfavorited={handleQuestionTypeUnfavorited} />
-      <Level3Modal open={level3Open} onClose={() => setLevel3Open(false)} onPlay={() => handlePlay('three')} disabledTypes={disabledTypes} reversedClipsCount={reversedClipsCount} genreMode={scope.genreMode} effectiveSelectedArtistsCount={scope.effectiveSelectedArtists.size} onQuestionTypeUnfavorited={handleQuestionTypeUnfavorited} />
-      <MultiplayerModal 
-        open={multiOpen} 
-        onClose={() => setMultiOpen(false)} 
-        onStart={handleMultiplayerStart} 
-        starting={false} 
-        disabledTypes={disabledTypes} 
-        reversedClipsCount={reversedClipsCount} 
+      <Level1Modal
+        open={level1Open}
+        onClose={() => setLevel1Open(false)}
+        onPlay={() => handlePlay('one')}
+        disabledTypes={disabledTypes}
+        disabledReasons={disabledReasons}
+        reversedClipsCount={reversedClipsCount}
+        allowInstruments={allowInstruments}
+        onQuestionTypeUnfavorited={handleQuestionTypeUnfavorited}
       />
-      <SporcleModal open={sporcleOpen} onClose={() => setSporcleOpen(false)} initialMode="host" scope={buildScope()} canHost={scope.canStart} disabledTypes={disabledTypes} reversedClipsCount={reversedClipsCount} />
+      <Level2Modal
+        open={level2Open}
+        onClose={() => setLevel2Open(false)}
+        onPlay={() => handlePlay('two')}
+        disabledTypes={disabledTypes}
+        disabledReasons={disabledReasons}
+        reversedClipsCount={reversedClipsCount}
+        allowInstruments={allowInstruments}
+        onQuestionTypeUnfavorited={handleQuestionTypeUnfavorited}
+      />
+      <Level3Modal
+        open={level3Open}
+        onClose={() => setLevel3Open(false)}
+        onPlay={() => handlePlay('three')}
+        disabledTypes={disabledTypes}
+        disabledReasons={disabledReasons}
+        reversedClipsCount={reversedClipsCount}
+        allowInstruments={false} // not supported yet via server-side
+        genreMode={scope.genreMode}
+        effectiveSelectedArtistsCount={scope.effectiveSelectedArtists.size}
+        onQuestionTypeUnfavorited={handleQuestionTypeUnfavorited}
+      />
+      <MultiplayerModal
+        open={multiOpen}
+        onClose={() => setMultiOpen(false)}
+        onStart={handleMultiplayerStart}
+        starting={false}
+        disabledTypes={disabledTypes}
+        disabledReasons={disabledReasons}
+        reversedClipsCount={reversedClipsCount}
+        allowInstruments={allowInstruments}
+      />
+      <SporcleModal
+        open={sporcleOpen}
+        onClose={() => setSporcleOpen(false)}
+        initialMode="host"
+        scope={buildScope()}
+        canHost={scope.canStart}
+        disabledTypes={disabledTypes}
+        disabledReasons={disabledReasons}
+        reversedClipsCount={reversedClipsCount}
+        allowInstruments={allowInstruments}
+      />
       <YearRangeModal open={yearRangeOpen} onClose={() => setYearRangeOpen(false)} years={years} onApply={scope.applyYearRange} />
     </div>
   );

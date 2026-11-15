@@ -1,3 +1,4 @@
+// music-game-wrangler/src/routes/index.js
 import { albumYearRoutes } from './admin/albums-years.js';
 import { artistRoutes } from './admin/artists.js';
 import { clipRoutes } from './admin/clips.js';
@@ -11,17 +12,25 @@ import { profileRoutes } from './profiles.js';
 import { followRoutes } from './follows.js';
 import { inviteRoutes } from './invites.js';
 import { collectionRoutes } from './collections.js';
+import { streakRoutes } from './streak.js';
+import { templateRoutes } from './templates.js';
+
 const allRoutes = [
   // GAME ROUTES ;
   ...catalogRoutes,
   ...roundRoutes,
-  // GAME ROUTES-> PROFILE ROUTE ;
+
+  // GAME ROUTES -> STREAKS ;
+  ...streakRoutes,
+
+  // GAME ROUTES -> PROFILE ROUTE ;
   ...profileRoutes,
-  // GAME ROUTS -> FOLLOWERS , INVITES ; 
+
+  // GAME ROUTES -> FOLLOWERS , INVITES ;
   ...followRoutes,
   ...inviteRoutes,
-  
-  ...collectionRoutes ,
+
+  ...collectionRoutes,
 
   // ADMIN PANEL ROUTES ;
   ...genreRoutes,
@@ -30,9 +39,9 @@ const allRoutes = [
   ...clipRoutes,
   ...lyricsRoutes,
   ...albumYearRoutes,
-  ...instrumentRoutes,                                      
+  ...instrumentRoutes,
+  ...templateRoutes,
 ];
-
 
 export function matchRoute(request) {
   const url = new URL(request.url);

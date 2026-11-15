@@ -8,12 +8,14 @@ import { InstrumentsPicker } from '../Instruments/InstrumentsPicker.jsx';
 import { useGameSettings } from '@/context/GameSettingsContext.jsx';
 import { ChoiceCard } from './ChoiceCard.jsx';
 import { Reveal } from '@/components/ui/Reveal.jsx'; 
+import { ReversedAudioPicker } from '../ReversedAudioPicker/ReversedAudioPicker.jsx';
 
 export function SharedGameSettings({
   disabledTypes = new Set(),
   hideRoundCount = false,
   reversedClipsCount = 0,
   allowInstruments = true,
+  disabledReasons,   
   variant = 'default',
   level, setLevel, mode, setMode, autoAdvanceSeconds, setAutoAdvanceSeconds,
   onQuestionTypeUnfavorited,
@@ -54,7 +56,6 @@ export function SharedGameSettings({
   const isSporcle = variant === 'sporcle';
 
   return (
-    <Reveal direction="down" distance={40} duration={800} delay={100}>
       <div className={`space-y-6 ${readOnly ? 'pointer-events-none opacity-80 select-none' : ''}`}>
         
         {/* Question types */}
@@ -67,6 +68,7 @@ export function SharedGameSettings({
             value={questionTypes}
             onChange={setQuestionTypes}
             disabledTypes={disabledTypes}
+            disabledReasons={disabledReasons}
             disabled={readOnly}
           />
         </section>
@@ -137,50 +139,23 @@ export function SharedGameSettings({
           <ReversedAnswersPicker value={reversedAnswers} onChange={setReversedAnswers} disabled={readOnly} />
         </section>
 
-        {/* Reversed audio */}
-        <section className="space-y-3">
+       <section className="space-y-3">
           <h3 className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">
             Reversed audio
           </h3>
           <p className="text-xs text-ink-muted">
             Play the clip backwards instead of forwards.
-            {!reversedAudioAvailable && (
+            {reversedClipsCount === 0 && (
               <span> No reversed renditions available yet.</span>
             )}
           </p>
 
-          <div className="flex gap-2">
-            <button
-              type="button"
-              disabled={readOnly}
-              onClick={() => setAudioRendition('forward')}
-              aria-pressed={audioRendition === 'forward'}
-              className={[
-                'flex-1 h-10 rounded-md border text-sm font-medium transition-colors',
-                readOnly ? 'opacity-60 cursor-not-allowed' : '',
-                audioRendition === 'forward'
-                  ? 'bg-accent text-bg border-accent'
-                  : 'bg-surface-2 text-ink-muted border-border hover:border-accent-2 hover:text-ink',
-              ].join(' ')}
-            >
-              Forward
-            </button>
-            <button
-              type="button"
-              disabled={readOnly}
-              onClick={() => setAudioRendition('reverse')}
-              aria-pressed={audioRendition === 'reverse'}
-              className={[
-                'flex-1 h-10 rounded-md border text-sm font-medium transition-colors',
-                readOnly ? 'opacity-60 cursor-not-allowed' : '',
-                audioRendition === 'reverse'
-                  ? 'bg-accent text-bg border-accent'
-                  : 'bg-surface-2 text-ink-muted border-border hover:border-accent-2 hover:text-ink',
-              ].join(' ')}
-            >
-              Reversed {reversedClipsCount > 0 ? `(${reversedClipsCount} available)` : ''}
-            </button>
-          </div>
+          <ReversedAudioPicker
+            value={audioRendition} 
+            onChange={setAudioRendition} 
+            disabled={readOnly} 
+            reversedClipsCount={reversedClipsCount} 
+          />
         </section>
 
         {/* Instruments */}
@@ -239,7 +214,7 @@ export function SharedGameSettings({
           <h3 className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">
             Timer
           </h3>
-          <TimerPicker value={timer} onChange={setTimer} answerMode={answerMode} disabled={readOnly} />
+          <TimerPicker value={timer} onChange={setTimer}  disabled={readOnly} />
         </section>
 
         {/* Auto-advance (Sporcle only) */}
@@ -263,6 +238,6 @@ export function SharedGameSettings({
           </section>
         )}
       </div>
-    </Reveal>
+   
   );
 }

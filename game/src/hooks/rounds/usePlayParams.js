@@ -1,7 +1,6 @@
 // game/src/hooks/usePlayParams.js
 import { useMemo } from 'react';
-import { TIMER_SECONDS } from '../../constants/timer.js';
-import { VALID_QUESTION_TYPES as VALID_TYPES } from '../../constants/questionTypes.js';
+import { VALID_QUESTION_TYPES as VALID_TYPES } from '@/constants/questionTypes.js';
 
 const VALID_REVERSED = new Set(['no', 'some', 'all']);
 const VALID_INSTRUMENTS = new Set(['none', 'mixed', 'all']);
@@ -28,16 +27,15 @@ export function usePlayParams() {
       : [];
       
     const answerMode = raw.answerMode === 'type' ? 'type' : 'choose';
-    const timer = raw.timer === 'on' ? 'on' : 'off';
+    
+    // FIX: Read the timer as a number (or null/0)
+    const timerSeconds = Number(raw.timer) || 0;
+    const timer = timerSeconds > 0 ? 'on' : 'off';
     
     const count = Math.min(20, Math.max(1, Number(raw.count) || 5));
 
     const reversed = VALID_REVERSED.has(raw.reversed) ? raw.reversed : 'no';
     const instruments = VALID_INSTRUMENTS.has(raw.instruments) ? raw.instruments : 'none';
-
-    const timerSeconds = timer === 'on'
-      ? (answerMode === 'type' ? TIMER_SECONDS.type : TIMER_SECONDS.choose)
-      : TIMER_SECONDS.off;
 
     return {
       genres, artists, years, types, rendition,

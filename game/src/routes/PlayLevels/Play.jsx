@@ -89,34 +89,45 @@ export default function Play() {
         roundScores={session.roundScores}
       />
 
-      <BorderContainer border="all" className="p-6 space-y-6">
-        {session.hasTimer && (
-          <TimerBar
-            timeLeft={session.timeLeft}
-            total={params.timerSeconds}
-            timedOut={session.timedOut}
-          />
-        )}
+      <BorderContainer border="all" className="p-6">
+        <div className="flex flex-col w-full space-y-6">
+          
+          {/* 1. TIMER */}
+          {session.hasTimer && (
+            <TimerBar
+              timeLeft={session.timeLeft}
+              total={params.timerSeconds}
+              timedOut={session.timedOut}
+            />
+          )}
 
-        <PromptSource round={session.currentRound} />
+          {/* 2. AUDIO OR LYRICS */}
+          <div className="w-full">
+            <PromptSource round={session.currentRound} />
+          </div>
 
-        <QuestionCard
-          eyebrow={q.type.replace('name-', '').replace('lyrics-', '')}
-          prompt={q.prompt}
-          options={q.options}
-          correctValue={q.correctValue}
-          picked={session.picked}
-          revealed={session.revealed}
-          onPick={session.pick}
-          onNext={session.next}
-          nextLabel={session.isLastQuestionOverall ? 'See results' : 'Next →'}
-          labelFor={labelFor}
-          answerMode={params.answerMode}
-          questionType={q.type}
-          source={session.currentRound?.source}
-          reversal={reversal}
-          revealExtra={revealClip ? <AudioPlayer src={revealClip.serveUrl} /> : null}
-        />
+          {/* 3. TITLE + OPTIONS */}
+          <div className="w-full">
+            <QuestionCard
+              eyebrow={q.type.replace('name-', '').replace('lyrics-', '')}
+              prompt={q.prompt}
+              options={q.options}
+              correctValue={q.correctValue}
+              picked={session.picked}
+              revealed={session.revealed}
+              onPick={session.pick}
+              onNext={session.next}
+              nextLabel={session.isLastQuestionOverall ? 'See results' : 'Next →'}
+              labelFor={labelFor}
+              answerMode={params.answerMode}
+              questionType={q.type}
+              source={session.currentRound?.source}
+              reversal={reversal}
+              revealExtra={revealClip ? <AudioPlayer src={revealClip.serveUrl} /> : null}
+            />
+          </div>
+
+        </div>
       </BorderContainer>
     </div>
   );

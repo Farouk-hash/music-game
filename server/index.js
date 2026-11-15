@@ -20,6 +20,7 @@ import cloudflareAlbumYearsRouter from './routes/cloud-flare-routes/album-years.
 import youtubeRoutes from './routes/youtube-routes.js';
 import instrumentalRoutes from './routes/instrumental-routes.js';
 import instrumentalRemoteRoutes from './routes/cloud-flare-routes/instruments_remote.js';
+import instrumentsLocallyRoutes from './routes/instruments-locally-routes.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -65,6 +66,7 @@ app.use('/api/cloudflare', cloudflareAlbumYearsRouter);
 app.use('/api/cloudflare', instrumentalRemoteRoutes);   
 app.use('/api', youtubeRoutes);
 app.use('/api', instrumentalRoutes);
+app.use('/api', instrumentsLocallyRoutes);
 
 // Global error handler
 app.use((err, req, res, next) => {

@@ -1,6 +1,7 @@
 // game/src/components/game/TileGrid.jsx
 import { useState, useEffect } from 'react';
 import { Tile } from './Tile.jsx';
+import { IconPlus, IconMinus } from '@/icons';
 
 export function TileGrid({
   items,
@@ -14,7 +15,7 @@ export function TileGrid({
   getImage  = (item) => item.image,
   getFallbackLetter = (item) =>
     (item.name ?? item.display_name ?? '?').trim().charAt(0).toUpperCase(),
-  getTileClassName, // <-- Added
+  getTileClassName,
   emptyMessage = 'Nothing to show.',
   disabled = false,
   initialCount,
@@ -22,6 +23,7 @@ export function TileGrid({
   renderHeart,
   view = 'grid',
   paginated = false,
+  cols, // <-- Added for the mobile layout
 }) {
   const [visibleCount, setVisibleCount] = useState(
     typeof initialCount === 'number' ? initialCount : Infinity
@@ -56,7 +58,7 @@ export function TileGrid({
       ? 'flex flex-col gap-2'
       : view === 'dense'
       ? 'grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-1.5 sm:gap-2'
-      : 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4';
+      : cols || 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4';
 
   return (
     <div className="space-y-3">
@@ -80,7 +82,7 @@ export function TileGrid({
                 onTileClick={onTileClick ? () => onTileClick(item) : null}
                 heart={renderHeart ? renderHeart(item) : null}
                 view={view}
-                className={customClass} // <-- Passed down
+                className={customClass}
               />
             </div>
           );
@@ -92,14 +94,18 @@ export function TileGrid({
           type="button"
           onClick={isFullyExpanded ? handleLess : handleMore}
           className="
-            sm:hidden w-full py-2 text-sm text-ink-muted hover:text-accent
+            sm:hidden w-full py-2 flex items-center justify-center
+            text-ink-muted hover:text-accent
             focus:outline-none focus-visible:ring-2 focus-visible:ring-accent
             rounded-md transition-colors
           "
+          title={isFullyExpanded ? 'Show less' : `Show ${Math.min(initialCount, remaining)} more`}
         >
-          {isFullyExpanded
-            ? 'Show less'
-            : `Show ${Math.min(initialCount, remaining)} more`}
+          {isFullyExpanded ? (
+            <IconMinus className="w-5 h-5" />
+          ) : (
+            <IconPlus className="w-5 h-5" />
+          )}
         </button>
       )}
     </div>

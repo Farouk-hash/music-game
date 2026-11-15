@@ -3,23 +3,6 @@ import {
   useEffect, useRef, useState, forwardRef, useImperativeHandle,
 } from 'react';
 
-/**
- * Audio player with:
- *   - auto-play when src changes
- *   - continuous loop until the parent unmounts or changes src
- *   - play/pause toggle button
- *   - progress bar (seekable)
- *   - time readout
- *
- * Props:
- *   src         — the audio URL
- *   autoPlay    — start playing on src change (default true)
- *   loop        — loop the clip (default true)
- *   stopOnReveal — if true, pause when the parent's `revealed` becomes true
- *   revealed    — used only when stopOnReveal is set
- *
- * Exposes a ref with .replay() and .pause() for parents that need it.
- */
 export const AudioPlayer = forwardRef(function AudioPlayer(
   { src, autoPlay = true, loop = true, stopOnReveal = false, revealed = false },
   ref
@@ -29,7 +12,6 @@ export const AudioPlayer = forwardRef(function AudioPlayer(
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
 
-  // Expose replay / pause to parents
   useImperativeHandle(ref, () => ({
     replay() {
       const a = audioRef.current;
@@ -44,7 +26,6 @@ export const AudioPlayer = forwardRef(function AudioPlayer(
     },
   }));
 
-  // Load a new src → reset state → optionally auto-play
   useEffect(() => {
     const a = audioRef.current;
     if (!a || !src) return;
@@ -59,7 +40,6 @@ export const AudioPlayer = forwardRef(function AudioPlayer(
     }
   }, [src, autoPlay]);
 
-  // Reflect the actual play/pause state
   useEffect(() => {
     const a = audioRef.current;
     if (!a) return;
@@ -85,7 +65,6 @@ export const AudioPlayer = forwardRef(function AudioPlayer(
     };
   }, []);
 
-  // Optionally pause when the parent reveals the answer
   useEffect(() => {
     if (stopOnReveal && revealed) {
       const a = audioRef.current;
@@ -112,47 +91,44 @@ export const AudioPlayer = forwardRef(function AudioPlayer(
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   return (
-    <div className="flex-1 space-y-2">
+    <div className="w-full flex items-center gap-3">
       <audio ref={audioRef} preload="auto" loop={loop} className="hidden" />
 
-      {/* Controls row */}
-      <div className="flex items-center gap-3">
+      <button
+        type="button"
+        onClick={togglePlay}
+        aria-label={isPlaying ? 'Pause' : 'Play'}
+        className="w-12 h-12 rounded-full bg-accent text-bg flex items-center justify-center hover:bg-accent-2 transition-colors shrink-0"
+      >
+        {isPlaying ? (
+          <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor" aria-hidden>
+            <rect x="6" y="5" width="4" height="14" rx="1" />
+            <rect x="14" y="5" width="4" height="14" rx="1" />
+          </svg>
+        ) : (
+          <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor" aria-hidden>
+            <path d="M8 5v14l11-7L8 5z" />
+          </svg>
+        )}
+      </button>
+
+      <div className="flex-1 min-w-0 flex items-center gap-3">
         <button
           type="button"
-          onClick={togglePlay}
-          aria-label={isPlaying ? 'Pause' : 'Play'}
-          className="w-12 h-12 rounded-full bg-accent text-bg flex items-center justify-center
-                     hover:bg-accent-2 transition-colors shrink-0"
+          onClick={handleSeek}
+          aria-label="Seek"
+          className="relative flex-1 h-2 rounded-full bg-surface-2 overflow-hidden cursor-pointer"
         >
-          {isPlaying ? (
-            <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor" aria-hidden>
-              <rect x="6" y="5" width="4" height="14" rx="1" />
-              <rect x="14" y="5" width="4" height="14" rx="1" />
-            </svg>
-          ) : (
-            <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor" aria-hidden>
-              <path d="M8 5v14l11-7L8 5z" />
-            </svg>
-          )}
+          <div
+            className="absolute inset-y-0 left-0 bg-accent transition-[width] duration-100"
+            style={{ width: `${progress}%` }}
+          />
         </button>
-
-        {/* Progress bar + time */}
-        <div className="flex-1 flex items-center gap-3">
-          <button
-            type="button"
-            onClick={handleSeek}
-            aria-label="Seek"
-            className="relative flex-1 h-2 rounded-full bg-surface-2 overflow-hidden cursor-pointer"
-          >
-            <div
-              className="absolute inset-y-0 left-0 bg-accent transition-[width] duration-100"
-              style={{ width: `${progress}%` }}
-            />
-          </button>
-          <span className="text-xs text-ink-muted tabular-nums shrink-0 w-20 text-right">
-            {formatTime(currentTime)} / {formatTime(duration)}
-          </span>
-        </div>
+        
+        {/* HIDDEN ON MOBILE, VISIBLE ON DESKTOP */}
+        <span className="hidden sm:block text-xs text-ink-muted tabular-nums shrink-0 whitespace-nowrap">
+          {formatTime(currentTime)} / {formatTime(duration)}
+        </span>
       </div>
     </div>
   );

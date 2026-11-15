@@ -3,6 +3,25 @@ UPDATE artists SET tracks_count = (
   WHERE t.artist_id = artists.id AND t.r2_key IS NOT NULL
 );
 
+
+-- lyrics_count
+UPDATE artists
+SET lyrics_count = (
+  SELECT COUNT(DISTINCT l.track_name)
+  FROM lyrics l
+  WHERE l.artist_id = artists.id
+);
+
+-- instruments_count — count distinct tracks, NOT rows
+UPDATE artists
+SET instruments_count = (
+  SELECT COUNT(DISTINCT i.track_name)
+  FROM instruments i
+  WHERE i.artist_id = artists.id
+);
+
+
+
 Bookmark this. Every time you want to push changes:
 
 cmd

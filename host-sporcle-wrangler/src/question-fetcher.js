@@ -3,11 +3,14 @@
 /**
  * Fetch the question set for a room and normalize it for the DO.
  *
- * The Service Binding call uses the real public origin as its host so
- * that `music-game-wrangler` builds `clip.serveUrl` with the correct
- * origin. The Service Binding discards the host internally — only the
- * path reaches the target Worker — so this costs nothing extra, but it
- * means downstream responses already carry browser-reachable URLs.
+ * Calls music-game-wrangler over a Service Binding. The public origin is
+ * used as the URL host so the response's `clip.serveUrl` values are
+ * browser-reachable; the Service Binding discards the host internally and
+ * only routes by path.
+ *
+ * Both /game/round and /game/round-multi are POST endpoints that read
+ * their parameters from a JSON body (not the query string). We send a
+ * JSON body matching the shape getRound / getRoundMulti expect.
  */
 
 const MUSIC_GAME_PUBLIC = 'https://music-game-wrangler.abdulrahman-muhammad2090.workers.dev';
@@ -17,28 +20,31 @@ const MUSIC_GAME_PUBLIC = 'https://music-game-wrangler.abdulrahman-muhammad2090.
    ───────────────────────────────────────────────────────────── */
 
 export async function fetchQuestions(env, config) {
-  const params = new URLSearchParams();
+  const isL2 = config.level === 2;
+  const path = isL2 ? '/game/round-multi' : '/game/round';
 
-  if (config.genres?.length)  params.set('genres',  config.genres.join(','));
-  if (config.artists?.length) params.set('artists', config.artists.join(','));
-  if (config.years?.length)   params.set('years',   config.years.join(','));
-  if (config.types?.length)   params.set('types',   config.types.join(','));
-  if (config.rendition && config.rendition !== 'forward') {
-    params.set('rendition', config.rendition);
-  }
-  if (config.instruments && config.instruments !== 'none') {
-    params.set('instruments', config.instruments);
-  }
-  params.set('count', String(config.count ?? 10));
-
-  const path = config.level === 2
-    ? `/game/round-multi?${params.toString()}`
-    : `/game/round?${params.toString()}`;
+  // Body shape matches getRound / getRoundMulti — see
+  // music-game-wrangler/src/controllers/game/rounds.js (L1) and
+  // round-mutli.js (L2). Query params are ignored by both handlers.
+  const body = {
+    level:       config.level ?? 1,
+    genres:      config.genres  ?? [],
+    artists:     config.artists ?? [],
+    years:       config.years   ?? [],
+    types:       config.types   ?? [],
+    count:       config.count   ?? 10,
+    rendition:   config.rendition === 'reverse' ? 'reverse' : 'forward',
+    instruments: config.instruments ?? 'none',
+  };
 
   const url = `${MUSIC_GAME_PUBLIC}${path}`;
-  console.log('[question-fetcher] fetch:', url);
+  console.log('[question-fetcher] POST:', url, body);
 
-  const res = await env.MUSIC_GAME.fetch(url);
+  const res = await env.MUSIC_GAME.fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
   console.log('[question-fetcher] status:', res.status);
 
   if (!res.ok) {
@@ -48,21 +54,13 @@ export async function fetchQuestions(env, config) {
 
   const data = await res.json();
   const rounds = data?.rounds ?? [];
-  return normalizeRounds(rounds, config.level ?? 1);
+  return normalizeRounds(rounds, body.level);
 }
 
 /* ─────────────────────────────────────────────────────────────
-   Normalization
+   Normalization — unchanged
    ───────────────────────────────────────────────────────────── */
 
-/**
- * Flatten the L1 or L2 round payload into a list of questions, each
- * carrying its own clip. `idx` is the room's global question index
- * across all rounds.
- *
- * Clip URLs come back from `music-game-wrangler` already correct —
- * no rewriting required — because we call it with its real origin.
- */
 function normalizeRounds(rounds, level) {
   const out = [];
   let idx = 0;

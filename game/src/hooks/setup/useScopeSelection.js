@@ -8,6 +8,7 @@ export function useScopeSelection({
   years = [],
   favorites = null,
   onFavoritesApplied = null,
+  catalogCounts = null,
   // --- Controlled Mode (for EditorScope) ---
   value, // { genreMode, selectedGenres, selectedArtists, selectedYears, artistQuery }
   onChange, // (partialState) => void
@@ -170,12 +171,9 @@ export function useScopeSelection({
     }
   }, [setStrictYears, reconcileArtists, selectedGenres, selectedYears, setSelectedArtists]);
 
-  const applyYearRange = useCallback((yearsToSelect) => {
-    setSelectedYears((prev) => {
-      const next = new Set(prev);
-      for (const y of yearsToSelect) next.add(y);
-      return next;
-    });
+    const applyYearRange = useCallback((yearsToSelect) => {
+     setSelectedYears(new Set(yearsToSelect));
+
   }, [setSelectedYears]);
 
   const randomizeSelection = useCallback(() => {
@@ -270,6 +268,42 @@ export function useScopeSelection({
 
   const canStart = genreMode !== 'idle';
 
+
+    // ── Scope capabilities ─────────────────────────────────
+  // Sum lyrics_count / instruments_count across the effective scope.
+  //   - If any artists are selected: sum over effectiveSelectedArtists.
+  //   - Otherwise (genre-only / all-genres): use whole-catalog totals
+  //     from `catalogCounts.lyricsTotal` / `.instrumentsTotal`.
+  // The consumer uses these to gate lyrics question-types and the
+  // instruments picker.
+  const capabilities = useMemo(() => {
+    const selected = effectiveSelectedArtists;
+
+    if (selected.size > 0) {
+      const byId = new Map(artists.map(a => [a.id, a]));
+      let lyrics = 0;
+      let instruments = 0;
+      for (const id of selected) {
+        const a = byId.get(id);
+        if (!a) continue;
+        lyrics      += a.lyrics_count      ?? 0;
+        instruments += a.instruments_count ?? 0;
+      }
+      return {
+        lyricsCount: lyrics,
+        instrumentsCount: instruments,
+        scopeKind: 'artists',
+      };
+    }
+
+    // No artists selected — fall back to whole-catalog aggregates.
+    return {
+      lyricsCount:      catalogCounts?.lyricsTotal      ?? 0,
+      instrumentsCount: catalogCounts?.instrumentsTotal ?? 0,
+      scopeKind: 'catalog',
+    };
+  }, [effectiveSelectedArtists, artists, catalogCounts]);
+
   return {
     // State
     genreMode, setGenreMode,
@@ -286,6 +320,10 @@ export function useScopeSelection({
     effectiveSelectedYears,
     allVisibleSelected,
     canStart,
+    yearFilteredArtists,
+    
+
+    capabilities,
 
     // Strict Toggles
     strictGenres, toggleStrictGenres,

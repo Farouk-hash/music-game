@@ -20,6 +20,9 @@ export function EditorScope({ draft, toggleGenre, toggleArtist, toggleYear, read
   const [artistsOpen, setArtistsOpen] = useState(true);
   const [yearsOpen, setYearsOpen] = useState(true);
 
+  // NEW: lift artist query into local state
+  const [artistQuery, setArtistQuery] = useState('');
+
   const genres  = data?.genres  ?? [];
   const artists = data?.artists ?? [];
   const years   = data?.years   ?? [];
@@ -31,8 +34,8 @@ export function EditorScope({ draft, toggleGenre, toggleArtist, toggleYear, read
     selectedGenres: draft.genresIds,
     selectedArtists: draft.artistsIds,
     selectedYears: yearSet,
-    artistQuery: '',
-  }), [draft.genresIds, draft.artistsIds, yearSet]);
+    artistQuery,  // <-- use the lifted state
+  }), [draft.genresIds, draft.artistsIds, yearSet, artistQuery]);
 
   const handleScopeChange = useCallback((changes) => {
     if (changes.selectedGenres) {
@@ -50,6 +53,10 @@ export function EditorScope({ draft, toggleGenre, toggleArtist, toggleYear, read
       for (const y of yearSet) if (!next.has(y)) toggleYear(y);
       for (const y of next) if (!yearSet.has(y)) toggleYear(y);
     }
+    // NEW: handle artist query changes
+    if (changes.artistQuery !== undefined) {
+      setArtistQuery(changes.artistQuery);
+    }
   }, [draft.genresIds, draft.artistsIds, yearSet, toggleGenre, toggleArtist, toggleYear]);
 
   const {
@@ -58,8 +65,8 @@ export function EditorScope({ draft, toggleGenre, toggleArtist, toggleYear, read
     validArtistIds,
     strictGenres,
     strictYears,
-    artistQuery,
-    setArtistQuery,
+    // `artistQuery` and `setArtistQuery` from the hook are still
+    // available but we no longer use them — we use our local ones.
     toggleStrictGenres,
     toggleStrictMode,
     applyYearRange,

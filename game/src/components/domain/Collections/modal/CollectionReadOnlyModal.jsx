@@ -6,7 +6,15 @@ import { useCatalog } from '@/hooks/setup/useCatalog.js';
 import { CollectionModalShell } from './CollectionModalShell.jsx';
 import { LevelPickerModal } from './LevelPickerModal.jsx';
 
-export function CollectionReadOnlyModal({ open, onClose, collection, onPlay, onMultiplayer }) {
+export function CollectionReadOnlyModal({ 
+  open, 
+  onClose, 
+  collection, 
+  onPlay, 
+  onMultiplayer,
+  disabledTypes, 
+  disabledReasons 
+}) {
   const [levelPickerOpen, setLevelPickerOpen] = useState(false);
   const { startGame } = usePlayCollection();
   const { data: catalog } = useCatalog(); 
@@ -40,6 +48,8 @@ export function CollectionReadOnlyModal({ open, onClose, collection, onPlay, onM
         collection={collection}
         draft={draft}
         readOnly={true}
+        disabledTypes={disabledTypes}
+        disabledReasons={disabledReasons}
         reversedClipsCount={reversedClipsCount}
         availableLevels={availableLevels}
         onPlay={handlePlayClick}

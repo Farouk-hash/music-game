@@ -1,20 +1,16 @@
 // game/src/constants/timer.js
-// Moved here from hooks/rounds/usePlayParams.js so pickers and the
-// collection editor can import without a hook cycle.
-
 export const TIMER_SECONDS = {
   off: 0,
-  choose: 5,
-  type:   15,
+  short: 5,
+  medium: 15,
+  long: 20,
 };
 
-export function getTimerOptions(answerMode) {
-  const perQuestion = answerMode === 'type'
-    ? TIMER_SECONDS.type
-    : TIMER_SECONDS.choose;
-
+export function getTimerOptions() {
   return [
-    { value: 'off', label: 'No timer', hint: 'Take your time' },
-    { value: 'on',  label: 'Timed',    hint: `${perQuestion}s per question` },
+    { value: null, label: 'No timer', hint: 'Take your time' },
+    { value: 5,    label: '5s',       hint: 'Fast' },
+    { value: 15,   label: '15s',      hint: 'Normal' },
+    { value: 20,   label: '20s',      hint: 'Relaxed' },
   ];
 }

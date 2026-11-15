@@ -9,7 +9,8 @@ export function CollectionMultiplayerModal({
   reversedClipsCount, 
 }) {
   if (!collection) return null;
-
+  const seedRound = collection.rounds?.[0];
+  const defaultRounds = seedRound?.rounds || 5;
   return (
     <MultiplayerModal
       key={collection.id}
@@ -19,6 +20,7 @@ export function CollectionMultiplayerModal({
       starting={false}
       disabledTypes={disabledTypes}
       reversedClipsCount={reversedClipsCount}
+      defaultRoundsPerPlayer={defaultRounds}
     />
   );
 }

@@ -2,17 +2,18 @@
 import { SharedGameSettings } from '../../Setup/Modals/SharedGameSettings.jsx';
 import { Badge } from '../primitives/Badge.jsx';
 import { IconChevronUp, IconChevronDown, IconTrash } from '@/icons';
+import { ChoiceCard } from '../../Setup/Modals/ChoiceCard.jsx';
 
 const LEVELS = [1, 2, 3];
 
 function roundToConfig(round) {
   return {
-    questionTypes: round.questionTypes,
-    answerMode: round.answerMode,
-    roundCount: round.rounds,
+    questionTypes: round.questionTypes || [],
+    answerMode: round.answerMode || 'choose',
+    roundCount: round.rounds || 10,
     reversedAnswers: round.reversedAnswers || 'no',
-    timer: round.timer == null ? 'off' : 'on',
-    audioRendition: round.reversedAudio ? 'reverse' : 'forward', // <-- This carries the real state
+    timer: round.timer ?? null, // Pass the raw number (or null) directly
+    audioRendition: round.reversedAudio ? 'reverse' : 'forward',
     instruments: round.instruments || 'none',
   };
 }
@@ -26,34 +27,15 @@ function configToRound(config, prev) {
     reversedAnswers: config.reversedAnswers,
     reversedAudio: config.audioRendition === 'reverse',
     instruments: config.instruments,
-    timer: config.timer === 'off' ? null : (prev.timer ?? 20),
+    timer: config.timer ?? null, // Pass the raw number (or null) directly
   };
-}
-
-function ChoiceCard({ active, onClick, title, description, disabled }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-pressed={active}
-      className={[
-        'text-left p-3 rounded-md border transition-colors space-y-1',
-        active
-          ? 'bg-accent-soft border-accent text-ink'
-          : 'bg-surface-2 border-border text-ink-muted hover:border-accent-2',
-        disabled ? 'cursor-default opacity-80' : '',
-      ].join(' ')}
-    >
-      <p className="text-sm font-semibold">{title}</p>
-      <p className="text-[11px]">{description}</p>
-    </button>
-  );
 }
 
 export function RoundRow({
   round, index, total, levels,
-  disabledTypes, reversedClipsCount,
+  disabledTypes, 
+  disabledReasons, 
+  reversedClipsCount,
   onUpdate, onRemove, onMoveUp, onMoveDown,
   readOnly = false,
 }) {
@@ -142,6 +124,7 @@ export function RoundRow({
         value={roundToConfig(round)}
         onChange={(next) => onUpdate(configToRound(next, round))}
         disabledTypes={disabledTypes}
+        disabledReasons={disabledReasons}
         reversedClipsCount={reversedClipsCount}
         allowInstruments={true}
         readOnly={readOnly}

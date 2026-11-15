@@ -1,41 +1,21 @@
 // game/src/components/domain/Setup/ReversedAnswersPicker/ReversedAnswersPicker.jsx
+import { HorizontalScroll } from '@/components/ui/HorizontalScroll';
+import { ChoiceCard } from '../Modals/ChoiceCard.jsx';
+import { REVERSED_ANSWER_OPTIONS } from '@/constants/reversedAnswers';
 
-import { REVERSED_ANSWER_OPTIONS } from "@/constants/reversedAnswers";
-
-
-/**
- * Segmented control: No / Some / All.
- * Reversal flips the answer options — word order swapped, or letters
- * scrambled — making the challenge about reading through the noise.
- */
-export function ReversedAnswersPicker({ value = 'no', onChange }) {
+export function ReversedAnswersPicker({ value, onChange, disabled }) {
   return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-3 gap-2">
-        {REVERSED_ANSWER_OPTIONS.map((opt) => {
-          const selected = value === opt.value;
-          return (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => onChange(opt.value)}
-              aria-pressed={selected}
-              className={[
-                'rounded-md border px-4 py-3 text-left transition-colors',
-                selected
-                  ? 'bg-accent-soft border-accent text-ink'
-                  : 'bg-surface-2 border-border text-ink-muted hover:border-accent-2 hover:text-ink',
-              ].join(' ')}
-            >
-              <p className="text-sm font-semibold flex items-center gap-1.5">
-                {selected && <span aria-hidden="true">✓</span>}
-                {opt.label}
-              </p>
-              <p className="text-xs mt-0.5 opacity-80">{opt.hint}</p>
-            </button>
-          );
-        })}
-      </div>
-    </div>
+    <HorizontalScroll size="md">
+      {REVERSED_ANSWER_OPTIONS.map((opt) => (
+        <ChoiceCard
+          key={opt.value}
+          active={value === opt.value}
+          onClick={() => onChange(opt.value)}
+          title={opt.label}
+          description={opt.hint}
+          disabled={disabled}
+        />
+      ))}
+    </HorizontalScroll>
   );
 }

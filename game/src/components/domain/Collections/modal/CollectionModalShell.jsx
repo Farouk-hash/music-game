@@ -1,6 +1,6 @@
 // game/src/components/domain/Collections/modal/CollectionModalShell.jsx
 import { Modal } from '@/components/Modal/Modal.jsx';
-import { Button } from '@/components/ui/Button.jsx'; // <-- ADD THIS
+import { Button } from '@/components/ui/Button.jsx';
 import { CollectionCover } from '../primitives/CollectionCover.jsx';
 import { PlayerAvatar } from '@/components/Avatar/PlayerAvatar.jsx';
 import { EditorBasics } from '../editors/EditorBasics.jsx';
@@ -23,6 +23,7 @@ export function CollectionModalShell({
   isPublic = false,
   setIsPublic,
   disabledTypes = new Set(),
+  disabledReasons, // <-- Make sure it's here
   reversedClipsCount = 0,
   collectionId = null,
   isExisting = false,
@@ -95,7 +96,8 @@ export function CollectionModalShell({
 
           <EditorRounds
             draft={draft}
-            disabledTypes={disabledTypes}
+            disabledTypes={readOnly ? new Set() : disabledTypes}
+            disabledReasons={readOnly ? new Map() : disabledReasons}
             reversedClipsCount={reversedClipsCount}
             addRound={readOnly ? noop : mutations?.addRound}
             removeRound={readOnly ? noop : mutations?.removeRound}

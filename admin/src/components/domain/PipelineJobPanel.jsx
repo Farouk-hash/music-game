@@ -24,11 +24,18 @@ const STAGE_LABELS = {
   start: 'Starting',
   download: 'Downloading audio',
   cut: 'Cutting segment',
-  'demucs-start': 'Removing vocals (this segment takes ~1 min)',
+  'demucs-start': 'Removing vocals',
   'demucs-done': 'Vocals removed',
   'track-start': 'Preparing track',
   'track-done': 'Track done',
   'track-failed': 'Track failed',
+
+  // instruments-locally pipeline (v71 — separate-full-then-slice)
+  'track-skipped': 'Track skipped (already done)',
+  'track-regenerating': 'Regenerating',
+  'demucs-chunk': 'Removing vocals (chunk)',
+  'full-nv': 'Writing full-nv.mp3',
+  slice: 'Slicing 30s parts',
 
   // terminal
   done: 'Done',
@@ -198,7 +205,7 @@ export function PipelineJobPanel({ job, onCancel, cancelling }) {
           {job.summary.skipped  != null && (<><span>Skipped</span><span className="text-ink tabular-nums">{job.summary.skipped}</span></>)}
           {job.summary.errors   != null && (<><span>Errors</span><span className={job.summary.errors > 0 ? 'text-danger tabular-nums' : 'text-ink tabular-nums'}>{job.summary.errors}</span></>)}
 
-          {/* Reverse-batch / instrumental summary */}
+          {/* Reverse-batch / instrumental / instruments-locally summary */}
           {job.summary.total     != null && (<><span>Total</span><span className="text-ink tabular-nums">{job.summary.total}</span></>)}
           {job.summary.reversed  != null && (<><span>Reversed</span><span className="text-emerald-400 tabular-nums">{job.summary.reversed}</span></>)}
           {job.summary.succeeded != null && (<><span>Succeeded</span><span className="text-emerald-400 tabular-nums">{job.summary.succeeded}</span></>)}
