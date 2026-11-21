@@ -1,10 +1,11 @@
-// music-game-wrangler/src/controllers/game/rounds.js
+// src/controllers/game/rounds.js
 import { json, error } from '../../lib/response.js';
 import { clamp } from '../../utilities/clamp.js';
 import { parseIdList } from '../../utilities/parseIdList.js';
+import { shuffle } from '../../utilities/shuffle.js';
 import { buildRound } from './rounds-methods/buildingRounds.js';
 import { buildLyricsRound } from './rounds-methods/buildingLyrics.js';
-import { pickSlotsVaried } from './rounds-methods/slots.js';
+import { pickSlotsVaried, pickFeaturedSlots } from './rounds-methods/slots.js';
 import { computeDegenerateTypes } from './rounds-methods/degenerate-types.js';
 import {
   VALID_TYPES,
@@ -16,15 +17,16 @@ import {
   pickLyricsVaried,
   parseRequestedTypes,
 } from './rounds-methods/scope-helpers.js';
-import { chunkedIn, D1_CHUNK_SIZE } from '../../utilities/chunkedIn.js';
-
 import { fetchInstrumentSlots } from './rounds-methods/instruments-slots.js';
 import { buildInstrumentalRound } from './rounds-methods/buildingInstrumental.js';
 import { fetchLyricsPool } from './rounds-methods/instruments-lyrics-pool.js';
+import { PoolNotReady, loadArtistData } from '../../lib/cache.js';
+import { MAX_ROUNDS_PER_REQUEST, workSetFor } from './rounds-methods/work-set.js';
 
 export { VALID_TYPES };
 
-const MAX_COUNT = 500;
+const MAX_COUNT = MAX_ROUNDS_PER_REQUEST;
+const OVERFETCH = 3;       // candidates per needed round (was 5)
 
 function featuredQuota(count, requestedTypes) {
   const onlyFeatured =
@@ -33,58 +35,21 @@ function featuredQuota(count, requestedTypes) {
   return Math.max(1, Math.floor(count * 0.4));
 }
 
-async function fetchFeaturedSlots(env, artistIds, limit, years = [], rendition = 'forward') {
-  if (!artistIds.length) return [];
-
-  const isReverse = rendition === 'reverse';
-  const keyColumn = isReverse ? 'r2_reversed_key' : 'r2_key';
-  const rows = [];
-
-  await chunkedIn(artistIds, D1_CHUNK_SIZE, async (chunk) => {
-    const idPh = chunk.map(() => '?').join(',');
-
-    if (years.length > 0) {
-      const yearPh = years.map(() => '?').join(',');
-      const { results } = await env.DB.prepare(
-        `SELECT t.id, t.name, t.artist_id, t.${keyColumn} AS r2_key, t.position,
-                t.album_name, t.featured_artists
-         FROM tracks t
-         JOIN album_years ay
-           ON ay.artist_id = t.artist_id
-          AND ay.album_name = t.album_name
-         WHERE t.artist_id IN (${idPh})
-           AND t.${keyColumn} IS NOT NULL
-           AND t.featured_artists IS NOT NULL
-           AND t.featured_artists != ''
-           AND ay.released_year IN (${yearPh})
-         ORDER BY RANDOM()
-         LIMIT ?`
-      ).bind(...chunk, ...years, limit).all();
-      for (const r of results ?? []) rows.push(r);
-    } else {
-      const { results } = await env.DB.prepare(
-        `SELECT id, name, artist_id, ${keyColumn} AS r2_key, position,
-                album_name, featured_artists
-         FROM tracks
-         WHERE artist_id IN (${idPh})
-           AND ${keyColumn} IS NOT NULL
-           AND featured_artists IS NOT NULL
-           AND featured_artists != ''
-         ORDER BY RANDOM()
-         LIMIT ?`
-      ).bind(...chunk, limit).all();
-      for (const r of results ?? []) rows.push(r);
+export async function getRound(request, env, ctx) {
+  try {
+    return await handleRound(request, env, ctx);
+  } catch (err) {
+    if (err instanceof PoolNotReady) {
+      console.warn('pool not ready:', err.message);
+      return error('Game data cache is not built yet. Rebuild the pool and retry.', 503);
     }
-    return [];
-  });
-
-  return rows.slice(0, limit);
+    throw err;
+  }
 }
 
-export async function getRound(request, env) {
-  // ── CHANGED: Read from POST body instead of URL ──
+async function handleRound(request, env, ctx) {
   const body = await request.json().catch(() => ({}));
-  
+
   const requestedTypes = parseRequestedTypes(body.types);
   const count     = clamp(Number(body.count ?? 5), 1, MAX_COUNT);
   const artistIds = parseIdList(body.artists);
@@ -97,12 +62,9 @@ export async function getRound(request, env) {
     body.instruments === 'mixed' ? 'mixed' :
                                    'none';
 
-  // ── THE REST IS EXACTLY AS YOU PROVIDED IT ──
-  
   const { ids: scopeArtistIds, tier: scopeTier } = await resolveScope(env, {
-    artistIds, genreIds, years,
+    artistIds, genreIds, years, ctx,
   });
-
   if (scopeArtistIds.length === 0) {
     return error('No clips match the selected scope', 404);
   }
@@ -117,34 +79,52 @@ export async function getRound(request, env) {
     instrumentalCount = count - traditionalCount;
   }
 
+  /* ── Work set ──────────────────────────────────────────────
+     Only a few artists are actually loaded from KV and parsed.
+     The full scope is still used for distractor names and degeneracy. */
+  const workIds = workSetFor(scopeArtistIds, count);
+
+  const mixedTypes      = requestedTypes.length === 0;
+  const wantAudioTypes  = mixedTypes || requestedTypes.some(t => AUDIO_TYPES.has(t));
+  const wantLyricsTypes = mixedTypes || requestedTypes.some(t => LYRICS_TYPES.has(t));
+
+  const needCore  = (traditionalCount > 0 && wantAudioTypes) || instrumentalCount > 0;
+  const needLyric = traditionalCount > 0 && wantLyricsTypes;
+
+  // One parallel preload; every later helper then hits the in-isolate memo.
+  await Promise.all([
+    needCore  ? loadArtistData(env, 'core', workIds) : null,
+    needLyric ? loadArtistData(env, 'lyr',  workIds) : null,
+  ]);
+
   let usedRendition = rendition;
   let audioSlots = [];
-  if (traditionalCount > 0) {
+  if (traditionalCount > 0 && wantAudioTypes) {
     audioSlots = await pickSlotsVaried(
-      env, scopeArtistIds, traditionalCount * 5, years, rendition
+      env, workIds, traditionalCount * OVERFETCH, years, rendition
     );
     if (rendition === 'reverse' && audioSlots.length === 0) {
       usedRendition = 'forward';
       audioSlots = await pickSlotsVaried(
-        env, scopeArtistIds, traditionalCount * 5, years, 'forward'
+        env, workIds, traditionalCount * OVERFETCH, years, 'forward'
       );
     }
   }
-  const lyricsRowsAll = traditionalCount > 0
-    ? await resolveLyricsPool(env, { scopeArtistIds, genreIds, years })
-    : [];
-  const lyricsRows = traditionalCount > 0
-    ? pickLyricsVaried(lyricsRowsAll, traditionalCount * 5)
-    : [];
+
+  let lyricsRows = [];
+  if (needLyric) {
+    const all = await resolveLyricsPool(env, { scopeArtistIds: workIds, genreIds, years });
+    lyricsRows = pickLyricsVaried(all, traditionalCount * OVERFETCH);
+  }
 
   let instrumentSlots = [];
   let lyricsByKey = null;
   if (instrumentalCount > 0) {
     instrumentSlots = await fetchInstrumentSlots(
-      env, scopeArtistIds, instrumentalCount * 5, years
+      env, workIds, instrumentalCount * OVERFETCH, years
     );
     if (instrumentSlots.length > 0) {
-      lyricsByKey = await fetchLyricsPool(env, scopeArtistIds);
+      lyricsByKey = await fetchLyricsPool(env, workIds);
     }
   }
 
@@ -168,12 +148,16 @@ export async function getRound(request, env) {
   const usedLyricIds = new Set();
   const typeTally = emptyTally();
 
-  const wantsFeatured = requestedTypes.length === 0
-    || requestedTypes.includes('name-featured');
+  const bump = (round) => {
+    typeTally[round.type] = (typeTally[round.type] ?? 0) + 1;
+  };
 
-  if (traditionalCount > 0 && wantsFeatured) {
-    const featuredPool = await fetchFeaturedSlots(
-      env, scopeArtistIds, count * 3, years, usedRendition
+  /* ── 1) featured-artist rounds ─────────────────────────── */
+  const wantsFeatured = mixedTypes || requestedTypes.includes('name-featured');
+
+  if (traditionalCount > 0 && wantsFeatured && wantAudioTypes) {
+    const featuredPool = await pickFeaturedSlots(
+      env, workIds, traditionalCount * 2, years, usedRendition
     );
 
     const featuredDegenerate = new Set(degenerate);
@@ -181,7 +165,7 @@ export async function getRound(request, env) {
     const featuredState = { degenerate: featuredDegenerate, fired: new Set() };
 
     const featuredLimit = Math.min(
-      featuredQuota(count, requestedTypes),
+      featuredQuota(traditionalCount, requestedTypes),
       featuredPool.length
     );
 
@@ -195,15 +179,15 @@ export async function getRound(request, env) {
       if (round) {
         rounds.push(round);
         usedAudioSlotIds.add(slot.id);
-        typeTally[round.type] = (typeTally[round.type] ?? 0) + 1;
+        bump(round);
       }
     }
   }
 
+  /* ── 2) instrumental rounds ────────────────────────────── */
   if (instrumentalCount > 0 && instrumentSlots.length > 0) {
-    let builtInstrumental = 0;
-    for (let i = 0; i < instrumentSlots.length; i++) {
-      if (builtInstrumental >= instrumentalCount) break;
+    let built = 0;
+    for (let i = 0; i < instrumentSlots.length && built < instrumentalCount; i++) {
       const slot = instrumentSlots[i];
       if (usedInstrumentSlotIds.has(slot.id)) continue;
 
@@ -214,20 +198,17 @@ export async function getRound(request, env) {
       if (round) {
         rounds.push(round);
         usedInstrumentSlotIds.add(slot.id);
-        builtInstrumental += 1;
-        typeTally[round.type] = (typeTally[round.type] ?? 0) + 1;
+        built += 1;
+        bump(round);
         if (degenerate.has(`instr:${round.type}`)) fired.add(`instr:${round.type}`);
       }
     }
   }
 
+  /* ── 3) explicitly requested types ─────────────────────── */
   if (traditionalCount > 0 && requestedTypes.length > 0) {
-    const wantAudio  = requestedTypes.some(t => AUDIO_TYPES.has(t));
-    const wantLyrics = requestedTypes.some(t => LYRICS_TYPES.has(t));
-
-    if (wantAudio) {
-      for (let i = 0; i < audioSlots.length; i++) {
-        if (rounds.length >= count) break;
+    if (requestedTypes.some(t => AUDIO_TYPES.has(t))) {
+      for (let i = 0; i < audioSlots.length && rounds.length < count; i++) {
         const slot = audioSlots[i];
         if (usedAudioSlotIds.has(slot.id)) continue;
         const round = await buildRound(
@@ -236,15 +217,14 @@ export async function getRound(request, env) {
         if (round) {
           rounds.push(round);
           usedAudioSlotIds.add(slot.id);
-          typeTally[round.type] = (typeTally[round.type] ?? 0) + 1;
+          bump(round);
           if (degenerate.has(round.type)) fired.add(round.type);
         }
       }
     }
 
-    if (wantLyrics) {
-      for (let i = 0; i < lyricsRows.length; i++) {
-        if (rounds.length >= count) break;
+    if (requestedTypes.some(t => LYRICS_TYPES.has(t))) {
+      for (let i = 0; i < lyricsRows.length && rounds.length < count; i++) {
         const row = lyricsRows[i];
         if (usedLyricIds.has(row.id)) continue;
         const round = await buildLyricsRound(
@@ -253,46 +233,41 @@ export async function getRound(request, env) {
         if (round) {
           rounds.push(round);
           usedLyricIds.add(row.id);
-          typeTally[round.type] = (typeTally[round.type] ?? 0) + 1;
+          bump(round);
           if (degenerate.has(round.type)) fired.add(round.type);
         }
       }
     }
   }
 
-  if (
-    traditionalCount > 0 &&
-    requestedTypes.length === 0 &&
-    rounds.length < count
-  ) {
+  /* ── 4) mixed fill: alternate audio / lyrics ───────────── */
+  if (traditionalCount > 0 && mixedTypes && rounds.length < count) {
     const maxIter = Math.max(audioSlots.length, lyricsRows.length);
     let ai = 0, li = 0;
     for (let i = 0; i < maxIter * 2 && rounds.length < count; i++) {
       if (i % 2 === 0 && ai < audioSlots.length) {
         const slot = audioSlots[ai++];
-        if (!usedAudioSlotIds.has(slot.id)) {
-          const round = await buildRound(
-            env, request, slot, [], scopeArtistIds, i, typeTally, degenerateState
-          );
-          if (round) {
-            rounds.push(round);
-            usedAudioSlotIds.add(slot.id);
-            typeTally[round.type] = (typeTally[round.type] ?? 0) + 1;
-            if (degenerate.has(round.type)) fired.add(round.type);
-          }
+        if (usedAudioSlotIds.has(slot.id)) continue;
+        const round = await buildRound(
+          env, request, slot, [], scopeArtistIds, i, typeTally, degenerateState
+        );
+        if (round) {
+          rounds.push(round);
+          usedAudioSlotIds.add(slot.id);
+          bump(round);
+          if (degenerate.has(round.type)) fired.add(round.type);
         }
       } else if (li < lyricsRows.length) {
         const row = lyricsRows[li++];
-        if (!usedLyricIds.has(row.id)) {
-          const round = await buildLyricsRound(
-            env, request, row, [], scopeArtistIds, i, typeTally, degenerateState
-          );
-          if (round) {
-            rounds.push(round);
-            usedLyricIds.add(row.id);
-            typeTally[round.type] = (typeTally[round.type] ?? 0) + 1;
-            if (degenerate.has(round.type)) fired.add(round.type);
-          }
+        if (usedLyricIds.has(row.id)) continue;
+        const round = await buildLyricsRound(
+          env, request, row, [], scopeArtistIds, i, typeTally, degenerateState
+        );
+        if (round) {
+          rounds.push(round);
+          usedLyricIds.add(row.id);
+          bump(round);
+          if (degenerate.has(round.type)) fired.add(round.type);
         }
       }
     }
@@ -302,7 +277,7 @@ export async function getRound(request, env) {
     return error('Could not construct any rounds from the selected scope', 500);
   }
 
-  const requestedCount = requestedTypes.length > 0
+  const requestedGenerated = requestedTypes.length > 0
     ? rounds.filter(r => requestedTypes.includes(r.type)).length
     : rounds.length;
 
@@ -311,6 +286,7 @@ export async function getRound(request, env) {
     meta: {
       scope: {
         artistCount: scopeArtistIds.length,
+        workArtistCount: workIds.length,
         genreIds,
         artistIds,
         years,
@@ -319,7 +295,7 @@ export async function getRound(request, env) {
       requestedCount: count,
       generatedCount: rounds.length,
       requestedTypes,
-      requestedTypeGenerated: requestedCount,
+      requestedTypeGenerated: requestedGenerated,
       typeTally,
       degenerateTypes: [...degenerate],
       lyricsPoolSize: lyricsRows.length,

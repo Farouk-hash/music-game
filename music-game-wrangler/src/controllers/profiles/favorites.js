@@ -10,7 +10,7 @@ import { buildProfileResponse } from './profiles.js';
 /* ═══════════════════════════════════════════════════════════
    POST /profiles/:id/favorites
    ═══════════════════════════════════════════════════════════ */
-export async function addFavorite(request, env, { id }) {
+export async function addFavorite(request, env, ctx, { id }) {
   const body = await request.json().catch(() => null);
   const v = validateFavorite(body?.kind, body?.value);
   if (!v.ok) return error(v.error, 400);
@@ -20,6 +20,8 @@ export async function addFavorite(request, env, { id }) {
   ).bind(id).first();
   if (!profile) return error('Profile not found', 404);
 
+  // Single batch for count checks + insert + updated_at bump
+  // Note: D1 doesn't support conditional logic in batch, so we check limits first.
   const kindCount = await env.DB.prepare(
     'SELECT COUNT(*) AS n FROM profile_favorites WHERE profile_id = ? AND kind = ?'
   ).bind(id, v.kind).first();
@@ -34,15 +36,17 @@ export async function addFavorite(request, env, { id }) {
     return error(`Maximum ${FAVORITES_TOTAL_MAX} favorites total`, 400);
   }
 
-  await env.DB.prepare(
-    `INSERT INTO profile_favorites (profile_id, kind, value)
-     VALUES (?, ?, ?)
-     ON CONFLICT(profile_id, kind, value) DO NOTHING`
-  ).bind(id, v.kind, v.value).run();
-
-  await env.DB.prepare(
-    "UPDATE profiles SET updated_at = datetime('now') WHERE id = ?"
-  ).bind(id).run();
+  // Batched write: insert + updated_at (saves 1 round-trip)
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO profile_favorites (profile_id, kind, value)
+       VALUES (?, ?, ?)
+       ON CONFLICT(profile_id, kind, value) DO NOTHING`
+    ).bind(id, v.kind, v.value),
+    env.DB.prepare(
+      "UPDATE profiles SET updated_at = datetime('now') WHERE id = ?"
+    ).bind(id),
+  ]);
 
   const updated = await buildProfileResponse(env, id);
   return json({ ok: true, kind: v.kind, value: v.value, profile: updated });
@@ -51,18 +55,20 @@ export async function addFavorite(request, env, { id }) {
 /* ═══════════════════════════════════════════════════════════
    DELETE /profiles/:id/favorites
    ═══════════════════════════════════════════════════════════ */
-export async function removeFavorite(request, env, { id }) {
+export async function removeFavorite(request, env, ctx, { id }) {
   const body = await request.json().catch(() => null);
   const v = validateFavorite(body?.kind, body?.value);
   if (!v.ok) return error(v.error, 400);
 
-  await env.DB.prepare(
-    'DELETE FROM profile_favorites WHERE profile_id = ? AND kind = ? AND value = ?'
-  ).bind(id, v.kind, v.value).run();
-
-  await env.DB.prepare(
-    "UPDATE profiles SET updated_at = datetime('now') WHERE id = ?"
-  ).bind(id).run();
+  // Batched write: delete + updated_at (saves 1 round-trip)
+  await env.DB.batch([
+    env.DB.prepare(
+      'DELETE FROM profile_favorites WHERE profile_id = ? AND kind = ? AND value = ?'
+    ).bind(id, v.kind, v.value),
+    env.DB.prepare(
+      "UPDATE profiles SET updated_at = datetime('now') WHERE id = ?"
+    ).bind(id),
+  ]);
 
   const updated = await buildProfileResponse(env, id);
   return json({ ok: true, kind: v.kind, value: v.value, profile: updated });

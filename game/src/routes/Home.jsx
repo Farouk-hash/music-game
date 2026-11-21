@@ -16,8 +16,6 @@ export default function Home() {
     { label: 'Artists', value: data?.counts?.artists, description: 'Voices to know.', icon: <IconArtists /> },
     { label: 'Tracks', value: data?.counts?.tracks, description: 'Songs in the pool.', icon: <IconTracks /> },
     { label: 'Clips', value: data?.counts?.clips, description: 'Audio ready to play.', icon: <IconClips /> },
-    { label: 'Reversed', value: data?.counts?.reversedClips, description: 'Backwards renditions.', icon: <IconReversed /> },
-    { label: 'Albums', value: data?.counts?.albums, description: 'Collections in the pool.', icon: <IconAlbums /> },
     { label: 'Lyrics', value: data?.counts?.lyrics, description: 'Songs with lyrics.', icon: <IconLyrics /> },
     { label: 'Instruments', value: data?.counts?.instruments, description: 'Non-Vocals Instruments Only.', icon: <IconInstruments /> },
   ];

@@ -15,13 +15,9 @@ import { PlayerBadge } from '@/components/domain/Multiplayer/PlayerBadge.jsx';
 import { useRoundMultiplayer } from '@/hooks/rounds/useRoundMultiPlayer.js';
 import { Leaderboard } from '@/components/domain/Multiplayer/LeaderBoard.jsx';
 import { MultiplayerProgress } from '@/components/domain/Multiplayer/MultiplayerProgress.jsx';
+import { POSITION_LABELS } from '@/constants';
 
-const POSITION_LABELS = {
-  start: 'البداية',
-  middle: 'المنتصف',
-  end: 'النهاية',
-  custom: 'مقطع مخصص',
-};
+
 
 export default function PlayMulti() {
   const params = useMultiplayerParams();

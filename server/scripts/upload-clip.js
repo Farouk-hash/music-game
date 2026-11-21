@@ -30,7 +30,7 @@ async function main() {
   });
 
   console.log('');
-  console.log('✅ Done. Clip is at:', result.r2_key);
+  console.log(' Done. Clip is at:', result.r2_key);
   console.log('   Play at:', result.serveUrl);
   console.log('   Timings:', result.timings);
 }

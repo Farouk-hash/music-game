@@ -13,12 +13,18 @@ import { chunkedIn } from '../../utilities/chunkedIn.js';
 import { buildReplaceRoundsStatements } from './rounds.js';
 import { parseCollectionRequest } from '../../utilities/collections/parseRequest.js';
 import { persistCover } from './cover.js';
+import { cachedJsonResponse, invalidateCache } from '../../lib/cache.js';
 
 const COLLECTION_FIELDS =
   'id, profile_id, name, is_public, cover_kind, cover_r2_key, levels, years, genres_ids, artists_ids, created_at, updated_at';
 
 const ROUND_FIELDS =
   'collection_id, position, level, question_types, answer_mode, mode, rounds, reversed_answers, reversed_audio, instruments, timer';
+
+// ── Others-list cache ──────────────────────────────────────
+const OTHERS_CACHE_KEY = 'collections:others:v1';
+const OTHERS_TTL_SECONDS = 30 * 60;        // 30 min KV
+const OTHERS_EDGE_TTL_SECONDS = 5 * 60;    // 5 min edge
 
 function parseJSON(raw, fallback) {
   if (raw == null) return fallback;
@@ -89,8 +95,36 @@ export async function buildCollectionResponse(env, profileId, collectionId) {
   return serializeCollection(row, roundsMap.get(collectionId) ?? []);
 }
 
+/**
+ * Base "others" query — no user-specific joins.
+ * Cached globally for 30 min. Filtered per-request afterward.
+ */
+async function fetchOthersBase(env) {
+  const { results } = await env.DB.prepare(
+    `SELECT 
+       c.id, c.profile_id, c.name, c.is_public, c.cover_kind, c.cover_r2_key, 
+       c.levels, c.years, c.genres_ids, c.artists_ids, 
+       c.created_at, c.updated_at,
+       p.nickname AS author_nickname,
+       p.avatar_r2_key AS author_avatar_r2_key,
+       p.avatar_kind AS author_avatar_kind,
+       p.avatar_style AS author_avatar_style,
+       p.avatar_seed AS author_avatar_seed
+     FROM collections c
+     JOIN profiles p ON p.id = c.profile_id
+     WHERE c.is_public = 1
+     ORDER BY c.created_at DESC LIMIT 50`
+  ).all();
+  return results ?? [];
+}
+
+async function bustOthersCache(env, ctx, request) {
+  const origin = new URL(request.url).origin;
+  await invalidateCache(env, ctx, OTHERS_CACHE_KEY, origin);
+}
+
 // POST /profiles/:profileId/collections
-export async function createCollection(request, env, { profileId }) {
+export async function createCollection(request, env, ctx, { profileId }) {
   const profile = await env.DB.prepare('SELECT id FROM profiles WHERE id = ?').bind(profileId).first();
   if (!profile) return error('Profile not found', 404);
 
@@ -148,17 +182,20 @@ export async function createCollection(request, env, { profileId }) {
   if (file) {
     const coverResult = await persistCover(env, profileId, newId, file);
     if (!coverResult.ok) {
+      if (isPublicFlag) await bustOthersCache(env, ctx, request);
       const collection = await buildCollectionResponse(env, profileId, newId);
       return json({ collection, coverError: coverResult.error });
     }
   }
+
+  if (isPublicFlag) await bustOthersCache(env, ctx, request);
 
   const collection = await buildCollectionResponse(env, profileId, newId);
   return json({ collection });
 }
 
 // POST /profiles/:profileId/collections/clone
-export async function cloneCollection(request, env, { profileId }) {
+export async function cloneCollection(request, env, ctx, { profileId }) {
   const body = await request.json().catch(() => null);
   if (!body || body.sourceId == null) return error('sourceId is required', 400);
 
@@ -182,13 +219,13 @@ export async function cloneCollection(request, env, { profileId }) {
 }
 
 // GET /profiles/:profileId/collections
-export async function listCollections(request, env, { profileId }) {
-  // 1. Fetch MY collections (originals)
+export async function listCollections(request, env, ctx, { profileId }) {
+  // 1. MY collections (never cached — user-owned)
   const { results: myRows } = await env.DB.prepare(
     `SELECT ${COLLECTION_FIELDS} FROM collections WHERE profile_id = ? ORDER BY created_at DESC`
   ).bind(profileId).all();
 
-  // 2. Fetch CLONED collections
+  // 2. CLONED collections (never cached — user-owned)
   const { results: clonedRows } = await env.DB.prepare(
     `SELECT c.*, 'clone' AS relationship
      FROM collections c
@@ -196,57 +233,71 @@ export async function listCollections(request, env, { profileId }) {
      WHERE cc.profile_id = ?`
   ).bind(profileId).all();
 
-  // 3. Fetch OTHERS' published collections (excluding ones I already cloned)
-  const { results: otherRows } = await env.DB.prepare(
-    `SELECT 
-       c.id, c.profile_id, c.name, c.is_public, c.cover_kind, c.cover_r2_key, 
-       c.levels, c.years, c.genres_ids, c.artists_ids, 
-       c.created_at, c.updated_at,
-       p.nickname AS author_nickname,
-       p.avatar_r2_key AS author_avatar_r2_key,
-       p.avatar_kind AS author_avatar_kind,
-       p.avatar_style AS author_avatar_style,
-       p.avatar_seed AS author_avatar_seed,
-       (SELECT 1 FROM collection_clones cc WHERE cc.collection_id = c.id AND cc.profile_id = ?) AS is_cloned,
-       
-       -- NEW: Check the follow relationship from me -> author
-       (SELECT status FROM follows WHERE follower_id = ? AND followee_id = c.profile_id) AS my_follow_status,
-       -- NEW: Check the follow relationship from author -> me
-       (SELECT status FROM follows WHERE follower_id = c.profile_id AND followee_id = ?) AS their_follow_status
+  // 3. OTHERS' public collections — CACHED (30 min)
+  const othersResponse = await cachedJsonResponse(
+    request, env, ctx,
+    OTHERS_CACHE_KEY,
+    OTHERS_TTL_SECONDS,
+    OTHERS_EDGE_TTL_SECONDS,
+    () => fetchOthersBase(env).then(rows => ({ rows }))
+  );
+  const othersBase = (await othersResponse.json()).rows ?? [];
 
-     FROM collections c
-     JOIN profiles p ON p.id = c.profile_id
-     WHERE c.is_public = 1 AND c.profile_id != ? 
-     ORDER BY c.created_at DESC LIMIT 50`
-  ).bind(profileId, profileId, profileId, profileId).all();
-
-  const mine = myRows ?? [];
-  const cloned = clonedRows ?? [];
-  const others = otherRows ?? [];
-  
-  const allMineIds = [...mine.map(r => r.id), ...cloned.map(r => r.id)];
+  // Filter out the caller's own collections
+  const others = othersBase.filter(r => r.profile_id !== profileId);
   const otherIds = others.map(r => r.id);
-  
-  const roundsMap = await fetchRounds(env, [...new Set([...allMineIds, ...otherIds])]);
+
+  // Per-request user-specific data
+  let cloneSet = new Set();
+  let followMap = new Map();
+
+  if (otherIds.length > 0) {
+    const ph = otherIds.map(() => '?').join(',');
+    const { results: cloneRows } = await env.DB.prepare(
+      `SELECT collection_id FROM collection_clones 
+       WHERE profile_id = ? AND collection_id IN (${ph})`
+    ).bind(profileId, ...otherIds).all();
+    cloneSet = new Set((cloneRows ?? []).map(r => r.collection_id));
+
+    const authorIds = [...new Set(others.map(r => r.profile_id))];
+    if (authorIds.length > 0) {
+      const aph = authorIds.map(() => '?').join(',');
+      const { results: followRows } = await env.DB.prepare(
+        `SELECT follower_id, followee_id, status FROM follows 
+         WHERE (follower_id = ? AND followee_id IN (${aph}))
+            OR (followee_id = ? AND follower_id IN (${aph}))`
+      ).bind(profileId, ...authorIds, profileId, ...authorIds).all();
+      
+      for (const r of followRows ?? []) {
+        const otherId = r.follower_id === profileId ? r.followee_id : r.follower_id;
+        if (!followMap.has(otherId)) followMap.set(otherId, {});
+        if (r.follower_id === profileId) followMap.get(otherId).mine = r.status;
+        else followMap.get(otherId).theirs = r.status;
+      }
+    }
+  }
+
+  // Fetch rounds for everything
+  const allMineIds = [...myRows.map(r => r.id), ...clonedRows.map(r => r.id)];
+  const allIds = [...new Set([...allMineIds, ...otherIds])];
+  const roundsMap = await fetchRounds(env, allIds);
 
   const serializeMine = (rows) => rows.map(row => 
     serializeCollection(row, roundsMap.get(row.id) ?? [])
   );
 
   const serializeOthers = (rows) => rows.map(row => {
+    const rel = followMap.get(row.profile_id) ?? {};
     let followStatus = 'none';
-    const mine = row.my_follow_status;
-    const theirs = row.their_follow_status;
-
-    if (mine === 'accepted' && theirs === 'accepted') followStatus = 'friends';
-    else if (mine === 'pending') followStatus = 'requested';
-    else if (theirs === 'pending') followStatus = 'incoming';
-    else if (mine === 'accepted') followStatus = 'following';
+    if (rel.mine === 'accepted' && rel.theirs === 'accepted') followStatus = 'friends';
+    else if (rel.mine === 'pending') followStatus = 'requested';
+    else if (rel.theirs === 'pending') followStatus = 'incoming';
+    else if (rel.mine === 'accepted') followStatus = 'following';
 
     return {
       ...serializeCollection(row, roundsMap.get(row.id) ?? []),
-      isCloned: Boolean(row.is_cloned),
-      followStatus, // <-- Pass this to the frontend
+      isCloned: cloneSet.has(row.id),
+      followStatus,
       author: {
         profileId: row.profile_id,
         nickname: row.author_nickname,
@@ -261,23 +312,23 @@ export async function listCollections(request, env, { profileId }) {
   });
 
   return json({
-    mine: [...serializeMine(mine), ...serializeMine(cloned)],
+    mine: [...serializeMine(myRows ?? []), ...serializeMine(clonedRows ?? [])],
     others: serializeOthers(others),
   });
 }
 
 // GET /profiles/:profileId/collections/:id
-export async function getCollection(request, env, { profileId, id }) {
+export async function getCollection(request, env, ctx, { profileId, id }) {
   const collection = await buildCollectionResponse(env, profileId, Number(id));
   if (!collection) return error('Collection not found', 404);
   return json({ collection });
 }
 
 // PUT /profiles/:profileId/collections/:id
-export async function saveCollection(request, env, { profileId, id }) {
+export async function saveCollection(request, env, ctx, { profileId, id }) {
   const collectionId = Number(id);
   const existing = await env.DB.prepare(
-    'SELECT id, levels FROM collections WHERE id = ? AND profile_id = ?'
+    'SELECT id, levels, is_public FROM collections WHERE id = ? AND profile_id = ?'
   ).bind(collectionId, profileId).first();
   
   if (!existing) return error('Collection not found or you do not own it', 404);
@@ -348,9 +399,15 @@ export async function saveCollection(request, env, { profileId, id }) {
   if (file) {
     const coverResult = await persistCover(env, profileId, collectionId, file);
     if (!coverResult.ok) {
+      await bustOthersCache(env, ctx, request);
       const collection = await buildCollectionResponse(env, profileId, collectionId);
       return json({ collection, coverError: coverResult.error });
     }
+  }
+
+  // Bust cache if this collection is (or was) public
+  if (existing.is_public || body.isPublic) {
+    await bustOthersCache(env, ctx, request);
   }
 
   const collection = await buildCollectionResponse(env, profileId, collectionId);
@@ -358,7 +415,7 @@ export async function saveCollection(request, env, { profileId, id }) {
 }
 
 // DELETE /profiles/:profileId/collections/:id
-export async function deleteCollection(request, env, { profileId, id }) {
+export async function deleteCollection(request, env, ctx, { profileId, id }) {
   const collectionId = Number(id);
 
   // Check if this is a cloned collection
@@ -367,7 +424,6 @@ export async function deleteCollection(request, env, { profileId, id }) {
   ).bind(profileId, collectionId).first();
 
   if (isCloned) {
-    // Remove the clone link only
     await env.DB.prepare(
       'DELETE FROM collection_clones WHERE profile_id = ? AND collection_id = ?'
     ).bind(profileId, collectionId).run();
@@ -376,7 +432,7 @@ export async function deleteCollection(request, env, { profileId, id }) {
 
   // Otherwise, it's their own collection — hard delete
   const row = await env.DB.prepare(
-    'SELECT cover_r2_key FROM collections WHERE id = ? AND profile_id = ?'
+    'SELECT cover_r2_key, is_public FROM collections WHERE id = ? AND profile_id = ?'
   ).bind(collectionId, profileId).first();
 
   if (!row) return json({ ok: true, deleted: false });
@@ -390,6 +446,8 @@ export async function deleteCollection(request, env, { profileId, id }) {
   if (row.cover_r2_key) {
     try { await env.AUDIO.delete(row.cover_r2_key); } catch { /* orphan tolerated */ }
   }
+
+  if (row.is_public) await bustOthersCache(env, ctx, request);
 
   return json({ ok: true, deleted: true });
 }

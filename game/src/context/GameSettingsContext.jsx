@@ -13,11 +13,10 @@ export function GameSettingsProvider({ children }) {
   const [reversedAnswers, setReversedAnswers] = useState(() =>
     localStorage.getItem('game.reversedAnswers') || 'no'
   );
-  
-  // UPDATED: Read as number or null, fallback to null (No timer)
+
   const [timer, setTimer] = useState(() => {
     const saved = localStorage.getItem('game.timer');
-    if (!saved || saved === 'off') return null; 
+    if (!saved || saved === 'off') return null;
     return Number(saved) || null;
   });
 
@@ -30,18 +29,31 @@ export function GameSettingsProvider({ children }) {
     return ['none', 'mixed', 'all'].includes(saved) ? saved : 'none';
   });
 
+  // Lifelines — solo only, session-persisted, never in collections/templates
+  const [skips, setSkips] = useState(() => {
+    const n = Number(localStorage.getItem('game.skips'));
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  });
+  const [removes, setRemoves] = useState(() => {
+    const n = Number(localStorage.getItem('game.removes'));
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  });
+  const [reveals, setReveals] = useState(() => {
+    const n = Number(localStorage.getItem('game.reveals'));
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  });
+
   useEffect(() => {
     localStorage.setItem('game.answerMode', answerMode);
     localStorage.setItem('game.reversedAnswers', reversedAnswers);
-    
-    // UPDATED: Store 'off' if timer is null, otherwise store the number
     localStorage.setItem('game.timer', timer === null ? 'off' : String(timer));
-    
     localStorage.setItem('game.audioRendition', audioRendition);
     localStorage.setItem('game.instruments', instruments);
-  }, [answerMode, reversedAnswers, timer, audioRendition, instruments]);
+    localStorage.setItem('game.skips', String(skips));
+    localStorage.setItem('game.removes', String(removes));
+    localStorage.setItem('game.reveals', String(reveals));
+  }, [answerMode, reversedAnswers, timer, audioRendition, instruments, skips, removes, reveals]);
 
-  // Bulk apply — used when launching from a collection
   const applySettings = useCallback((partial) => {
     if (partial.questionTypes !== undefined) setQuestionTypes(partial.questionTypes);
     if (partial.answerMode !== undefined) setAnswerMode(partial.answerMode);
@@ -50,6 +62,9 @@ export function GameSettingsProvider({ children }) {
     if (partial.timer !== undefined) setTimer(partial.timer === 'off' ? null : partial.timer);
     if (partial.audioRendition !== undefined) setAudioRendition(partial.audioRendition);
     if (partial.instruments !== undefined) setInstruments(partial.instruments);
+    if (partial.skips !== undefined) setSkips(Number(partial.skips) || 0);
+    if (partial.removes !== undefined) setRemoves(Number(partial.removes) || 0);
+    if (partial.reveals !== undefined) setReveals(Number(partial.reveals) || 0);
   }, []);
 
   const value = {
@@ -61,6 +76,9 @@ export function GameSettingsProvider({ children }) {
     timer, setTimer,
     audioRendition, setAudioRendition,
     instruments, setInstruments,
+    skips, setSkips,
+    removes, setRemoves,
+    reveals, setReveals,
     applySettings,
   };
 

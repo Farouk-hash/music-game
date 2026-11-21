@@ -66,7 +66,7 @@ async function main() {
   await run(COMPARE_SCRIPT, []);
 
   console.log(`\n${'═'.repeat(60)}`);
-  console.log('✅ All done');
+  console.log(' All done');
   console.log('═'.repeat(60));
   console.log('Outputs:');
   console.log('  matb3aa-lyrics/lyrics-bodies.json');

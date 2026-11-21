@@ -1,0 +1,252 @@
+# Consolidated handoff — v82 (Unified Play UI + L3 Instruments/Lifelines + Catalog Optimized)
+
+Save as `E:\matb3aa-game\handoff-v82.md`. Paste as the first message of the next session. Supersedes v81.
+
+---
+
+```
+You are continuing a working project. Do not re-derive or re-verify anything below.
+Everything here is confirmed working unless explicitly marked broken. Read it in full
+before proposing anything.
+
+## THE PROJECT
+
+Six pieces, plus a data pipeline, plus a card game in design:
+1. `admin/` — build tool for curating audio clips, lyrics, artists, album years. Port 5173.
+2. `game/` — the player-facing quiz app. Port 5174 locally; deployed to Cloudflare Pages.
+3. `server/` — local Express + orchestration. Port 3001.
+4. `music-game-wrangler/` — Cloudflare Worker holding D1 + R2 + KV.
+5. `host-sporcle-wrangler/` — Durable Object service for Sporcle multiplayer.
+6. `tools/ACE-Step-1.5/` — Local AI model for style-transfer.
+
+The game fetches `music-game-wrangler` directly for solo/co-op, profiles, follows, invites, collections, and templates, and `host-sporcle-wrangler` for Sporcle.
+
+## REPOSITORY
+
+GitHub: `https://github.com/Farouk-hash/music-game` (private, monorepo)
+Local repo root: `E:\matb3aa-game\.git`
+Last committed state: v28 (initial commit `c2a9ad3`). Work from v29–v82 is UNCOMMITTED.
+
+`.gitignore`: Ignores `tools/`, `server/style-transfer-output/`, `server/instrumental-output/`, `*.mp3`, `*.wav`, `venv/`, `.venv/`, Python caches, `server/tmp-preview-test/`.
+
+`.env.production` is TRACKED. **The Worker does NOT use a `.env` file.** Config lives in `wrangler.json` under `"vars"` (local dev) and via `npx wrangler secret put` (production).
+
+## ARCHITECTURE & PORTS
+
+| Piece | Location | Local port | URL |
+|---|---|---|---|
+| Express server | `server/` | 3001 | `http://localhost:3001` |
+| Admin app | `admin/` | 5173 | `http://localhost:5173` |
+| Game (local) | `game/` | 5174 | `http://localhost:5174` |
+| Game (deployed) | Pages | — | `https://music-game-9vn.pages.dev` |
+| Worker (music) | `music-game-wrangler/` | 8787 | `https://music-game-wrangler.abdulrahman-muhammad2090.workers.dev` |
+| Worker (Sporcle) | `host-sporcle-wrangler/` | 8788 | `https://host-sporcle-wrangler…workers.dev` |
+
+## ADMIN KEY
+- **Local dev:** `wrangler.json` → `"vars": { "ADMIN_KEY": "dev-local-key-12345" }`
+- **Production:** `aB3xK9mN2pQ7rT4v` (set via `npx wrangler secret put ADMIN_KEY`)
+
+---
+
+## 🚀 V2 POOL ARCHITECTURE (Zero-D1 Round Fetch)
+
+### Design principles (MANDATORY)
+1. **Never load the whole pool in one request.** A request loads only a small "work set" of 5–8 artists via `workSetFor(scopeArtistIds, count)`.
+2. **No D1 queries inside per-round/per-question code.** Use the catalog (KV, memoized) or already-loaded artist data. D1 is only for cold-cache fallback or one cached last-resort query.
+3. **In-isolate memo caches RESOLVED values only** (TTL 60s). Never share pending promises.
+4. **Never mutate arrays/objects from pool/catalog data.** Copy first (`arr.slice()`) before shuffling.
+5. **Hard cap per request:** `MAX_ROUNDS_PER_REQUEST = 50`. Over-fetch candidates 3x.
+6. **Respect free-tier KV write limits:** 2 keys per artist on rebuild. Rebuild is pageable.
+
+### New KV layout (`src/lib/cache/pool.js`)
+- `pool:v2:core:{artistId}` = `{ t: tracks[], i: instruments[], y: {album_name: year}, s: snippets[] }`
+- `pool:v2:lyr:{artistId}` = array of full lyric rows.
+
+### Exports from `src/lib/cache.js`
+- `PoolNotReady`, `loadArtistData(env, kind, artistIds)`, `peekLoaded(kind)`
+- `buildPoolForArtists(env, ids)`, `buildAndStorePools(env, { offset, limit })`
+- `invalidatePools(env)`, `getCatalogFromKV(env)`, `buildCatalogIndex(catalog)`
+
+---
+
+## 🔄 DEPLOYMENT WORKFLOW (TWO MODES)
+
+### Mode 1: Full rebuild (one-time, after schema changes or first deploy)
+Run the pagination script once:
+```javascript
+// rebuild-pools.js
+const ADMIN_KEY = 'aB3xK9mN2pQ7rT4v';
+const BASE_URL = 'https://music-game-wrangler.abdulrahman-muhammad2090.workers.dev';
+async function rebuildPools() {
+  let offset = 0, done = false, totalArtists = 0;
+  while (!done) {
+    const res = await fetch(`${BASE_URL}/game/catalog/invalidate?admin_key=${ADMIN_KEY}&offset=${offset}&limit=25`, { method: 'POST' });
+    const data = await res.json();
+    if (totalArtists === 0 && data.totalArtists) totalArtists = data.totalArtists;
+    if (data.done) done = true; else { offset = data.nextOffset; await new Promise(r => setTimeout(r, 300)); }
+  }
+}
+rebuildPools();
+```
+Run: `node rebuild-pools.js`
+
+### Mode 2: Incremental rebuild (daily admin uploads)
+After uploading new tracks/lyrics for specific artists:
+```bash
+curl -X POST "https://music-game-wrangler.abdulrahman-muhammad2090.workers.dev/game/catalog/rebuild-artists?admin_key=aB3xK9mN2pQ7rT4v" \
+  -H "Content-Type: application/json" \
+  -d '{"artistIds":[42,105]}'
+```
+Cost: 2 KV writes per artist. Takes ~200ms.
+
+---
+
+## 🎮 UNIFIED PLAY UI ARCHITECTURE (v82)
+
+To eliminate duplication while respecting Level 3's unique 2-phase layout, the UI is structured as follows:
+
+### 1. `PlayView.jsx` (Dedicated to Level 1 & 2)
+Handles the outer shell: `Loader`, `ErrorBlock`, `EmptyBlock`, `EndScreen`, `RoundHeader`, and `ProgressBar`. 
+It contains the default layouts for Level 1 (vertical stack) and Level 2 (horizontal top bar).
+
+### 2. `useGameEngine.js` (Level 1 & 2)
+Centralizes state: `usePlaySession`, `useLifelines`, `useRoundReversal`, and default lifeline handlers (`handleSkip`, `handleRemove`, `handleReveal`, `handleReplay`).
+
+### 3. `useGameEngineL3.js` (Level 3 Specific)
+Bridges the gap between `useRoundSet` (which returns `data.sets`) and `usePlaySession` (which expects `rounds`).
+```javascript
+export function useGameEngineL3(fetchHook, params) {
+  const { data, isLoading, error, refetch } = fetchHook(params);
+  const sets = data?.sets ?? [];
+  const session = usePlaySession(sets, { timerSeconds: params.timerSeconds });
+  const lifelines = useLifelines({ skips: params.skips ?? 0, removes: params.removes ?? 0, reveals: params.reveals ?? 0 }, params.count);
+  const totalLifelineCost = Object.values(session.roundScores).reduce((sum, r) => sum + (r.cost || 0), 0);
+  const handleReplay = async () => { await refetch(); lifelines.reset(); session.restart(); };
+  return { rounds: sets, isLoading, error, session, lifelines, totalLifelineCost, handleReplay };
+}
+```
+
+### 4. `Play3.jsx` (Standalone but Unified Shell)
+Uses `useGameEngineL3` for state. Renders the unified `RoundHeader` and `ProgressBar` at the top, followed by its unique 2-phase UI (`MultiClipPlayer` → `QuestionCard` → `RevealedTracks`). 
+Lifelines are fully wired using `session.pick`, `session.skip`, `session.revealAnswer`, `session.hideOption`, and `session.next`.
+
+---
+
+## 🛠️ CRITICAL FIXES APPLIED IN v82
+
+1. **Level 3 Instrumental Routing**: `round-sets.js` now dynamically routes clips to `/instrumentals/serve` if `c.r2Key.startsWith('instrumentals/')`, preventing the `Invalid key` error from the `/clips/serve` validator.
+2. **Catalog Optimization**: `getCatalog` now uses only 3 D1 queries (Genres, Artists, Years). Aggregate counts (`tracks`, `lyrics`, `instruments`) are calculated in JS from the `artists` table, reducing D1 reads from ~14,000 to ~2,000 rows.
+3. **Lifelines in Level 3**: Fully functional. Uses `session` methods instead of non-existent setters.
+
+---
+
+## LIFELINES — v78/v82 (SOLO ONLY)
+
+- **Scope**: Solo play only (`/play`, `/play-two`, `/play-three`). NOT in Multiplayer, Sporcle, Collections, or Templates.
+- **Costs**: Skips (0), Removes (2), Reveals (3). Total lifelines ≤ `roundCount`.
+- **Scoring**: `score = (sum of correct) − (sum of lifeline costs)`. Can go negative.
+- **Replay Contract**: `onReplay` must call `refetch()` → `lifelines.reset()` → `session.restart()`. NEVER use `window.location.reload()`.
+
+---
+
+## D1 CRISIS STATUS — FULLY RESOLVED
+
+- **Catalog**: Optimized to 3 queries. Cached in KV + Edge.
+- **Round Fetch**: v2 per-artist pool. `loadArtistData` loads only 5–8 artists per request. **~10ms CPU per request.**
+- **Distractors**: Zero per-round D1 (uses `peekLoaded` + catalog index + one cached fallback).
+- **Verified**: `npx wrangler d1 insights music-game-db --sort-by=reads --time-period=1h --json` returns `[]`.
+
+---
+
+## MIGRATIONS
+
+- **Applied**: `0015_artists_lyrics_instruments_count.sql`, `0016_backfill_artist_counts.sql`
+- **Pending**: `0017_query_indexes.sql` (helps cold-cache fallback paths and cached global distractor queries).
+
+---
+
+## KNOWN OPEN ITEMS
+
+1. **Style-transfer polling** — patch `style_cover.py` to poll the filesystem for the newest `.mp3`.
+2. **Anti-skew round-robin verification** — 5× L1 curl with `instruments=all`.
+3. **`PublishedInstruments.jsx`** — browse/delete uploaded instruments.
+4. **Client rendition chain** — `useRoundMultiplayer.js` + `PlayMulti.jsx`.
+5. **Favourite cap feedback** — toast on 100/kind, 300 total.
+6. **Card game** — design only.
+7. **`CollectionEditorModal` doesn't forward `reversedClipsCount`** — hardcodes 0.
+8. **`SporcleModal.jsx`** — not reviewed. Check for duplicate `<SharedGameSettings>`.
+9. **Template `rounds` are fetched but not yet written** — `template_rounds` writes not implemented. Real admin CRUD is TODO.
+10. **Server-side `/templates` response shape** — needs to emit nested `cover: { kind, url }`.
+11. **`LifelinesBar` Skip title** — currently says "cost 0 pts". Should say "free" when `cost === 0`.
+12. **Admin publish flow** — wire `/game/catalog/rebuild-artists` into admin upload flow automatically.
+13. **Commit everything** — v29–v82 is uncommitted. Biggest risk after all this work.
+
+---
+
+## ENVIRONMENT — SETUP TRAPS
+
+- Vite proxies: Only `/api/game` is proxied.
+- JSX extension: `.jsx` mandatory. `@/` alias exists.
+- PowerShell + Arabic: use `-Body ([System.Text.Encoding]::UTF8.GetBytes($json))`.
+- D1 parameter cap: 100. Use `chunkedIn` at 90. D1 bind must never receive `undefined` — coerce to `null` with `?? null`.
+- **Workers do NOT use `.env`.** Use `wrangler.json` `vars` (local) + `wrangler secret put` (prod).
+- **Free-tier KV writes: ~1,000/day.** Use incremental rebuild for daily uploads.
+- **Free-tier CPU: ~10ms/request.** v2 work-set design keeps round generation under this.
+
+---
+
+## COMMANDS
+
+```cmd
+:: Local dev
+cd /d E:\matb3aa-game\music-game-wrangler  && npx wrangler dev --port 8787
+cd /d E:\matb3aa-game\game                && npm run dev
+
+:: Deploy
+cd /d E:\matb3aa-game\music-game-wrangler  && npx wrangler deploy
+cd /d E:\matb3aa-game\game && npm run build && npx wrangler pages deploy dist --project-name=music-game --branch=production
+
+:: Full rebuild (one-time)
+node rebuild-pools.js
+
+:: Incremental rebuild (daily)
+curl -X POST "https://music-game-wrangler.abdulrahman-muhammad2090.workers.dev/game/catalog/rebuild-artists?admin_key=aB3xK9mN2pQ7rT4v" -H "Content-Type: application/json" -d "{\"artistIds\":[42,105]}"
+
+:: D1 diagnosis
+npx wrangler d1 insights music-game-db --sort-by=reads --time-period=1h --json
+```
+
+---
+
+## STYLE THE USER PREFERS
+
+- Complete files, not fragments.
+- Minimal fixes.
+- Tables to explain changes.
+- One clear next step.
+- Note what to test and what to paste back.
+- Concise. Experienced with React/Node.
+- Recommend explicitly when there are tradeoffs.
+- Uses `.jsx` (not `.tsx`) and `.js` (not `.ts`).
+- **Values audit-first**: when a change touches multiple files, expect a per-file status report before applying anything.
+
+## MOST LIKELY NEXT TASKS
+
+1. **Commit everything** — v29–v82 is uncommitted. Create a massive checkpoint commit.
+2. **Apply `0017_query_indexes.sql`** — helps cold-cache fallback paths.
+3. **Admin auto-rebuild** — wire `/game/catalog/rebuild-artists` into the admin upload flow.
+4. **Template admin CRUD** — `template_rounds` writes not yet implemented.
+
+Recommended next step: **Commit the current working state** to secure the v82 milestone, then proceed to `0017_query_indexes.sql`.
+
+## END OF PROMPT
+```
+
+---
+
+### What to do next:
+1. Save this entire block as `E:\matb3aa-game\handoff-v82.md`.
+2. Paste it as the first message in your next chat session to instantly restore full context.
+3. **Highly Recommended**: Run `git add .` and `git commit -m "chore: v82 milestone - unified play UI, L3 instruments/lifelines, catalog optimized, v2 pool architecture"` to secure all this progress before moving on to the next task! 
+
+You've done incredible work refactoring this architecture. Let me know when you're ready for the next step!

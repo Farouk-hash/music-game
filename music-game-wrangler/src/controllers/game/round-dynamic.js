@@ -1,16 +1,14 @@
-// music-game-wrangler/src/controllers/game/round-dynamic.js
+// src/controllers/game/round-dynamic.js
 //
-// Level-agnostic round fetcher with server-side top-up.
+// Level-agnostic round fetcher with server-side top-up (clip-locked).
 //
-// v2 — top-up is now CLIP-LOCKED:
-//   - Only merges questions from extra rounds that describe the SAME clip
-//     (same slotId / same clip.r2_key) as the short round being topped up.
-//   - Dedupe key is (type | prompt | correctValue), not just prompt — so a
-//     foreign album question can't slip through just because the target
-//     round never had an album question.
-//   - When a round cannot be topped up (no same-clip extras exist), it's
-//     marked __toppedOut and the loop moves to the NEXT short round instead
-//     of abandoning the whole top-up pass.
+// v3 (free-tier): the extra builder call is made AT MOST ONCE and reused for
+// every short round. Previously each short round triggered its own builder
+// call (up to maxTopUps), and since a merge only happens when the extra
+// round describes the SAME clip, most of those calls produced nothing.
+//
+//   - Only questions from extra rounds with the same clip identity are merged.
+//   - Dedupe key is (type | prompt | correctValue).
 
 import { json, error } from '../../lib/response.js';
 import { clamp } from '../../utilities/clamp.js';
@@ -52,32 +50,25 @@ function roundQuestions(round) {
   return [];
 }
 
-// Identity of the clip a round is built on. Two rounds describe the same
-// clip iff these match. We accept either key because L1/L2 rounds expose
-// `slotId` and `clip.r2_key`, while L3 sets expose `setId` + `clips[]`.
+// Identity of the clip a round is built on.
 function clipKeyOf(round) {
   if (!round) return null;
   if (round.slotId != null) return `slot:${round.slotId}`;
   if (round.setId  != null) return `set:${round.setId}`;
   if (round.clip?.r2_key)   return `r2:${round.clip.r2_key}`;
   if (Array.isArray(round.clips) && round.clips.length > 0) {
-    // L3: use the first clip's r2_key as the set's identity
     const k = round.clips[0]?.r2Key ?? round.clips[0]?.r2_key;
     if (k) return `r2:${k}`;
   }
   return null;
 }
 
-// Identity of a single question. Used for dedupe during merge.
 function questionKeyOf(q) {
   if (!q) return '';
-  const type  = q.type ?? '';
-  const prompt = q.prompt ?? '';
-  const correct = q.correctValue ?? '';
-  return `${type}|${prompt}|${correct}`;
+  return `${q.type ?? ''}|${q.prompt ?? ''}|${q.correctValue ?? ''}`;
 }
 
-export async function getRoundDynamic(request, env) {
+export async function getRoundDynamic(request, env, ctx) {
   const body = await request.json().catch(() => ({}));
 
   const level = parseLevel(body.level);
@@ -94,29 +85,22 @@ export async function getRoundDynamic(request, env) {
     CHALLENGE_CONFIG.maxQuestionsPerRound
   );
   const maxTopUps = CHALLENGE_CONFIG.maxTopUpAttempts;
-
-  // Fetch 3 rounds at a time when topping up
   const TOP_UP_COUNT = 3;
 
-  async function callBuilder(extraBody = {}) {
+  async function callBuilder(count) {
     const innerReq = new Request(request.url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...body,
-        instruments,
-        count: extraBody.count ?? requestedCount,
-      }),
+      body: JSON.stringify({ ...body, instruments, count }),
     });
-
-    if (level === 3) return await getRoundSet(innerReq, env);
-    if (level === 2) return await getRoundMulti(innerReq, env);
-    return await getRound(innerReq, env);
+    if (level === 3) return await getRoundSet(innerReq, env, ctx);
+    if (level === 2) return await getRoundMulti(innerReq, env, ctx);
+    return await getRound(innerReq, env, ctx);
   }
 
   let response;
   try {
-    response = await callBuilder({ count: requestedCount });
+    response = await callBuilder(requestedCount);
   } catch (err) {
     return error(`Round build failed (L${level}, ${instruments}): ${err.message}`, 500);
   }
@@ -126,82 +110,49 @@ export async function getRoundDynamic(request, env) {
   const resBody = await response.json();
   let rounds = normalizeRounds(resBody);
 
-  // ── Server-side top-up loop (clip-locked) ─────────────
-  let topUpAttempts = 0;
-  while (topUpAttempts < maxTopUps) {
-    // Find the next short round that we haven't already given up on.
-    const shortIndex = rounds.findIndex(
-      r => !r.__toppedOut && roundQuestionCount(r) < minQuestions
-    );
-    if (shortIndex === -1) break;
-    topUpAttempts += 1;
+  // ── Top-up: one extra builder call, reused for every short round ──
+  let extraRounds = null;
+  let extraFailed = false;
 
+  async function getExtras() {
+    if (extraRounds) return extraRounds;
+    if (extraFailed) return [];
     try {
-      const extraResponse = await callBuilder({ count: TOP_UP_COUNT });
-      if (extraResponse.status !== 200) {
-        rounds[shortIndex] = { ...rounds[shortIndex], __toppedOut: true };
-        continue;
-      }
-
-      const extraBody = await extraResponse.json();
-      const extraRounds = normalizeRounds(extraBody);
-      if (extraRounds.length === 0) {
-        rounds[shortIndex] = { ...rounds[shortIndex], __toppedOut: true };
-        continue;
-      }
-
-      const target = rounds[shortIndex];
-      const targetKey = clipKeyOf(target);
-      if (!targetKey) {
-        // Cannot identify the target clip — never merge, ever.
-        rounds[shortIndex] = { ...target, __toppedOut: true };
-        continue;
-      }
-
-      // ── FIX 1: clip-lock the extras ───────────────────
-      const sameClipExtras = extraRounds.filter(
-        r => clipKeyOf(r) === targetKey
-      );
-      if (sameClipExtras.length === 0) {
-        // No extra rounds about this exact clip exist. The builder already
-        // extracted everything it could. Give up on this round, try next.
-        rounds[shortIndex] = { ...target, __toppedOut: true };
-        continue;
-      }
-
-      const targetQuestions = roundQuestions(target);
-
-      // ── FIX 2: dedupe by (type|prompt|correctValue) ───
-      const seen = new Set(targetQuestions.map(questionKeyOf));
-
-      const allExtraQuestions = sameClipExtras.flatMap(roundQuestions);
-      const fresh = allExtraQuestions.filter(
-        q => !seen.has(questionKeyOf(q))
-      );
-
-      if (fresh.length === 0) {
-        // Same clip, but no new questions — mark topped out, try next round.
-        rounds[shortIndex] = { ...target, __toppedOut: true };
-        continue;
-      }
-
-      // Merge fresh questions into the short round.
-      rounds[shortIndex] = {
-        ...target,
-        questions: targetQuestions.concat(fresh),
-      };
+      const res = await callBuilder(TOP_UP_COUNT);
+      if (res.status !== 200) { extraFailed = true; return []; }
+      extraRounds = normalizeRounds(await res.json());
+      return extraRounds;
     } catch {
-      // Network/parse failure mid-top-up: stop, don't poison the response.
-      break;
+      extraFailed = true;
+      return [];
     }
   }
 
-  // ── Final cap at minQuestions, strip internal markers ──
-  rounds = rounds.map(r => {
-    const qs = roundQuestions(r).slice(0, minQuestions);
-    const { __toppedOut, ...clean } = r;
-    return { ...clean, questions: qs };
-  });
+  let topUps = 0;
+  for (let i = 0; i < rounds.length && topUps < maxTopUps; i++) {
+    const target = rounds[i];
+    if (roundQuestionCount(target) >= minQuestions) continue;
+    topUps += 1;
+
+    const targetKey = clipKeyOf(target);
+    if (!targetKey) continue; // cannot identify the clip: never merge
+
+    const extras = await getExtras();
+    if (extras.length === 0) break; // nothing to merge for anyone
+
+    const sameClip = extras.filter(r => clipKeyOf(r) === targetKey);
+    if (sameClip.length === 0) continue;
+
+    const targetQuestions = roundQuestions(target);
+    const seen = new Set(targetQuestions.map(questionKeyOf));
+    const fresh = sameClip.flatMap(roundQuestions).filter(q => !seen.has(questionKeyOf(q)));
+    if (fresh.length === 0) continue;
+
+    rounds[i] = { ...target, questions: targetQuestions.concat(fresh) };
+  }
+
+  // ── Final cap at minQuestions ──
+  rounds = rounds.map(r => ({ ...r, questions: roundQuestions(r).slice(0, minQuestions) }));
 
   return json({
     rounds,

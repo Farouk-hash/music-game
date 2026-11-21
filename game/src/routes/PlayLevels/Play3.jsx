@@ -2,322 +2,199 @@
 import { useState, useRef } from 'react';
 import { usePlayParams } from '@/hooks/rounds/usePlayParams.js';
 import { useRoundSet } from '@/hooks/rounds/useRoundSet.js';
-import { isAnswerCorrect } from '@/hooks/rounds/answerCheck.js';
-import { storage } from '@/lib/storage.js';
+import { useGameEngineL3 } from '@/hooks/rounds/useGameEngineL3.js';
 import { Button } from '@/components/ui/Button.jsx';
 import { Loader } from '@/components/ui/Loader.jsx';
 import { BorderContainer } from '@/components/layout/BorderContainer';
 import { MultiClipPlayer } from '@/components/domain/MultiTracks/MutliClipPlay.jsx';
-import { OptionsGrid } from '@/components/domain/Rounds/OptionsGrid.jsx';
-import { TextAnswerInput } from '@/components/domain/TextAnswerInput/TextAnswerInput.jsx';
+import { QuestionCard } from '@/components/domain/Rounds/QuestionCard.jsx';
+import { RevealedTracks } from '@/components/domain/MultiTracks/RevealedTracks.jsx';
+import { RoundHeader } from '@/components/domain/Rounds/RoundHeader.jsx';
+import { ProgressBar } from '@/components/domain/Rounds/ProgressBar.jsx';
 import { EndScreen } from '@/components/domain/Rounds/EndScreen.jsx';
 import { EmptyBlock } from '@/components/domain/Rounds/EmptyBlock.jsx';
-import { ErrorBlock } from '@/components/domain/Rounds/ErrorBlock';
-import { RevealedTracks } from '@/components/domain/MultiTracks/RevealedTracks.jsx';
+import { ErrorBlock } from '@/components/domain/Rounds/ErrorBlock.jsx';
 
-// Question types that always render as buttons, regardless of answer mode.
-// These have small fixed option sets — typing them is silly.
-const TYPING_ALLOWED = new Set([
-  'how-many-in-mix',
-]);
+const TYPING_ALLOWED = new Set(['how-many-in-mix']);
 
 export default function Play3() {
   const params = usePlayParams();
-  const { data, isLoading, error } = useRoundSet({
-    genres: params.genres,
-    artists: params.artists,
-    years: params.years,
-    count: params.count,
-  });
+  const engine = useGameEngineL3(useRoundSet, params);
+  const { session, lifelines, totalLifelineCost, handleReplay, rounds: sets } = engine;
 
-  const sets = data?.sets ?? [];
-
+  // Level 3 specific state
   const [revealOpen, setRevealOpen] = useState(false);
-
-  // ── Session state (owned here, not by usePlaySession) ─
-  const [phase, setPhase] = useState('listen');      // 'listen' | 'questions'
-  const [setIndex, setSetIndex] = useState(0);
-  const [questionIndex, setQuestionIndex] = useState(0);
-  const [score, setScore] = useState(0);
-  const [picked, setPicked] = useState(null);
-  const [revealed, setRevealed] = useState(false);
-  const [finished, setFinished] = useState(false);
+  const [phase, setPhase] = useState('listen');
 
   const mixRef = useRef(null);
-
-  const currentSet = sets[setIndex];
-  const currentQuestion = currentSet?.questions[questionIndex];
-  const totalQuestions = sets.reduce((s, x) => s + x.questions.length, 0);
-  const questionNumber = sets
-    .slice(0, setIndex)
-    .reduce((s, x) => s + x.questions.length, 0) + questionIndex + 1;
-
-  const isLastQuestionInSet =
-    currentSet && questionIndex + 1 >= currentSet.questions.length;
-  const isLastSet = setIndex + 1 >= sets.length;
+  const currentSet = sets[session.roundIndex];
+  const currentQuestion = currentSet?.questions[session.questionIndex];
+  
+  const isLastQuestionInSet = currentSet && session.questionIndex + 1 >= currentSet.questions.length;
+  const isLastSet = session.roundIndex + 1 >= sets.length;
   const isLastQuestionOverall = isLastQuestionInSet && isLastSet;
 
-  // ── Transitions ────────────────────────────────────────
   function startQuestions() {
     setPhase('questions');
   }
 
+  // ✅ Use session.pick directly. It handles scoring and state updates.
   function pick(value, overrideCorrect) {
-    if (revealed) return;
-    setPicked(value);
-    setRevealed(true);
-    const correct = typeof overrideCorrect === 'boolean'
-      ? overrideCorrect
-      : value === currentQuestion.correctValue;
-    if (correct) setScore(s => s + 1);
+    if (session.revealed) return;
+    session.pick(value, overrideCorrect);
   }
 
-  function next() {
-    setPicked(null);
-    setRevealed(false);
-
-   
-    // More questions in this set?
+  // ✅ Advance to next question/set. 
+  // session.next() ALREADY resets picked, revealed, and timedOut internally.
+  function advance() {
     if (!isLastQuestionInSet) {
-      setQuestionIndex(i => i + 1);
-      return;
-    }
-
-    // More sets?
-    if (!isLastSet) {
-      setSetIndex(i => i + 1);
-      setQuestionIndex(0);
+      session.next(); 
+    } else if (!isLastSet) {
+      session.next(); // Moves to next set
       setPhase('listen');
-      setRevealOpen(false);   
-      return;
+      setRevealOpen(false);
+    } else {
+      // If it's the very last question, session.next() will set finished=true.
+      session.next();
     }
-
-    // Done
-    setFinished(true);
-    const best = storage.getHighScore();
-    if (score > best) storage.setHighScore(score);
   }
 
-  // ── Render: loading / error / empty / finished ────────
-  if (isLoading) {
+  function handleSkip() {
+    if (!lifelines.canSkip) return;
+    lifelines.useSkip();
+    
+    // session.skip() marks the question as skipped and updates scores.
+    // We still need to call advance() to move the UI forward.
+    session.skip();
+    advance();
+  }
+
+  function handleRemove() {
+    // Guard: one remove per question using session's built-in guard
+    if (!lifelines.canRemove || session.revealed || session.alreadyRemovedHere) return;
+    
+    const wrongOptions = currentQuestion.options.filter(o => o.value !== currentQuestion.correctValue);
+    if (wrongOptions.length === 0) return;
+    
+    const pick = wrongOptions[Math.floor(Math.random() * wrongOptions.length)];
+    
+    // session.hideOption tracks cost and prevents double-remove for this question index
+    session.hideOption(pick.value);
+  }
+
+  function handleReveal() {
+    if (!lifelines.canReveal || session.revealed) return;
+    
+    // session.revealAnswer marks as revealed, deducts cost, and sets picked to correct value
+    session.revealAnswer();
+  }
+
+  if (engine.isLoading) {
     return (
       <BorderContainer border="all" className="p-8">
         <Loader variant="page" label="Preparing mixes…" />
       </BorderContainer>
     );
   }
-  if (error) return <ErrorBlock error={error} />;
+  if (engine.error) return <ErrorBlock error={engine.error} />;
   if (sets.length === 0) return <EmptyBlock />;
-  if (finished) {
+  
+  if (session.finished) {
     return (
       <EndScreen
-        score={score}
-        total={totalQuestions}
-        onReplay={() => window.location.reload()}
+        score={session.score}
+        total={session.totalQuestions}
+        lifelineCost={totalLifelineCost}
+        onReplay={async () => {
+          await handleReplay();
+          setPhase('listen');
+          setRevealOpen(false);
+        }}
       />
     );
   }
 
-  // ── Render: listen phase ──────────────────────────────
-  if (phase === 'listen') {
-    return (
-      <div className="space-y-6 max-w-2xl mx-auto">
-        <RoundHeaderLike
-          setNumber={setIndex + 1}
-          totalSets={sets.length}
-          score={score}
-        />
-
-        <BorderContainer border="all" className="p-6 space-y-6">
-          <div className="space-y-2">
-            <p className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">
-              The Mix
-            </p>
-            <h2 className="text-xl font-bold text-ink leading-snug">
-              {/* {currentSet.clips.length}  */}
-              Tracks are about to play together.
-            </h2>
-            <p className="text-sm text-ink-muted">
-              Listen to the blend. Every question is about the mix as a whole —
-              you won't be able to isolate a single track.
-            </p>
-          </div>
-
-          <MultiClipPlayer ref={mixRef} clips={currentSet.clips} />
-
-          <div className="flex justify-end pt-2">
-            <Button onClick={startQuestions} variant="primary">
-              I'm ready →
-            </Button>
-          </div>
-        </BorderContainer>
-      </div>
-    );
-  }
-
-  // ── Render: questions phase ───────────────────────────
   const q = currentQuestion;
-  const useTyping =
-    params.answerMode === 'type' &&
-    TYPING_ALLOWED.has(q.type);
-
-  const correctLabel =
-    q.options.find(o => o.value === q.correctValue)?.label ?? q.correctValue;
+  const useTyping = params.answerMode === 'type' && TYPING_ALLOWED.has(q?.type);
 
   return (
     <div className="space-y-6 max-w-2xl mx-auto">
-      <RoundHeaderLike
-        setNumber={setIndex + 1}
-        totalSets={sets.length}
-        score={score}
-        questionNumber={phase === 'questions' ? questionNumber : undefined}
-        totalQuestions={phase === 'questions' ? totalQuestions : undefined}
+      {/* ✅ Unified Header & Progress Bar */}
+      <RoundHeader
+        roundNumber={session.roundNumber}
+        totalRounds={session.totalRounds}
+        questionNumber={session.questionNumber}
+        totalQuestions={session.totalQuestions}
+        score={session.score}
+        showQuestionCounter
+      />
+      
+      <ProgressBar
+        totalRounds={session.totalRounds}
+        roundIndex={session.roundIndex}
+        questionsInRound={currentSet?.questions?.length || 0}
+        questionIndex={session.questionIndex}
+        revealed={session.revealed}
+        roundScores={session.roundScores}
       />
 
-      {/* The mix player — always present, changes size by phase */}
+      {/* ✅ Unique Level 3 Layout */}
       <BorderContainer border="all" className={phase === 'listen' ? 'p-6 space-y-6' : 'p-3'}>
         {phase === 'listen' ? (
           <>
             <div className="space-y-2">
-              <p className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">
-                The Mix
-              </p>
-              <h2 className="text-xl font-bold text-ink leading-snug">
-                {currentSet.clips.length} tracks are about to play together.
-              </h2>
-              <p className="text-sm text-ink-muted">
-                Listen to the blend. Every question is about the mix as a whole —
-                you won't be able to isolate a single track.
-              </p>
+              <p className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">The Mix</p>
+              <h2 className="text-xl font-bold text-ink leading-snug">{currentSet.clips.length} tracks are about to play together.</h2>
+              <p className="text-sm text-ink-muted">Listen to the blend. Every question is about the mix as a whole — you won't be able to isolate a single track.</p>
             </div>
-            <MultiClipPlayer
-              ref={mixRef}
-              clips={currentSet.clips}
-              compact={false}
-            />
+            <MultiClipPlayer ref={mixRef} clips={currentSet.clips} compact={false} />
             <div className="flex justify-end pt-2">
-              <Button onClick={startQuestions} variant="primary">
-                I'm ready →
-              </Button>
+              <Button onClick={startQuestions} variant="primary">I'm ready →</Button>
             </div>
           </>
         ) : (
-          <MultiClipPlayer
-            ref={mixRef}
-            clips={currentSet.clips}
-            compact={true}
-          />
+          <MultiClipPlayer ref={mixRef} clips={currentSet.clips} compact={true} />
         )}
       </BorderContainer>
 
-      {/* Question card — only in questions phase */}
       {phase === 'questions' && (
-        <BorderContainer border="all" className="p-6 space-y-6">
-          <div>
-            <p className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">
-              {currentQuestion.type}
-            </p>
-            <p className="text-xl font-bold text-ink leading-snug mt-2">
-              {currentQuestion.prompt}
-            </p>
-          </div>
-
-          {useTyping ? (
-            <TextAnswerInput
-              onSubmit={(rawInput) => {
-                const correct = isAnswerCorrect(rawInput, currentQuestion.correctValue);
-                pick(rawInput, correct);
-              }}
-              revealed={revealed}
-              userAnswer={picked}
-              correctLabel={correctLabel}
-              correct={
-                revealed && picked != null
-                  ? isAnswerCorrect(picked, currentQuestion.correctValue)
-                  : null
-              }
-            />
-          ) : (
-            <OptionsGrid
-              options={currentQuestion.options}
-              correctValue={currentQuestion.correctValue}
-              picked={picked}
-              revealed={revealed}
+        <>
+          <BorderContainer border="all" className="p-6 space-y-6">
+            <QuestionCard
+              eyebrow={q.type.replace('name-', '').replace('lyrics-', '')}
+              prompt={q.prompt}
+              options={q.options}
+              correctValue={q.correctValue}
+              picked={session.picked}
+              revealed={session.revealed}
               onPick={pick}
+              onNext={advance} // ✅ Uses the unified advance function
+              nextLabel={isLastQuestionOverall ? 'See results' : 'Next →'}
+              answerMode={params.answerMode}
+              questionType={q.type}
+              lifelines={lifelines}
+              onLifelineSkip={handleSkip}
+              onLifelineRemove={handleRemove}
+              onLifelineReveal={handleReveal}
+              hiddenOptionValue={session.currentHiddenOption}
             />
+          </BorderContainer>
+
+          {session.revealed && isLastQuestionInSet && (
+            <BorderContainer border="all" className="p-4 space-y-3">
+              <button
+                type="button"
+                onClick={() => setRevealOpen(o => !o)}
+                className="w-full flex items-center justify-between text-sm font-medium text-highlight hover:text-accent transition-colors"
+              >
+                <span>{revealOpen ? '▾' : '▸'} Reveal the tracks ({currentSet.clips.length})</span>
+                <span className="text-xs text-ink-subtle font-normal">Listen to each track on its own</span>
+              </button>
+              {revealOpen && <RevealedTracks clips={currentSet.clips} />}
+            </BorderContainer>
           )}
-
-          {revealed && picked === '__TIMEOUT__' && (
-            <p className="text-wrong text-sm">
-              ⏱ Time's up — you didn't answer in time.
-            </p>
-          )}
-
-          {revealed && (
-            <div className="flex justify-end pt-2">
-              <Button onClick={next}>
-                {isLastQuestionOverall ? 'See results' : 'Next →'}
-              </Button>
-            </div>
-          )}
-
-        </BorderContainer>
-
-)}
-        {/* Reveal panel */}
-        {phase === 'questions' && revealed && isLastQuestionInSet && (
-        <BorderContainer border="all" className="p-4 space-y-3">
-            <button
-            type="button"
-            onClick={() => setRevealOpen(o => !o)}
-            className="
-                w-full flex items-center justify-between
-                text-sm font-medium text-highlight
-                hover:text-accent transition-colors
-            "
-            >
-            <span>
-                {revealOpen ? '▾' : '▸'} Reveal the tracks ({currentSet.clips.length})
-            </span>
-            <span className="text-xs text-ink-subtle font-normal">
-                Listen to each track on its own
-            </span>
-            </button>
-
-            {revealOpen && (
-            <RevealedTracks clips={currentSet.clips} />
-            )}
-        </BorderContainer>
-        )}
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════
-   Small internal header — rounds + score + optional Q counter
-   ═══════════════════════════════════════════════════════════ */
-
-function RoundHeaderLike({
-  setNumber,
-  totalSets,
-  score,
-  questionNumber,
-  totalQuestions,
-}) {
-  return (
-    <div className="flex items-center justify-between text-sm">
-      <span className="text-ink-muted">
-        Set <span className="text-ink">{setNumber}</span>
-        <span className="text-ink-subtle"> / {totalSets}</span>
-        {questionNumber != null && (
-          <span className="text-ink-subtle ml-3">
-            Q{questionNumber} / {totalQuestions}
-          </span>
-        )}
-      </span>
-      <span className="text-ink">
-        Score: <span className="text-highlight font-semibold">{score}</span>
-      </span>
+        </>
+      )}
     </div>
   );
 }

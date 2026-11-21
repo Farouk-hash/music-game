@@ -1,6 +1,7 @@
 // music-game-wrangler/src/controllers/templates/templates.js
 import { json, error } from '../../lib/response.js';
 import { requireAdmin } from '../../middleware/adminAuth.js';
+import { cachedJsonResponse, invalidateCache } from '../../lib/cache.js';
 import {
   validateTemplateName,
   validateDescription,
@@ -90,12 +91,16 @@ export async function buildTemplateResponse(env, templateId) {
   return serializeTemplate(row, roundsMap.get(templateId) ?? []);
 }
 
+// Helper: Bust the cache when admin modifies templates
+async function bustCache(env, ctx, request) {
+  const origin = new URL(request.url).origin;
+  await invalidateCache(env, ctx, 'templates:public:v1', origin);
+}
+
 /* ─────────────────────────────────────────────────────────────
    POST /templates?admin_key=…
-   Body: { name, description?, sortOrder?, isPublic?, levels,
-           years?, genresIds?, artistsIds?, rounds }
    ───────────────────────────────────────────────────────────── */
-export async function createTemplate(request, env) {
+export async function createTemplate(request, env, ctx) {
   const authErr = requireAdmin(request, env);
   if (authErr) return authErr;
 
@@ -151,6 +156,8 @@ export async function createTemplate(request, env) {
     await env.DB.batch(roundStatements);
   }
 
+  await bustCache(env, ctx, request);
+
   const template = await buildTemplateResponse(env, newId);
   return json({ template });
 }
@@ -159,14 +166,34 @@ export async function createTemplate(request, env) {
    GET /templates                 → all (admin view)
    GET /templates?public=1        → only is_public = 1 (client view)
    ───────────────────────────────────────────────────────────── */
-export async function listTemplates(request, env) {
+export async function listTemplates(request, env, ctx) {
   const url = new URL(request.url);
   const publicOnly = url.searchParams.get('public') === '1';
 
-  const sql = publicOnly
-    ? `SELECT ${TEMPLATE_FIELDS} FROM templates WHERE is_public = 1 ORDER BY sort_order ASC, created_at DESC`
-    : `SELECT ${TEMPLATE_FIELDS} FROM templates ORDER BY sort_order ASC, created_at DESC`;
+  if (publicOnly) {
+    return cachedJsonResponse(
+      request,
+      env,
+      ctx,
+      'templates:public:v1',
+      2147483647 , 
+      3600,  // Edge TTL: 1h
+      async () => {
+        const sql = `SELECT ${TEMPLATE_FIELDS} FROM templates WHERE is_public = 1 ORDER BY sort_order ASC, created_at DESC`;
+        const { results } = await env.DB.prepare(sql).all();
+        const rows = results ?? [];
+        const roundsMap = await fetchTemplateRounds(env, rows.map(r => r.id));
 
+        return {
+          templates: rows.map(r => serializeTemplate(r, roundsMap.get(r.id) ?? [])),
+          total: rows.length,
+        };
+      }
+    );
+  }
+
+  // Admin view (no cache)
+  const sql = `SELECT ${TEMPLATE_FIELDS} FROM templates ORDER BY sort_order ASC, created_at DESC`;
   const { results } = await env.DB.prepare(sql).all();
   const rows = results ?? [];
   const roundsMap = await fetchTemplateRounds(env, rows.map(r => r.id));
@@ -180,7 +207,7 @@ export async function listTemplates(request, env) {
 /* ─────────────────────────────────────────────────────────────
    GET /templates/:id
    ───────────────────────────────────────────────────────────── */
-export async function getTemplate(request, env, { id }) {
+export async function getTemplate(request, env, ctx, { id }) {
   const template = await buildTemplateResponse(env, Number(id));
   if (!template) return error('Template not found', 404);
   return json({ template });
@@ -188,9 +215,8 @@ export async function getTemplate(request, env, { id }) {
 
 /* ─────────────────────────────────────────────────────────────
    PUT /templates/:id?admin_key=…
-   All fields optional (partial update).
    ───────────────────────────────────────────────────────────── */
-export async function saveTemplate(request, env, { id }) {
+export async function saveTemplate(request, env, ctx, { id }) {
   const authErr = requireAdmin(request, env);
   if (authErr) return authErr;
 
@@ -279,6 +305,8 @@ export async function saveTemplate(request, env, { id }) {
 
   await env.DB.batch(statements);
 
+  await bustCache(env, ctx, request);
+
   const template = await buildTemplateResponse(env, templateId);
   return json({ template });
 }
@@ -286,7 +314,7 @@ export async function saveTemplate(request, env, { id }) {
 /* ─────────────────────────────────────────────────────────────
    DELETE /templates/:id?admin_key=…
    ───────────────────────────────────────────────────────────── */
-export async function deleteTemplate(request, env, { id }) {
+export async function deleteTemplate(request, env, ctx, { id }) {
   const authErr = requireAdmin(request, env);
   if (authErr) return authErr;
 
@@ -306,6 +334,8 @@ export async function deleteTemplate(request, env, { id }) {
   if (row.cover_r2_key) {
     try { await env.AUDIO.delete(row.cover_r2_key); } catch {}
   }
+
+  await bustCache(env, ctx, request);
 
   return json({ ok: true, deleted: true });
 }

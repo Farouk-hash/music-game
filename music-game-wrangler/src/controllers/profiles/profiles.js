@@ -9,8 +9,6 @@ import {
   normalizePhone,
 } from '../../utilities/profile/profileLimits.js';
 
-
-
 export const PROFILE_FIELDS =
   'id, nickname, recovery_code, email, phone, avatar_kind, avatar_style, avatar_seed, avatar_r2_key, created_at, updated_at';
 
@@ -135,13 +133,13 @@ export async function recoverProfile(request, env) {
   return json({ id: row.id });
 }
 
-export async function getProfile(request, env, { id }) {
+export async function getProfile(request, env, ctx, { id }) {
   const profile = await buildProfileResponse(env, id);
   if (!profile) return error('Profile not found', 404);
   return json({ profile });
 }
 
-export async function patchProfile(request, env, { id }) {
+export async function patchProfile(request, env, ctx, { id }) {
   const body = await request.json().catch(() => null);
   if (!body) return error('Invalid body', 400);
 
@@ -184,7 +182,8 @@ export async function patchProfile(request, env, { id }) {
     binds.push(body.avatar_seed ? String(body.avatar_seed) : null);
   }
 
-  if (body.avatar_style !== undefined) {
+  // Only set avatar_kind to 'generated' if we are touching the generated fields
+  if (body.avatar_style !== undefined || body.avatar_seed !== undefined) {
     updates.push("avatar_kind = 'generated'");
   }
 
@@ -210,17 +209,18 @@ export async function patchProfile(request, env, { id }) {
   return json({ profile });
 }
 
-export async function saveProfile(request, env, { id }) {
+export async function saveProfile(request, env, ctx, { id }) {
   const body = await request.json().catch(() => null);
   if (!body) return error('Invalid body', 400);
 
   const row = await env.DB.prepare(
-    'SELECT id FROM profiles WHERE id = ?'
+    'SELECT id, avatar_r2_key FROM profiles WHERE id = ?'
   ).bind(id).first();
   if (!row) return error('Profile not found', 404);
 
   const updates = [];
   const binds = [];
+  let oldAvatarKeyToDelete = null;
 
   if (body.nickname !== undefined) {
     const nick = validateNickname(body.nickname);
@@ -256,6 +256,12 @@ export async function saveProfile(request, env, { id }) {
 
       updates.push('avatar_seed = ?');
       binds.push(a.seed ? String(a.seed) : null);
+
+      // Fix: If switching to generated, clear the R2 key
+      if (row.avatar_r2_key) {
+        updates.push('avatar_r2_key = NULL');
+        oldAvatarKeyToDelete = row.avatar_r2_key;
+      }
     }
   }
 
@@ -353,11 +359,20 @@ export async function saveProfile(request, env, { id }) {
     throw e;
   }
 
+  // After successful DB update, clean up orphaned R2 key if needed
+  if (oldAvatarKeyToDelete) {
+    try {
+      await env.AUDIO.delete(oldAvatarKeyToDelete);
+    } catch {
+      // Orphan tolerated
+    }
+  }
+
   const profile = await buildProfileResponse(env, id);
   return json({ profile });
 }
 
-export async function deleteProfile(request, env, { id }) {
+export async function deleteProfile(request, env, ctx, { id }) {
   if (!id) return error('id required', 400);
 
   const row = await env.DB.prepare(

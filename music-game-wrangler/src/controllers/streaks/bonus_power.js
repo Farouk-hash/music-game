@@ -1,4 +1,4 @@
-// music-game-wrangler/src/controllers/streaks/bonus-power.js
+// music-game-wrangler/src/controllers/streaks/bonus_power.js
 //
 // Grants +1 bonus power attempt (max 3 per day across ALL streaks).
 

@@ -1,52 +1,53 @@
-// music-game-wrangler/src/controllers/game/rounds-methods/instruments-lyrics-pool.js
-import { normalize } from '../../../utilities/normalize.js';
-import { chunkedIn, D1_CHUNK_SIZE } from '../../../utilities/chunkedIn.js';
-import { extractMiddleSnippet } from './lyric-snippets.js';
+// rounds-methods/instruments-lyrics-pool.js
+import { loadArtistData } from '../../../lib/cache.js';
 
-const MIN_LYRICS_LEN = 200;
-
-/* ═══════════════════════════════════════════════════════════
-   Bulk lyrics fetcher.
-
-   Called once per request. Returns a Map keyed by
-   `artist_id::track_name` so the builder can look up:
-     - this track's snippet
-     - candidate distractor snippets
-   ═══════════════════════════════════════════════════════════ */
-
+/**
+ * Map keyed by `artist_id::track_name` -> { artist_id, track_name, snippet, normalized }.
+ * Snippets are precomputed at build time and live in the artist's core pool entry,
+ * so this does no lyric parsing and no extra KV reads when core is already loaded.
+ */
 export async function fetchLyricsPool(env, scopeArtistIds) {
-  if (!scopeArtistIds.length) return new Map();
-
   const byKey = new Map();
+  if (!scopeArtistIds.length) return byKey;
 
-  await chunkedIn(scopeArtistIds, D1_CHUNK_SIZE, async (chunk) => {
-    const ph = chunk.map(() => '?').join(',');
-    const { results } = await env.DB.prepare(
-      `SELECT l.artist_id, l.track_name, l.lyrics
-         FROM lyrics l
-        WHERE l.artist_id IN (${ph})
-          AND l.lyrics IS NOT NULL
-          AND length(l.lyrics) >= ${MIN_LYRICS_LEN}`
-    ).bind(...chunk).all();
-
-    for (const r of results ?? []) {
-      const key = `${r.artist_id}::${r.track_name}`;
-      const snippet = extractMiddleSnippet(r.lyrics);
-      if (!snippet) continue;
-      byKey.set(key, {
-        artist_id: r.artist_id,
-        track_name: r.track_name,
-        snippet,
-        normalized: normalize(snippet),
-      });
+  const data = await loadArtistData(env, 'core', scopeArtistIds);
+  for (const d of data.values()) {
+    for (const s of d.s ?? []) {
+      const key = `${s.artist_id}::${s.track_name}`;
+      if (!byKey.has(key)) byKey.set(key, s);
     }
-    return [];
-  });
-
+  }
   return byKey;
 }
 
-/** All snippets except the given key, as an array. */
+const entriesCache = new WeakMap();
+
+function entriesOf(map) {
+  let arr = entriesCache.get(map);
+  if (!arr) {
+    arr = [...map.values()];
+    entriesCache.set(map, arr);
+  }
+  return arr;
+}
+
+/** Random sample of distractor snippets: no full copy, no full shuffle. */
+export function pickLyricDistractors(lyricsByKey, excludeKey, ownNormalized, n = 3) {
+  const arr = entriesOf(lyricsByKey);
+  const out = [];
+  const seen = new Set([ownNormalized]);
+  const maxTries = n * 30;
+  for (let t = 0; t < maxTries && out.length < n && arr.length > 0; t++) {
+    const c = arr[Math.floor(Math.random() * arr.length)];
+    if (`${c.artist_id}::${c.track_name}` === excludeKey) continue;
+    if (seen.has(c.normalized)) continue;
+    seen.add(c.normalized);
+    out.push(c);
+  }
+  return out;
+}
+
+/** @deprecated kept for old imports; copies the whole map. Use pickLyricDistractors. */
 export function buildDistractorPool(lyricsByKey, excludeKey) {
   const out = [];
   for (const [key, entry] of lyricsByKey) {

@@ -6,7 +6,7 @@ export function Level3Modal({
   disabledTypes = new Set(),
   disabledReasons,
   reversedClipsCount = 0,
-  allowInstruments = false,   // L3 doesn't support instruments yet
+  allowInstruments = true,   
   genreMode,
   effectiveSelectedArtistsCount,
   onQuestionTypeUnfavorited,

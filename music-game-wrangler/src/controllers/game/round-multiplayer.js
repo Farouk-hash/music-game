@@ -1,12 +1,19 @@
-// music-game-wrangler/src/controllers/game/round-multiplayer.js
+// src/controllers/game/round-multiplayer.js
 import { json, error } from '../../lib/response.js';
 import { clamp } from '../../utilities/clamp.js';
 import { getRound } from './rounds.js';
 import { getRoundMulti } from './round-mutli.js';
 import { getRoundSet } from './round-sets.js';
+import { MAX_ROUNDS_PER_REQUEST } from './rounds-methods/work-set.js';
 
 /* ═══════════════════════════════════════════════════════════
    POST /game/round-multiplayer
+
+   The inner builders cap a single request at MAX_ROUNDS_PER_REQUEST
+   (free-tier CPU). So roundsPerPlayer is limited to
+   floor(MAX_ROUNDS_PER_REQUEST / playerCount); the effective value is
+   returned in meta.roundsPerPlayer, and the requested one in
+   meta.requestedRoundsPerPlayer.
    ═══════════════════════════════════════════════════════════ */
 
 const MAX_PLAYERS = 5;
@@ -20,34 +27,30 @@ function parseLevel(raw) {
   return Number.isInteger(n) && n >= 1 && n <= 3 ? n : 1;
 }
 
-export async function getRoundMultiplayer(request, env) {
-  // ── CHANGED: Read from POST body ──
+export async function getRoundMultiplayer(request, env, ctx) {
   const body = await request.json().catch(() => ({}));
 
   const level = parseLevel(body.level);
-  const playerCount = clamp(
-    Number(body.players ?? 2),
-    2, MAX_PLAYERS
+  const playerCount = clamp(Number(body.players ?? 2), 2, MAX_PLAYERS);
+
+  const requestedRoundsPerPlayer = clamp(
+    Number(body.count ?? 5), 1, MAX_ROUNDS_PER_PLAYER
   );
-  const roundsPerPlayer = clamp(
-    Number(body.count ?? 5),
-    1, MAX_ROUNDS_PER_PLAYER
-  );
+  const perPlayerCap = Math.max(1, Math.floor(MAX_ROUNDS_PER_REQUEST / playerCount));
+  const roundsPerPlayer = Math.min(requestedRoundsPerPlayer, perPlayerCap);
   const totalCount = playerCount * roundsPerPlayer;
 
-  // Build an internal POST request with the multiplied count.
-  const innerBody = { ...body, count: totalCount };
   const innerReq = new Request(request.url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(innerBody)
+    body: JSON.stringify({ ...body, count: totalCount }),
   });
 
   let response;
   try {
-    if (level === 3)      response = await getRoundSet(innerReq, env);
-    else if (level === 2) response = await getRoundMulti(innerReq, env);
-    else                  response = await getRound(innerReq, env);
+    if (level === 3)      response = await getRoundSet(innerReq, env, ctx);
+    else if (level === 2) response = await getRoundMulti(innerReq, env, ctx);
+    else                  response = await getRound(innerReq, env, ctx);
   } catch (err) {
     return error(`Multiplayer round build failed: ${err.message}`, 500);
   }
@@ -56,8 +59,7 @@ export async function getRoundMultiplayer(request, env) {
 
   const resBody = await response.json();
 
-  // Level 3 uses `sets`, levels 1 and 2 use `rounds`. Normalize to
-  // a single `rounds` array before slicing.
+  // Level 3 uses `sets`, levels 1 and 2 use `rounds`.
   const flatRounds = Array.isArray(resBody.rounds)
     ? resBody.rounds
     : Array.isArray(resBody.sets)
@@ -79,6 +81,7 @@ export async function getRoundMultiplayer(request, env) {
       level,
       playerCount,
       roundsPerPlayer,
+      requestedRoundsPerPlayer,
       totalRounds: flatRounds.length,
       generatedAt: new Date().toISOString(),
     },

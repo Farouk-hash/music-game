@@ -10,7 +10,7 @@ export function LevelModalWrapper({
   level,
   title,
   disabledTypes,
-  disabledReasons,          // ← NEW
+  disabledReasons,          
   reversedClipsCount,
   allowInstruments,
   canPlay = true,

@@ -12,24 +12,17 @@ export function useRound({
   instruments = 'none',
   enabled = true,
 } = {}) {
-  // Build the JSON payload
   const payload = {
-    genres,
-    artists,
-    years,
-    types,
-    count,
-    rendition,
-    instruments,
+    genres, artists, years, types, count, rendition, instruments,
   };
 
-  // Stringify for the query key so it updates when params change
   const queryKey = ['game-round', JSON.stringify(payload)];
 
   return useQuery({
     queryKey,
-    queryFn: () => api.post('/round', payload), // Changed to POST
-    staleTime: 0,
+    queryFn: () => api.post('/round', payload),
+    staleTime: 0, // <--- Allow refetching for Play Again
+    gcTime: 1000 * 60 * 60,
     refetchOnWindowFocus: false,
     enabled,
   });

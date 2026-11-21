@@ -1,0 +1,967 @@
+Yes — `Setup.jsx` is wired correctly. `buildPayload()` carries `skips/removes/reveals` from `settings.*`, and lifelines only flow into solo `/play` (Level 1/2/3 modals); `handleMultiplayerStart` and `buildScope()` (Sporcle) deliberately omit them.
+
+---
+
+# Consolidated handoff — v78 (Lifelines + all prior fixes)
+
+Save as `E:\matb3aa-game\handoff-v78.md`. Paste as the first message of the next session. Supersedes v77.
+
+---
+
+```
+You are continuing a working project. Do not re-derive or re-verify anything below.
+Everything here is confirmed working unless explicitly marked broken. Read it in full
+before proposing anything.
+
+## THE PROJECT
+
+Six pieces, plus a data pipeline, plus a card game in design:
+
+1. `admin/` — build tool for curating audio clips, lyrics, artists, album years. Port 5173.
+2. `game/` — the player-facing quiz app. Port 5174 locally; deployed to Cloudflare Pages.
+3. `server/` — local Express + orchestration. Port 3001.
+4. `music-game-wrangler/` — Cloudflare Worker holding D1 + R2 (tracks, artists, lyrics,
+   instruments, profiles, follows, invites, collections, templates).
+5. `host-sporcle-wrangler/` — Durable Object service for Sporcle multiplayer.
+6. `tools/ACE-Step-1.5/` — Local AI model for style-transfer.
+
+The game does not go through Express. It fetches `music-game-wrangler` directly for
+solo/co-op, profiles, follows, invites, collections, and templates, and
+`host-sporcle-wrangler` for Sporcle.
+
+## REPOSITORY
+
+GitHub: `https://github.com/Farouk-hash/music-game` (private, monorepo)
+Local repo root: `E:\matb3aa-game\.git`
+Last committed state: v28 (initial commit `c2a9ad3`). Work from v29–v78 is UNCOMMITTED.
+
+`.gitignore`: Ignores `tools/`, `server/style-transfer-output/`,
+`server/instrumental-output/`, `*.mp3`, `*.wav`, `venv/`, `.venv/`, Python caches,
+`server/tmp-preview-test/`.
+
+`.env.production` is TRACKED and contains `VITE_API_BASE0`, `VITE_API_BASE`,
+`VITE_SPORCLE_BASE`.
+
+## ARCHITECTURE & PORTS
+
+| Piece | Location | Local port | URL |
+|---|---|---|---|
+| Express server | `server/` | 3001 | `http://localhost:3001` |
+| Admin app | `admin/` | 5173 | `http://localhost:5173` |
+| Game (local) | `game/` | 5174 | `http://localhost:5174` |
+| Game (deployed) | Pages | — | `https://music-game-9vn.pages.dev` |
+| Worker (music) | `music-game-wrangler/` | 8787 | `https://music-game-wrangler…workers.dev` |
+| Worker (Sporcle) | `host-sporcle-wrangler/` | 8788 | `https://host-sporcle-wrangler…workers.dev` |
+| ACE-Step API | `tools/ACE-Step-1.5/` | 8001 | `http://127.0.0.1:8001` |
+
+For local dev the Sporcle DO resolves `env.MUSIC_GAME.fetch(...)` (a Service
+Binding) to whichever worker is bound in `wrangler.toml`. If you only changed
+Sporcle-side code, run `npx wrangler dev --port 8788 --remote` to hit the
+deployed music worker. Otherwise run both locally.
+
+## VITE CONFIGURATION
+
+`game/vite.config.js` reads `VITE_API_BASE0` from env via `loadEnv` (falls back
+to the hardcoded Worker URL).
+
+- `@/` alias → `game/src/`.
+- `jsconfig.json` uses `./src/*` (no `baseUrl`).
+- Restart `npm run dev` after changing `vite.config.js` or `jsconfig.json` — neither
+  hot-reloads.
+- Only `/api/game` is proxied. Everything else hits `BASE` directly.
+
+## STYLING SYSTEM
+
+- `game/src/styles/tokens.css` — the ONE file with hex values.
+- `game/tailwind.config.js` — maps utility classes to CSS variables.
+- Valid tokens: `bg-bg`, `bg-surface`, `bg-surface-2`, `text-ink`, `text-accent`,
+  `text-wrong`, `ring-accent`, etc. Opacity modifiers (`/40`) DO NOT WORK on
+  token-mapped classes.
+- Standard heights: `h-9` section actions, `h-10` tab pills and header buttons,
+  `h-11` inputs, `h-11`/`h-12` modal footers.
+
+## ICONS
+
+`game/src/components/icons/` — one file per icon, grouped by purpose. All use the
+shared `base` SVG props (`stroke="currentColor"`, `strokeWidth="2"`).
+
+```
+navigation/  IconChevronUp, IconChevronDown, IconChevronLeft, IconChevronRight, IconBurger, IconClose (+ alias IconX)
+profile/     IconUser, IconUserPlus, IconUserMinus, IconFriends, IconShare, IconDownload
+music/       IconGenres, IconArtists, IconTracks, IconClips, IconAlbums, IconLyrics, IconInstruments, IconReversed
+collections/ IconLibrary, IconCollection, IconPlus, IconTrash, IconPencil, IconMinus
+setup/       IconCalendar, IconStrict, IconSelectAll, IconDice
+ui/          IconGrid, IconList, IconDense, IconEye, IconEyeOff, IconCheck, IconSearch, IconHeart, IconUsers, IconPlay, IconCloud
+```
+
+`lib/icons.jsx` is a compat shim — `export * from '../components/icons/index.js'`.
+Import convention: `import { IconFoo } from '@/components/icons'`.
+
+## IMAGE PIPELINE
+
+- `absoluteWorkerUrl(path)` — prefixes `BASE` to relative paths. Passes through any
+  scheme-prefixed URL (http:, https:, blob:, data:).
+- `resolveCoverUrl(cover)` — null unless `cover.kind === 'uploaded'`; else `absoluteWorkerUrl(cover.url)`.
+- `resolveAvatarUrl(profile)` — mirror for avatars.
+- `useWorkerImage(input)` — string or `{ kind, url }`; returns `{ src, status, isLoaded, isError }`.
+- `absoluteAvatarUrl(profile)` in `profileApi.js` — used by `ProfileModal` and
+  `PlayerAvatar`. Do not migrate these to `useWorkerImage` (they mix Worker + DiceBear).
+
+## TILES & GRID
+
+`TileGrid.jsx` — grid of tiles.
+- `view = 'grid' | 'dense' | 'list'`.
+- `onToggle` for selection; `onTileClick` for primary click when selection isn't wanted.
+- `renderHeart` for the corner action slot.
+- `paginated` disables mobile "Show more".
+
+`ArtistTileGrid` / `GenreTileGrid` wrap `TileGrid` with pagination + `HeartButton`.
+
+## BUTTON
+
+`Button.jsx` variants: `primary`, `secondary`, `ghost`, `danger`, `danger-outline`.
+Sizes: `sm` (`h-8`), `md` (`h-10`), `lg` (`h-12`).
+
+## TOAST SYSTEM
+
+`useToast.jsx`. API: `show({ message, actionLabel?, onAction?, onDismiss?, durationMs? })`.
+Method is `show`, NOT `push`. Dismiss reasons: `cancel` (fires action), `expire`
+(fires onDismiss). Default duration 6000ms.
+
+## GAME SETTINGS CONTEXT
+
+`game/src/context/GameSettingsContext.jsx` exposes:
+- `questionTypes`, `answerMode`, `roundCount`, `reversedAnswers`, `timer`,
+  `audioRendition`, `instruments`
+- `skips`, `removes`, `reveals` (lifelines — NEW in v78)
+- Individual setters for each
+- `applySettings(partial)` — bulk setter. Accepts any of the above keys.
+
+Persisted to `localStorage` under `game.answerMode`, `game.reversedAnswers`,
+`game.timer`, `game.audioRendition`, `game.instruments`, and (v78)
+`game.skips`, `game.removes`, `game.reveals`.
+
+## PROFILE / FOLLOW / INVITE SYSTEMS
+
+Unchanged from v75. Profile + recovery code, M2 follows, room invites with 15s poll,
+room-death cleanup via waitUntil.
+
+CRITICAL: Any fire-and-forget HTTP call from a Worker/DO MUST be wrapped in
+`execCtx.waitUntil(...)`.
+
+## SPORCLE — fully implemented (v68–v72)
+
+- Tie-breaker loop, all-answered fix, chat (DO-local, 200 cap), play-again-with-settings.
+- Heartbeat: `left` = 0/1/2; 30s/2min timeouts; 5s sweep; `lobby_wait_reason`
+  (`alone`/`no-ready`/`host-idle`); `force_close`; idempotent `version: 0` returns;
+  `AutoCloseBar`.
+- Route handlers take `(ctx)`; `playerId` in state query.
+
+## SPORCLE — v76 level-aware sudden death
+
+`useSuddenDeath.js` fetch logic:
+- L1 → `POST /game/round`
+- L2 → `POST /game/round-multi` (multi-question rounds, same clip)
+- L3 → `POST /game/round` (fallback)
+
+Flatten logic for L2 (already in useSuddenDeath). Clip is attached to every question
+in a round.
+
+`SuddenDeath.jsx` renders `PromptSource` when `q?.clip || q?.lyrics` (not just `q?.clip`).
+`apiParams` is `useMemo`'d. `OptionsGrid` has a `locked` state.
+
+## SPORCLE — BUG FIXES SHIPPED IN v77
+
+### `question-fetcher.js` — POST + JSON body
+
+Previously called `env.MUSIC_GAME.fetch(url)` (GET) with query params. Both the
+method (POST) and the body shape (JSON) were wrong for `/game/round*`. Rewritten:
+
+```js
+const path = config.level === 2 ? '/game/round-multi' : '/game/round';
+const body = { level, genres, artists, years, types, count, rendition, instruments };
+const res = await env.MUSIC_GAME.fetch(url, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body),
+});
+```
+
+Normalization unchanged. `source` is preserved (confirmed via curl — instrumental
+rounds carry `source: "instrumental"` through to the DO and to state).
+
+### `routes/state.js` — forwards `playerId` to the DO
+
+```js
+const playerId = url.searchParams.get('playerId') || null;
+const state = await stub.getState(since, playerId);
+```
+
+Without this, every `/state` poll failed to refresh `last_seen`, and the DO's
+heartbeat sweep marked the polling player as left after 30s / 2min.
+
+### `question-fetcher.js` — L3 routing
+
+Currently `config.level === 3` falls to `/game/round` (L1). If L3 Sporcle is ever
+enabled, add `/game/round-set` and a set-shaped normalizer. NOT urgent.
+
+### Sporcle identity, presence, actions — unchanged
+
+`useHostSporcle.js`, `useHostSporcleIdentity.js`, `useSporclePresence.js`,
+`useHostSporcleActions.js`, `sporcleApi.js` all correct as of v77. The
+`leaveBeaconRaw` uses text/plain + sendBeacon fallback to skip CORS preflight on
+page unload.
+
+## STREAKS — CLIP-LOCKED TOP-UP (v77)
+
+### `round-dynamic.js` — full rewrite
+
+Replaced prompt-only dedupe with (a) clip-lock on the extras, (b) dedupe key
+`(type|prompt|correctValue)`, (c) `__toppedOut` marker so one unsolvable round
+doesn't block all top-ups.
+
+```js
+const targetKey = clipKeyOf(target);                     // slot:id or r2:key or set:id
+const sameClipExtras = extraRounds.filter(r => clipKeyOf(r) === targetKey);
+if (sameClipExtras.length === 0) {
+  rounds[shortIndex] = { ...target, __toppedOut: true };
+  continue;
+}
+const seen = new Set(targetQuestions.map(questionKeyOf));
+const fresh = sameClipExtras.flatMap(roundQuestions).filter(
+  q => !seen.has(questionKeyOf(q))
+);
+```
+
+Final cap still `slice(0, minQuestions)` — but do NOT change that: minQuestions
+is a floor + a ceiling for streaks because the streak client sends exactly the
+per-round question count it wants. Play2 does NOT use round-dynamic (see below).
+
+### `routes/streaks.js` and `useStreak` — unchanged
+
+Fixes to `generator.js` and `pickArtists`:
+
+### `pickArtists` in `generator.js` — flat read from cached columns
+
+```sql
+SELECT a.id, a.name,
+       a.tracks_count AS track_count,
+       a.lyrics_count AS lyric_count,
+       a.instruments_count AS instrument_count
+FROM artists a
+WHERE EXISTS (SELECT 1 FROM json_each(a.genre_ids) je WHERE je.value = ?)
+  AND a.tracks_count >= 5
+  AND a.lyrics_count >= 1           -- only if requiresLyrics
+  AND a.instruments_count >= 1      -- only if requiresInstruments
+ORDER BY a.tracks_count DESC, a.id ASC
+LIMIT 30
+```
+
+Requires the new artist columns (see MIGRATIONS below). `a.id ASC` is the
+deterministic tiebreaker (was non-deterministic).
+
+## STREAK CHALLENGE REFACTOR
+
+`game/src/routes/Streak/Challenge.jsx` is now an orchestrator. Presentational
+pieces in `ChallengePreview.jsx` and `ChallengePlay.jsx`.
+
+- All state (`phase`, `mode`, `batchIndex`, `questionIndex`, `picked`, `revealed`,
+  `batchResults`, `allBatches`, `timeLeft`, `timedOut`, `fetchingQuestions`) lives
+  in `Challenge.jsx`.
+- Timer effect keeps deps `[phase, batchIndex, batchTimerSeconds]` — meaning
+  per-BATCH window (matches pre-refactor behavior; multi-question batches share
+  one timer). Do not change without an explicit ask.
+- `ChallengePlay` receives `currentBatch`, `currentQuestion`, `timeLeft`,
+  `timedOut`, `batchTimerSeconds` as props.
+- `handleAnswer` remains in the orchestrator (`onAnswer` prop) and honors the
+  optional `precomputedCorrect` for typed answers.
+- `ChallengePlay` renders `revealExtra` on the last question of a lyrics batch,
+  mirroring `Play2.jsx`.
+
+## STREAK RESULT REFACTOR
+
+`Result.jsx` split into:
+- `StreakSummaryCard.jsx`
+- `PowerCard.jsx`
+- `AllStreaksCard.jsx`
+
+All derived values stay in `Result.jsx` (`streak`, `totalPoints`, `power`,
+`maxBonus`, `easyMode`). Cards receive props only.
+
+## COLLECTIONS — COMPLETE SYSTEM (v76)
+
+### Overview
+
+Per-profile saved game configurations. Two flavors:
+- Originals — user-created, editable.
+- Clones (Pointers) — reference to a public collection. Read-only. Stored in
+  `collection_clones` join table.
+
+### Database schema
+
+`collections`: id, profile_id, name, is_public, cover_kind, cover_r2_key,
+levels (JSON), years (JSON), genres_ids (JSON), artists_ids (JSON), created_at,
+updated_at.
+
+`collection_rounds`: collection_id, position, level, question_types (JSON),
+answer_mode, mode, rounds, reversed_answers, reversed_audio, instruments, timer.
+
+`collection_clones`: profile_id, collection_id, created_at. PRIMARY KEY
+(profile_id, collection_id).
+
+`source_id` on `collections` is deprecated. Ignore it.
+
+### Worker routes
+
+```
+POST   /profiles/:profileId/collections
+POST   /profiles/:profileId/collections/clone       ← must be BEFORE /:id
+GET    /profiles/:profileId/collections             ← returns { mine: [], others: [] }
+GET    /profiles/:profileId/collections/:id
+PUT    /profiles/:profileId/collections/:id
+DELETE /profiles/:profileId/collections/:id
+POST   /profiles/:profileId/collections/:id/cover
+DELETE /profiles/:profileId/collections/:id/cover
+GET    /profiles/:profileId/collections/:id/cover
+```
+
+### Client files
+
+```
+game/src/
+├── lib/collectionsApi.js
+├── hooks/collections/
+│   ├── useCollections.js
+│   ├── useCollectionDraft.js
+│   ├── useCollectionFilters.js
+│   ├── usePlayCollection.js
+│   └── useCollectionMultiplayer.js
+├── components/domain/Collections/
+│   ├── modal/CollectionsModal.jsx, CollectionReadOnlyModal.jsx,
+│   │       CollectionEditorModal.jsx, CollectionModalShell.jsx,
+│   │       CollectionMultiplayerModal.jsx, LevelPickerModal.jsx,
+│   │       CreateCollectionTab.jsx, OtherCollectionsTab.jsx
+│   ├── editor/CollectionEditor.jsx, EditorBasics.jsx, EditorScope.jsx,
+│   │         EditorRounds.jsx, RoundRow.jsx
+│   ├── tiles/CollectionTileGrid.jsx, CollectionTileAction.jsx
+│   ├── primitives/CollectionCover.jsx, LevelBadge.jsx
+│   └── filters/FilterPanel.jsx, FilterGroup.jsx
+└── routes/Library.jsx, LibraryOthers.jsx
+```
+
+### Client routing
+
+```
+/library              → Library.jsx
+/library/others       → LibraryOthers.jsx (must be before /library/:id)
+/library/:id          → Library.jsx (deep link: opens edit for originals, read-only for clones)
+```
+
+### Round schema — 9 fields
+
+| Field | Type | Notes |
+|---|---|---|
+| level | 1/2/3 | must be in collection.levels |
+| questionTypes | string[] | ≥1, ≤8, from VALID_QUESTION_TYPES |
+| answerMode | 'choose' \| 'type' | |
+| mode | 'speed' \| 'collect' | |
+| rounds | 1–50 | |
+| reversedAnswers | 'no' \| 'some' \| 'all' | |
+| reversedAudio | bool | |
+| instruments | 'none' \| 'mixed' \| 'all' | |
+| timer | 5–300 \| null | |
+
+### v76 architecture — shared shell
+
+`CollectionModalShell.jsx` — single source of truth for header, body, footer.
+Both read-only and editor modals are thin wrappers.
+
+### v76 multiplayer flow
+
+`useCollectionMultiplayer` — `openMultiplayerFor`, `closeMultiplayer`,
+`startMultiplayer`. Seeds `GameSettingsContext` via `applySettings`.
+
+### Friends filter (v76)
+
+`useCollectionFilters` extracts `friends` facet; `FilterPanel` shows the group;
+`CollectionTileGrid` shows "(Friend)" in subtitle when `followStatus === 'friends'`.
+
+## COLLECTIONS — v77 BUG FIXES
+
+### `applyYearRange` — replace, not add
+
+`game/src/hooks/setup/useScopeSelection.js`:
+
+```js
+// BEFORE (add-only)
+const applyYearRange = useCallback((yearsToSelect) => {
+  setSelectedYears((prev) => {
+    const next = new Set(prev);
+    for (const y of yearsToSelect) next.add(y);
+    return next;
+  });
+}, [setSelectedYears]);
+
+// AFTER (replace)
+const applyYearRange = useCallback((yearsToSelect) => {
+  setSelectedYears(new Set(yearsToSelect));
+}, [setSelectedYears]);
+```
+
+Without this, `YearRangeModal` "Apply" appears to do nothing when the picked
+range is a subset of the current selection. `handleScopeChange`'s diff logic in
+`EditorScope` is correct — it just never received a "smaller" `next` set.
+
+### `usePlayCollection.launch` — parse years
+
+```js
+import { parseYears } from '@/components/domain/Templates/templateYears';
+
+const payload = {
+  ...,
+  years: parseYears(game.years),   // was: game.years?.values || []
+  ...
+};
+```
+
+Collections with `years: { type: 'range', values: '1983-2000' }` were silently
+sending `years: '1983-2000'` (a string) to `/game/round*`, which
+`usePlayParams` drops (not an array). Now the range is expanded to numbers.
+
+## TEMPLATES — NEW IN v77
+
+### Server-side tables
+
+```
+templates (id, name, description, sort_order, is_public,
+           cover_kind, cover_r2_key, levels JSON, years JSON,
+           genres_ids JSON, artists_ids JSON, created_at, updated_at)
+template_rounds (mirror of collection_rounds, keyed by template_id)
+```
+
+### `/templates?public=1` response (client contract)
+
+Shape matches collections:
+- `id`, `name`, `description`
+- `levels: number[]`
+- `rounds: [{ level, questionTypes, answerMode, mode, rounds,
+             reversedAnswers, reversedAudio, instruments, timer }, ...]`
+- `genresIds: number[]`, `artistsIds: number[]`
+- `years: null | { type: 'range', values: 'YYYY-YYYY' } | { type: 'set', values: number[] } | number[]`
+- `cover: { kind: 'uploaded', url } | null` (server should reshape from
+  `cover_kind`/`cover_r2_key`; client falls back to
+  `/templates/:id/cover` if it sees `cover_kind === 'uploaded'`)
+- Capability counts (`reversedClipsCount`, `instrumentsCount`,
+  `lyricsCount`) — good to emit but optional; client defaults to 0.
+
+### Client files
+
+```
+game/src/
+├── lib/
+│   └── templatesApi.js            # list({signal}), get(id, {signal}), coverUrl(id)
+├── hooks/templates/
+│   ├── useTemplates.js            # { templates, isLoading, error, refetch }
+│   └── useTemplate.js             # { template, isLoading, error }
+├── routes/
+│   └── Templates.jsx              # list + pagination + modals
+├── components/domain/Templates/
+│   ├── TemplateRow.jsx            # expandable row-card (cover + meta + details + Play)
+│   ├── TemplateTileGrid.jsx       # tile-grid alternative (v76, still used)
+│   └── templateYears.js           # parseYears + formatYears
+```
+
+`TemplateRow` shows:
+- Cover (via `CollectionCover` with `collection={{ ...template, cover: templateCoverInput(template) }}`)
+- Name, description, level badges, author, meta line
+  (artists / genres / years, with "Any artist" / "Any genre" / "Any year" fallbacks)
+- Chevron toggle → expanded panel with Scope + per-round details
+- Play button in expanded panel → `onPlay(template)`
+- Timer shows "No timer" (italic) when null/0/undefined
+- Empty artists/genres/years render "Any artist" / "Any genre" / "Any year" (italic)
+
+### `Templates.jsx` — the flow
+
+```
+User clicks Play in a TemplateRow
+  → handleOpenTemplate(template)
+    → seedSettingsFromRound(round for levels[0])
+    → setSelectedTemplate(template)
+    → if levels.length > 1  → setPickerOpen(true)
+       else                  → setModalLevel(levels[0])
+    → if levels empty        → setModalLevel(2)
+
+Picker opens → LevelPickerModal (props: levels, onSelect, onClose)
+  → onSelect(level) → handlePickLevel(level)
+    → setPickerOpen(false)
+    → setModalLevel(level)
+    → seedSettingsFromRound(round for that level)      ← CRITICAL
+
+Modal opens → Level1/2/3Modal (seeded settings)
+  → onPlay → handlePlay()
+    → guard: targetRound exists for modalLevel
+    → payload built from settings.* (NOT targetRound.*) — modal is authority
+    → sessionStorage['game.lastPlayParams']
+    → navigate('/play' | '/play-two' | '/play-three')
+```
+
+### `seedSettingsFromRound` — the fix that made the modal reflect the picked level
+
+```js
+function seedSettingsFromRound(round) {
+  if (!round) return;
+  settings.applySettings({
+    questionTypes:   round.questionTypes   ?? settings.questionTypes,
+    answerMode:      round.answerMode      ?? 'choose',
+    reversedAnswers: round.reversedAnswers ?? 'no',
+    timer:           round.timer           ?? null,
+    audioRendition:  round.reversedAudio ? 'reverse' : 'forward',
+    instruments:     round.instruments     ?? 'none',
+    roundCount:      round.rounds          ?? settings.roundCount,
+  });
+}
+```
+
+Called in three places: `handleOpenTemplate` (single-level), `handleOpenTemplate`
+(multi-level placeholder before picker), and `handlePickLevel` (the real
+reseed). Without the third call, Level 2 modal inherited Level 1's timer /
+instruments.
+
+### `handlePlay` reads from `settings.*`
+
+Payload:
+```js
+{
+  genres, artists, years: parseYears(selectedTemplate.years),
+  types: settings.questionTypes,
+  rendition: settings.audioRendition === 'reverse' ? 'reverse' : 'forward',
+  instruments: settings.instruments,
+  answerMode: settings.answerMode,
+  timer: settings.timer,
+  reversed: settings.reversedAnswers,
+  count: modalLevel === 3 ? Math.min(settings.roundCount, 10) : settings.roundCount,
+}
+```
+
+Modal seeds from the template round, user overrides win. **This is the contract.**
+
+## LIFELINES — NEW IN v78 (SOLO ONLY)
+
+### Scope (locked decision)
+
+- Lifelines exist **only in solo play** (`/play`, `/play-two`, `/play-three`).
+- **NOT** in Multiplayer, **NOT** in Sporcle, **NOT** in Collections or Templates.
+- Costs are **system constants**, not per-game pickers.
+- **Negative scores are allowed** (no clamping at 0).
+
+### Cost table (`game/src/constants/lifelines.js`)
+
+| Key | Label | Cost | Effect |
+|---|---|---|---|
+| `skips` | Skips | **0** | Advance past a question without answering. Counts as a miss (no `+1`). |
+| `removes` | Remove one | **−2** | Hide one wrong option (never the correct one). |
+| `reveals` | Reveals | **−3** | Show the correct answer. No `+1` awarded. |
+
+```js
+// game/src/constants/lifelines.js
+export const LIFELINE_OPTIONS = [0, 1, 2, 3, 5];
+
+export const LIFELINE_DEFINITIONS = [
+  { key: 'skips',   label: 'Skips',      hint: 'Advance past a question without answering', cost: 0, icon: 'skip'   },
+  { key: 'removes', label: 'Remove one', hint: 'Hide one wrong option',                     cost: 2, icon: 'remove' },
+  { key: 'reveals', label: 'Reveals',    hint: 'Show the correct answer',                   cost: 3, icon: 'reveal' },
+];
+
+export const DEFAULT_LIFELINES = { skips: 0, removes: 0, reveals: 0 };
+
+export const LIFELINE_COST = Object.fromEntries(
+  LIFELINE_DEFINITIONS.map(d => [d.key, d.cost])
+);
+```
+
+### Scoring model
+
+`score = (sum of correct) − (sum of lifeline costs)`. No clamp; can go negative.
+
+### `roundScores[i]` shape (v78)
+
+`{ correct: number, cost: number, total: number }` — cost tracks lifeline points
+deducted in that round. `score` and `roundScores[i].correct − cost` MUST agree.
+
+### Files (all complete as of v78)
+
+```
+game/src/
+├── constants/
+│   └── lifelines.js                    # LIFELINE_OPTIONS, LIFELINE_DEFINITIONS, LIFELINE_COST
+├── context/
+│   └── GameSettingsContext.jsx         # +skips/removes/reveals state, setters, applySettings, localStorage
+├── hooks/
+│   └── rounds/
+│       ├── useLifelines.js             # session counter (skipsLeft/removesLeft/revealsLeft), sessionStorage
+│       └── usePlaySession.js           # score ledger; pick/skip/revealAnswer/hideOption/next
+├── components/
+│   ├── game/
+│   │   └── OptionsGrid.jsx             # +hiddenValue prop (never hides correct answer)
+│   └── domain/
+│       ├── Rounds/
+│       │   ├── LifelinesBar.jsx        # 3 pills, shows count + −cost, hides when allZero
+│       │   └── QuestionCard.jsx        # +lifelines/onLifeline*/hiddenOptionValue props
+│       └── Setup/
+│           ├── Modals/SharedGameSettings.jsx   # +showLifelines prop (default: on)
+│           └── Lifelines/LifelinesPicker.jsx   # Off / 1 / 2 / 3 / 5 segmented picker
+└── routes/
+    ├── Setup.jsx                       # buildPayload() includes skips/removes/reveals
+    └── Play.jsx                        # wires useLifelines + handlers into QuestionCard
+```
+
+### `SharedGameSettings` — `showLifelines` prop
+
+Default visible. `showLifelines = showLifelinesProp !== false && !isSporcle && !hideRoundCount`.
+
+- Solo Level modals: visible (no `showLifelines` passed) 
+- `MultiplayerModal`: hidden via `hideRoundCount` 
+- `SporcleModal`: hidden via `variant === 'sporcle'` 
+- Collections `RoundRow`: passes `showLifelines={false}` 
+- Templates: `Templates.jsx` renders modals that seed via `applySettings` — lifelines are NOT seeded (Collections/Templates have no lifeline columns). Modal defaults to 0. 
+
+### `Setup.buildPayload()` — solo only
+
+```js
+function buildPayload() {
+  return {
+    genres: scope.genreMode === 'some' ? [...scope.selectedGenres] : [],
+    artists: [...scope.effectiveSelectedArtists],
+    years: [...scope.effectiveSelectedYears],
+    types: effectiveQuestionTypes,
+    rendition: settings.audioRendition === 'reverse' && reversedClipsCount > 0 ? 'reverse' : 'forward',
+    instruments: settings.instruments,
+    answerMode: settings.answerMode,
+    timer: settings.timer,
+    reversed: settings.reversedAnswers,
+    skips:   settings.skips   ?? 0,
+    removes: settings.removes ?? 0,
+    reveals: settings.reveals ?? 0,
+  };
+}
+```
+
+`handleMultiplayerStart` calls `buildPayload()` — the extra keys are ignored by
+`/play-multi`. `buildScope()` (Sporcle) does not call `buildPayload()` — scope only.
+
+### `usePlaySession` — key methods
+
+- `pick(value, overrideCorrect)` — correct → `score += 1`, `roundScores[r].correct += 1`
+- `skip()` — no score change, no cost. Counts as a miss.
+- `revealAnswer()` — `score -= LIFELINE_COST.reveals`, `roundScores[r].cost += 3`
+- `hideOption(value)` — guarded by `!revealed`. `score -= LIFELINE_COST.removes`,
+  `roundScores[r].cost += 2`. Sets `hiddenOptions['r:q'] = value`.
+- `next()` — advances; does NOT clear `hiddenOptions` (bounded by total questions — accepted).
+- Returns `currentHiddenOption` (looked up by `roundIndex:questionIndex`).
+
+### `useLifelines` — session counters
+
+- `useLifelines({ skips, removes, reveals }, count)` — `count` is total questions (key salt).
+- Session-persisted under `sessionStorage['game.lifelines']`.
+- Returns `skipsLeft`, `removesLeft`, `revealsLeft`, `canSkip`, `canRemove`, `canReveal`, `allZero`, `useSkip`, `useRemove`, `useReveal`, `reset`.
+
+### `LifelinesBar` — display
+
+Three pills: Skip / Remove one / Reveal. Each shows `(count)` and a red `−cost`
+for non-zero costs. Hidden entirely when `lifelines.allZero`. Disabled state
+when count is 0 or question is revealed.
+
+### `Play.jsx` — handlers
+
+- `handleSkip` → `lifelines.useSkip()` + `session.skip()`
+- `handleRemove` → picks a random wrong option (never correct) → `lifelines.useRemove()` + `session.hideOption(pick.value)`
+- `handleReveal` → `lifelines.useReveal()` + `session.revealAnswer()`
+
+### Negative score UX
+
+`RoundHeader` displays raw `score` (can be negative). `EndScreen` displays raw
+`score`. No special handling for negatives — intentional ledger behavior.
+
+### Known limitation (accepted)
+
+- `roundScores[i].correct` shows raw correct count; `score` shows correct − cost.
+  Round progress bar shows `correct`, header shows `score`. They diverge after a
+  lifeline is used. This is the intended design (progress = accuracy, header = score).
+- `hiddenOptions` is never pruned — bounded by `totalQuestions`, accepted.
+
+## SHARED CONSTANTS (`@/constants`)
+
+`game/src/constants/index.js` re-exports:
+- `QUESTION_TYPES`, `ALL_TYPES`, `QUESTION_TYPE_VALUES`, `VALID_QUESTION_TYPES` (a Set),
+  `getQuestionTypeLabel`, `DISABLED_HINTS`
+- `REVERSED_ANSWER_OPTIONS`
+- `ROUND_COUNT_OPTIONS`
+- `TIMER_SECONDS`, `getTimerOptions()`
+- `INSTRUMENT_OPTIONS`, `VALID_INSTRUMENTS`
+- `ANSWER_MODE_OPTIONS`, `VALID_ANSWER_MODES`
+- `LEVELS`, `PLAYER_COUNTS`, `ROUND_CHOICES` (multiplayer constants)
+
+`GAME_MODE_OPTIONS` does NOT exist yet — `speed`/`collect` labels are local to
+`TemplateRow` and `SharedGameSettings`. Promote if a third consumer appears.
+
+## CAPABILITY GATING
+
+Server (`catalog.js`) emits per-artist `tracks_count`, `lyrics_count`,
+`instruments_count` and aggregate `counts.lyricsTotal` / `counts.instrumentsTotal`.
+
+Client:
+- `useScopeSelection` returns `capabilities: { lyricsCount, instrumentsCount, scopeKind }`.
+  Sums per-artist counts if any artist is selected; otherwise falls back to
+  `catalogCounts.lyricsTotal` / `.instrumentsTotal`.
+- `Setup.jsx` computes `allowLyrics`, `allowInstruments`, extends `disabledTypes`
+  with lyrics slugs when `!allowLyrics`, builds `disabledReasons`, and auto-resets
+  `settings.instruments` / `settings.questionTypes` when the scope narrows.
+- `Templates.jsx` mirrors this via `buildDisabledTypes(template)` / `buildDisabledReasons(template)` — per-template `lyricsCount` drives gating.
+
+## MIGRATIONS APPLIED
+
+```
+0015_artists_lyrics_instruments_count.sql   -- ALTER TABLE artists ADD COLUMN lyrics_count, instruments_count
+0016_backfill_artist_counts.sql             -- UPDATE artists SET lyrics_count = ..., instruments_count = ...
+```
+
+Backfill SQL:
+```sql
+UPDATE artists SET lyrics_count = (
+  SELECT COUNT(DISTINCT l.track_name) FROM lyrics l WHERE l.artist_id = artists.id
+);
+UPDATE artists SET instruments_count = (
+  SELECT COUNT(DISTINCT i.track_name) FROM instruments i WHERE i.artist_id = artists.id
+);
+```
+
+Mismatch check (must return 0 rows):
+```sql
+SELECT a.id, a.name FROM artists a
+WHERE a.tracks_count >= 5
+  AND (
+    a.lyrics_count      != (SELECT COUNT(DISTINCT l.track_name) FROM lyrics l WHERE l.artist_id = a.id)
+    OR
+    a.instruments_count != (SELECT COUNT(DISTINCT i.track_name) FROM instruments i WHERE i.artist_id = a.id)
+  )
+LIMIT 20;
+```
+
+## ⚠️ ACTIVE CRISIS — D1 FREE TIER EXHAUSTED
+
+**Status:** the music-game D1 database is currently BLOCKED by Cloudflare's
+free-tier daily row-read limit. All queries error with:
+
+> "Your account has exceeded D1's free tier daily row read limit. Upgrade to a
+> paid plan or wait until tomorrow (midnight UTC) to continue."
+
+**Symptom start:** while running `SELECT * FROM collections`. That query is NOT
+the culprit — it was just the trigger. The daily total was already exhausted.
+
+**Root cause (high confidence):** `ORDER BY RANDOM()` on tables that grew during
+recent admin uploads. Every round-fetch call (streaks, Sporcle) scans the whole
+`tracks` table (and sometimes `instruments`) to sort them.
+
+Cost model:
+
+| Table size | Rows per `RANDOM()` | × 50 calls/session |
+|---|---|---|
+| 500 | 500 | 25,000 |
+| 4,000 | 4,000 | 200,000 |
+| 20,000 | 20,000 | **1,000,000** |
+
+Combined with upload-flow writes (per-song inserts, artist-count recomputes) and
+`json_each` scans in `pickArtists` for every new challenge, the daily 5M budget
+was consumed.
+
+**Do NOT delete songs.** Deleting won't fix the query cost model.
+
+### What to do when unblocked (midnight UTC)
+
+1. **Diagnose** (run first, before any app load):
+   ```cmd
+   npx wrangler d1 insights --sort-by=reads --time-period=1d --json
+   ```
+   Look at the top queries by `avgRowsRead`. Confirm `ORDER BY RANDOM()` variants
+   dominate. Paste the top 5 to close the diagnosis.
+
+2. **Add the index migration** (prepared, not yet applied):
+
+   ```sql
+   -- music-game-wrangler/migrations/0017_query_indexes.sql
+   CREATE INDEX IF NOT EXISTS idx_tracks_artist_key      ON tracks(artist_id, r2_key);
+   CREATE INDEX IF NOT EXISTS idx_tracks_artist_featured ON tracks(artist_id, featured_artists);
+   CREATE INDEX IF NOT EXISTS idx_tracks_artist_name     ON tracks(artist_id, name);
+   CREATE INDEX IF NOT EXISTS idx_tracks_artist_album    ON tracks(artist_id, album_name);
+   CREATE INDEX IF NOT EXISTS idx_artists_tracks_count   ON artists(tracks_count DESC);
+   CREATE INDEX IF NOT EXISTS idx_lyrics_artist_track    ON lyrics(artist_id, track_name);
+   CREATE INDEX IF NOT EXISTS idx_instruments_artist_track ON instruments(artist_id, track_name);
+   CREATE INDEX IF NOT EXISTS idx_album_years_artist_album ON album_years(artist_id, album_name);
+   ```
+
+3. **Replace `ORDER BY RANDOM()`** in `pickSlotsVaried`, `fetchFeaturedSlots`,
+   and the distractor builders. Preferred approach:
+   - Cache the slot pool for the scope in KV or a `cache_slots` table (short TTL).
+   - First call pays the `RANDOM()` cost; subsequent calls read 1 row from cache.
+
+   Secondary approach (no cache, still cheaper than full sort):
+   - `SELECT COUNT(*)` once per scope (cache the count).
+   - Pick N distinct random offsets in JS.
+   - `SELECT ... LIMIT 1 OFFSET ?` per pick. Still scans internally, but N × avgOffset
+     < N × tableSize.
+
+4. **Do NOT increase `minQuestions`** in `round-dynamic`'s final slice. Leave the
+   `slice(0, minQuestions)` as-is; `minQuestions` is a floor and (for streaks) a
+   ceiling that matches the client's per-round question count.
+
+5. **Verify** after deployment:
+   ```cmd
+   npx wrangler d1 execute music-game-db --remote --command "SELECT 1"
+   npx wrangler d1 insights --sort-by=reads --time-period=1d --json
+   ```
+   Expect `rows_read` per session to drop by ~10×.
+
+## KNOWN OPEN ITEMS
+
+1. **Style-transfer polling** — patch `style_cover.py` to poll the filesystem for
+   the newest `.mp3` (the ACE-Step `/query_result` returns empty `data: []` after
+   success; the file exists at `.cache/acestep/tmp/api_audio/<uuid>.mp3`).
+2. **Anti-skew round-robin verification** — 5× L1 curl with `instruments=all`.
+3. **Enable L3 instruments** — flip `allowInstruments={true}` on `Level3Modal`,
+   add `source` to `Play3.jsx`.
+4. **`PublishedInstruments.jsx`** — browse/delete uploaded instruments.
+5. **Client rendition chain** — `useRoundMultiplayer.js` + `PlayMulti.jsx`.
+6. **Favourite cap feedback** — toast on 100/kind, 300 total.
+7. **Card game** — design only.
+8. **`CollectionEditorModal` doesn't forward `reversedClipsCount`** — hardcodes 0.
+9. **`MultiplayerModal`** — the duplicate `<SharedGameSettings>` was removed, but
+   `LevelModalWrapper` was extended with `hideRoundCount`, `eyebrow`, and
+   `playLabel`. Confirm `SporcleModal` doesn't have the same duplicate (not
+   verified — see next item).
+10. **`SporcleModal.jsx`** — not reviewed. If it renders its own
+    `<SharedGameSettings>` while also wrapping `<LevelModalWrapper>`, it has the
+    same duplicate-render bug as the old `MultiplayerModal`.
+11. **Play2 route switch** — you reverted it. `useRoundMulti` should stay on
+    `/round-multi` (per your design intent). Do NOT switch to `/round-dynamic`
+    without a design decision — `/round-multi` is the raw builder that Play2
+    depends on.
+12. **Template `rounds` are fetched but not yet written** — the migration and
+    `template_rounds` writes are not implemented. The client has been tested with
+    hand-built template rows. Real admin CRUD for templates is still TODO.
+13. **Server-side `/templates` response shape** — needs to emit a nested
+    `cover: { kind, url }` and either `cover_kind`/`cover_r2_key` OR the nested
+    form. `TemplateRow` falls back to `/templates/:id/cover` if it sees
+    `cover_kind === 'uploaded'`.
+14. **Lifelines are solo-only but `Play2.jsx` and `Play3.jsx` are NOT yet wired** —
+    `Play.jsx` (Level 1) is done; `Play2.jsx` (Level 2) and `Play3.jsx` (Level 3)
+    must accept the same `lifelines`/`onLifeline*` props and render `LifelinesBar`
+    inside `QuestionCard`. Same pattern as `Play.jsx`.
+15. **Lifeline tip text** — `LifelinesBar` currently shows "cost 0 pts" in the
+    Skip pill title. Cosmetic: change to "free" when `cost === 0`.
+
+## ENVIRONMENT — SETUP TRAPS
+
+- Vite proxies: Only `/api/game` is proxied. Any new prefix needs an entry.
+- JSX extension: `.jsx` mandatory.
+- `@/` alias: exists (see Vite Configuration above).
+- PowerShell encoding: ASCII-only, or save as UTF-8 with BOM.
+- PowerShell + Arabic: use `-Body ([System.Text.Encoding]::UTF8.GetBytes($json))`
+  or `[System.Uri]::EscapeDataString(...)`.
+- `curl -I` with Arabic URLs returns `400`. Use `Invoke-WebRequest -UseBasicParsing`.
+- `cmd` + `echo` mangles nested JSON. Use `echo {...}> body.json`
+  (no space before `>`) or Notepad. Verify with `type body.json`.
+- `curl` + multi-line bodies in cmd: use `--data-binary @body.json`,
+  not `-d "..."` with a line continuation.
+- Cloudflare D1 `datetime('now')` returns UTC. Egypt is UTC+3 (EEST) / UTC+2 (EET).
+- D1 parameter cap: 100. Use `chunkedIn` at 90.
+- D1 bind must never receive `undefined` — coerce to `null` with `?? null`.
+- Windows pagefile: 32 GB for ACE-Step.
+- Node 18+, Python 3.14 (venv), Python 3.12 (ACE-Step uv env).
+- `yt-dlp.exe` at `C:\Tools\yt-dlp.exe`, `ffmpeg.exe` + `ffprobe.exe` at
+  `C:\Tools\ffmpeg\bin\`.
+
+## COMMANDS
+
+```cmd
+:: Local dev — start all three for full-stack Sporcle testing
+cd /d E:\matb3aa-game\music-game-wrangler  && npx wrangler dev --port 8787
+cd /d E:\matb3aa-game\host-sporcle-wrangler && npx wrangler dev --port 8788
+cd /d E:\matb3aa-game\game                && npm run dev
+
+:: Deploy (order: music → sporcle → pages)
+cd /d E:\matb3aa-game\music-game-wrangler  && npx wrangler deploy
+cd /d E:\matb3aa-game\host-sporcle-wrangler && npx wrangler deploy
+cd /d E:\matb3aa-game\game
+npm run build
+npx wrangler pages deploy dist --project-name=music-game --branch=production
+
+:: D1 migrations (apply in order)
+cd /d E:\matb3aa-game\music-game-wrangler
+npx wrangler d1 execute music-game-db --remote --file=./migrations/0008_collections.sql
+npx wrangler d1 execute music-game-db --remote --file=./migrations/0009_question_types.sql
+npx wrangler d1 execute music-game-db --remote --file=./migrations/0010_collection_rounds_mode.sql
+npx wrangler d1 execute music-game-db --remote --file=./migrations/0011_collection_rounds_reversed_answers.sql
+npx wrangler d1 execute music-game-db --remote --file=./migrations/0014_collection_clones.sql
+npx wrangler d1 execute music-game-db --remote --file=./migrations/0015_artists_lyrics_instruments_count.sql
+npx wrangler d1 execute music-game-db --remote --file=./migrations/0016_backfill_artist_counts.sql
+:: 0017_query_indexes.sql — pending, apply post-midnight UTC
+
+:: D1 diagnosis (run first thing after unblock)
+npx wrangler d1 execute music-game-db --remote --command "SELECT 1"
+npx wrangler d1 insights --sort-by=reads --time-period=1d --json
+```
+
+## STYLE THE USER PREFERS
+
+- Complete files, not fragments.
+- Minimal fixes.
+- Tables to explain changes.
+- One clear next step.
+- Note what to test and what to paste back.
+- Concise. Experienced with React/Node.
+- Recommend explicitly when there are tradeoffs.
+- Uses `.jsx` (not `.tsx`) and `.js` (not `.ts`). JSDoc for typing if desired.
+- Does not accept re-derivation of setup — only needs the facts.
+
+## MOST LIKELY NEXT TASKS
+
+1. **Wire lifelines into `Play2.jsx` and `Play3.jsx`** — same pattern as `Play.jsx`:
+   `useLifelines`, three handlers, pass `lifelines`/`onLifeline*`/`hiddenOptionValue`
+   into `QuestionCard`.
+2. **Cosmetic fix** — `LifelinesBar` Skip title: "free" when cost is 0.
+3. **D1 recovery** (when unblocked at midnight UTC): `SELECT 1` → `d1 insights` →
+   apply `0017_query_indexes.sql` → replace `ORDER BY RANDOM()` → verify.
+4. **Commit everything** — v29–v78 is uncommitted. This is the biggest checkpoint
+   risk after the D1 recovery.
+5. **Template admin CRUD** — `template_rounds` writes not yet implemented.
+
+Recommended next step: **wire lifelines into `Play2.jsx` and `Play3.jsx`** so the
+feature is complete across all three solo levels, then commit v78.
+
+## END OF PROMPT
+
+Save this as `E:\matb3aa-game\handoff-v78.md`. Paste it as the first message of
+the next session.
+```
+
+---
+
+## What's new in v78 (vs. v77)
+
+| Section | Change |
+|---|---|
+| **GAME SETTINGS CONTEXT** | Added `skips`/`removes`/`reveals` state + setters + `applySettings` + localStorage keys |
+| **LIFELINES — NEW IN v78** | Full section: cost table, scoring model, file list, `showLifelines` prop behavior, `buildPayload()` wiring, `usePlaySession`/`useLifelines`/`LifelinesBar`/`Play.jsx` contracts, negative score UX, accepted limitations |
+| **OPEN ITEMS** | +14 (`Play2`/`Play3` lifeline wiring not yet done), +15 (`LifelinesBar` "cost 0 pts" cosmetic) |
+| **MOST LIKELY NEXT TASKS** | Rewritten: wire lifelines into Play2/Play3, cosmetic fix, D1 recovery, commit |
+
+**Test plan before committing v78:**
+1. Setup → Level 1 → Lifelines section visible (Off/1/2/3/5 for each)
+2. Play with `removes=2, reveals=3` → use both on one question → header shows `score = −5`
+3. `EndScreen` shows `−5` (negative allowed)
+4. Collections editor → **no Lifelines section** 
+5. Multiplayer modal → **no Lifelines section** 
+6. Sporcle modal → **no Lifelines section** 
+7. `Play2` and `Play3` → **no Lifelines bar yet** (open item #14)
+
+**Paste back:** the output of `npm run build` after wiring `Play2.jsx` and `Play3.jsx` — I'll confirm the props line up with `QuestionCard`'s contract.

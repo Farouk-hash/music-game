@@ -1,10 +1,13 @@
 // music-game-wrangler/src/controllers/streaks/generator.js
-//
-// Deterministic daily challenge generator.
-// Supports two modes:
-//   - genre_id = NULL → Default rotation (game-picked genre, cycles through ranked list)
-//   - genre_id = X    → Player-picked genre (same genre every day, different artists)
+// Deterministic daily challenge generator. Pool + KV aware as of v80.
+
 import { PRESET_DECK } from './challenge-config.js';
+import {
+  getCatalogFromKV,
+  buildCatalogIndex,
+  getCachedChallenge,
+  setCachedChallenge,
+} from '../../lib/cache.js';
 
 const EPOCH_DATE = '2026-01-01';
 
@@ -53,11 +56,9 @@ function daysSinceEpoch(dateStr) {
 }
 
 function buildConfig(seed) {
-  // Group presets into phases of 3 for the difficulty curve.
-  // The client slices the deck by the player's streak length.
   const PHASE_SIZE = 3;
   const PHASES = [];
-  
+
   for (let i = 0; i < PRESET_DECK.length; i += PHASE_SIZE) {
     const phase = [];
     for (let j = i; j < i + PHASE_SIZE && j < PRESET_DECK.length; j++) {
@@ -91,14 +92,55 @@ function buildConfig(seed) {
   };
 }
 
-
-/* ── Main generator ─────────────────────────────────────── */
-
+/* ── Genre picking — catalog first, D1 fallback ──────────── */
 
 async function pickGenre(env, dateStr, genreId) {
+  const catalog = await getCatalogFromKV(env);
+
+  if (catalog) {
+    const idx = buildCatalogIndex(catalog);
+
+    // Player-picked genre
+    if (genreId != null) {
+      const genre = idx.artistsById ? catalog.genres.find(g => g.id === genreId) : null;
+      if (!genre) throw new Error(`Genre ${genreId} not found`);
+      return { id: genre.id, name: genre.display_name || genre.name };
+    }
+
+    // Default rotation — compute viable genres in JS from catalog
+    const genreArtistCount = new Map();
+    const genreTrackCount = new Map();
+    for (const artist of catalog.artists ?? []) {
+      if ((artist.tracks_count ?? 0) <= 0) continue;
+      for (const gId of artist.genre_ids ?? []) {
+        genreArtistCount.set(gId, (genreArtistCount.get(gId) ?? 0) + 1);
+        genreTrackCount.set(gId, (genreTrackCount.get(gId) ?? 0) + (artist.tracks_count ?? 0));
+      }
+    }
+
+    const viable = catalog.genres
+      .map(g => ({
+        id: g.id,
+        name: g.display_name || g.name,
+        artist_count: genreArtistCount.get(g.id) ?? 0,
+        track_count: genreTrackCount.get(g.id) ?? 0,
+      }))
+      .filter(g => g.artist_count >= 3 && g.track_count >= 10)
+      .sort((a, b) => {
+        if (b.track_count !== a.track_count) return b.track_count - a.track_count;
+        return a.id - b.id;
+      });
+
+    if (viable.length === 0) throw new Error('No viable genres for challenge');
+
+    const dayIndex = daysSinceEpoch(dateStr);
+    const picked = viable[((dayIndex % viable.length) + viable.length) % viable.length];
+    return { id: picked.id, name: picked.name };
+  }
+
+  // ── D1 fallback ───────────────────────────────────────
   const db = env.DB;
 
-  // Player-picked genre
   if (genreId != null) {
     const genre = await db.prepare(
       'SELECT id, name FROM genres WHERE id = ?'
@@ -107,7 +149,6 @@ async function pickGenre(env, dateStr, genreId) {
     return genre;
   }
 
-  // Default rotation — rank viable genres, cycle by date
   const genresResult = await db.prepare(`
     SELECT g.id, g.name,
            COUNT(DISTINCT a.id) AS artist_count,
@@ -132,21 +173,15 @@ async function pickGenre(env, dateStr, genreId) {
 async function pickArtists(env, genre, dateStr, totalBatches) {
   const db = env.DB;
 
-  // Slice the deck to see what capabilities the challenge needs.
   const activePresets = PRESET_DECK.slice(0, totalBatches);
 
   const requiresLyrics = activePresets.some(p =>
     p.types?.some(t => t.startsWith('lyrics-'))
   );
-
   const requiresInstruments = activePresets.some(p =>
     p.instruments === 'mixed' || p.instruments === 'all'
   );
 
-  // Build the SQL query dynamically based on requirements.
-  // Counts come from the denormalized columns on `artists` — no JOIN,
-  // no correlated subqueries. `tracks_count` is used for both the
-  // eligibility gate and the ordering key.
   let sql = `
     SELECT a.id,
            a.name,
@@ -175,11 +210,9 @@ async function pickArtists(env, genre, dateStr, totalBatches) {
     );
   }
 
-  // Seeded shuffle for daily rotation.
   const seed = `artists-${dateStr}-${genre.id}`;
   const shuffled = seededShuffle(eligible, seed);
 
-  // Anchor = #1 artist by track count (always included, deterministic).
   const anchor = eligible[0];
   const rest = shuffled.filter(a => a.id !== anchor.id).slice(0, 4);
 
@@ -189,7 +222,6 @@ async function pickArtists(env, genre, dateStr, totalBatches) {
 export async function generateChallenge(env, dateStr, genreId = null) {
   const genre = await pickGenre(env, dateStr, genreId);
 
-  // Build for the max deck size so the artist pool supports every phase
   const maxBatches = PRESET_DECK.length;
 
   const artists = await pickArtists(env, genre, dateStr, maxBatches);
@@ -206,24 +238,30 @@ export async function generateChallenge(env, dateStr, genreId = null) {
   };
 }
 
-
-/* ── Cached fetch ───────────────────────────────────────── */
+/* ── Cached fetch — KV-first, D1 fallback ────────────────── */
 
 export async function ensureChallenge(env, dateStr, genreId = null) {
-  // SQLite: `IS ?` matches NULL correctly
+  // 1. KV cache (per-date, per-genre) — busted by admin invalidate
+  const cached = await getCachedChallenge(env, dateStr, genreId);
+  if (cached) return cached;
+
+  // 2. D1 lookup
   const existing = await env.DB.prepare(
     'SELECT * FROM challenges WHERE challenge_date = ? AND genre_id IS ?'
   ).bind(dateStr, genreId).first();
 
   if (existing) {
-    return {
+    const parsed = {
       ...existing,
       artist_ids: JSON.parse(existing.artist_ids),
       artist_names: JSON.parse(existing.artist_names),
       config: JSON.parse(existing.config),
     };
+    await setCachedChallenge(env, dateStr, genreId, parsed);
+    return parsed;
   }
 
+  // 3. Generate + persist
   const fresh = await generateChallenge(env, dateStr, genreId);
 
   await env.DB.prepare(`
@@ -239,5 +277,6 @@ export async function ensureChallenge(env, dateStr, genreId = null) {
     JSON.stringify(fresh.config),
   ).run();
 
+  await setCachedChallenge(env, dateStr, genreId, fresh);
   return fresh;
 }

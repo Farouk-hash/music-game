@@ -5,6 +5,7 @@ import { TextAnswerInput } from '../TextAnswerInput/TextAnswerInput.jsx';
 import { isAnswerCorrect } from '@/hooks/rounds/answerCheck.js';
 import { applyReversal } from '@/lib/reverseText.js';
 import { Reveal } from '@/components/ui/Reveal.jsx';
+import { LifelinesBar } from './LifelinesBar.jsx';
 
 export function QuestionCard({
   eyebrow,
@@ -22,9 +23,15 @@ export function QuestionCard({
   source,
   reversal,
   revealExtra,
-  // ── NEW props (all default to preserve existing callers) ──
-  showNextButton = true,       // Sporcle: false (host advances externally)
-  disabled = false,            // Sporcle: true once the player has answered
+  showNextButton = true,
+  disabled = false,
+
+  // Lifelines — pass `undefined` to hide the bar
+  lifelines = null,
+  onLifelineSkip,
+  onLifelineRemove,
+  onLifelineReveal,
+  hiddenOptionValue = null,
 }) {
   const isInstrumental = source === 'instrumental';
   const supportsTyping = questionType !== 'name-position' && questionType !== 'lyrics-position';
@@ -45,8 +52,17 @@ export function QuestionCard({
     onPick(rawInput, correct);
   }
 
-  // Options are interactive only when not yet revealed AND not disabled.
   const optionsDisabled = disabled || revealed;
+
+  // Lifelines visible only if:
+  //   - lifelines provided
+  //   - at least one available
+  //   - question not answered
+  const showLifelines =
+    lifelines &&
+    !lifelines.allZero &&
+    !revealed &&
+    !disabled;
 
   return (
     <div
@@ -76,8 +92,25 @@ export function QuestionCard({
         <p className="text-xl font-bold text-ink leading-snug">{prompt}</p>
       </div>
 
+      {showLifelines && (
+        <LifelinesBar
+          lifelines={lifelines}
+          onSkip={onLifelineSkip}
+          onRemove={onLifelineRemove}
+          onReveal={onLifelineReveal}
+          disabled={disabled}
+          removeDisabled={hiddenOptionValue !== null}
+        />
+      )}
+
       {revealed && picked === '__TIMEOUT__' && (
         <p className="text-wrong text-sm">⏱ Time's up — you didn't answer in time.</p>
+      )}
+      {revealed && picked === '__SKIP__' && (
+        <p className="text-ink-muted text-sm">⏭ Skipped.</p>
+      )}
+      {revealed && picked === '__REVEAL__' && (
+        <p className="text-ink-muted text-sm">👁 Answer revealed.</p>
       )}
 
       {revealed && revealExtra && (
@@ -111,6 +144,7 @@ export function QuestionCard({
             onPick={optionsDisabled ? () => {} : onPick}
             labelFor={labelFor}
             reversal={effectiveReversal}
+            hiddenValue={hiddenOptionValue}
           />
         )}
       </Reveal>

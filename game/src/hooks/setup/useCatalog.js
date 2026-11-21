@@ -2,22 +2,23 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api.js';
 
+const ONE_WEEK = 7 * 24 * 60 * 60 * 1000;
+
 /**
- * Fetches the game catalog: genres, artists, years, and aggregate counts.
- * Long staleTime — the catalog changes only when the admin publishes.
- *
- *   const { data, isLoading, error } = useCatalog();
- *   // data: { genres, artists, years, counts, version }
- *
- * years shape: [{ year: 1998, artist_ids: [1, 5, 9] }, ...]
+ * Fetches the game catalog: genres, artists, years, aggregate counts.
+ * Cached for 7 days on the client AND persisted to localStorage.
+ * Only refetches when the catalog version is bumped by the admin.
  */
 export function useCatalog() {
+  const catalogVersion = localStorage.getItem('game.catalogVersion') || 'v1';
+
   return useQuery({
-    queryKey: ['game-catalog'],
+    queryKey: ['game-catalog', catalogVersion],
     queryFn: () => api.get('/catalog'),
-    staleTime: 30 * 60 * 1000,       // 30 min — catalogue is admin-published, rarely changes
-    gcTime: 60 * 60 * 1000,           // 1 hour
+    staleTime: ONE_WEEK,
+    gcTime: ONE_WEEK,
     refetchOnMount: false,
     refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 }

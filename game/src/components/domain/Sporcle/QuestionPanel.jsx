@@ -1,13 +1,7 @@
 // game/src/components/domain/Sporcle/QuestionPanel.jsx
+import { POSITION_LABELS } from '@/constants/position_labels.js';
 import { AudioPlayer } from '../Rounds/AudioPlayer.jsx';
 import { QuestionCard } from '../Rounds/QuestionCard.jsx';
-
-const POSITION_LABELS = {
-  start: 'البداية',
-  middle: 'المنتصف',
-  end: 'النهاية',
-  custom: 'مقطع مخصص',
-};
 
 /**
  * The Sporcle question card. Reuses <QuestionCard> for the prompt +

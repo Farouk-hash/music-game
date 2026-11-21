@@ -1,13 +1,9 @@
 // game/src/components/domain/SuddenDeath/SuddenDeathReveal.jsx
 import { Button } from '@/components/ui/Button.jsx';
+import { POSITION_LABELS } from '@/constants';
 import { isCorrectForQuestion } from '@/hooks/sudden-death/useSuddenDeath.js';
 
-const POSITION_LABELS = {
-  start: 'البداية',
-  middle: 'المنتصف',
-  end: 'النهاية',
-  custom: 'مقطع مخصص',
-};
+
 
 /**
  * Resolve a stored value to its display text.

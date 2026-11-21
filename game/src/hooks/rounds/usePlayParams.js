@@ -28,7 +28,7 @@ export function usePlayParams() {
       
     const answerMode = raw.answerMode === 'type' ? 'type' : 'choose';
     
-    // FIX: Read the timer as a number (or null/0)
+    // Read the timer as a number (or null/0)
     const timerSeconds = Number(raw.timer) || 0;
     const timer = timerSeconds > 0 ? 'on' : 'off';
     
@@ -37,10 +37,17 @@ export function usePlayParams() {
     const reversed = VALID_REVERSED.has(raw.reversed) ? raw.reversed : 'no';
     const instruments = VALID_INSTRUMENTS.has(raw.instruments) ? raw.instruments : 'none';
 
+    // Extract lifelines (fallback to 0)
+    const skips   = Number(raw.skips)   || 0;
+    const removes = Number(raw.removes) || 0;
+    const reveals = Number(raw.reveals) || 0;
+
     return {
       genres, artists, years, types, rendition,
       answerMode, timer, timerSeconds, count, reversed,
       instruments,
+      skips, removes, reveals, // <-- Wired up
+      
       // Expose level and players if they exist (for multiplayer)
       level: raw.level,
       players: Array.isArray(raw.players) ? raw.players : [],

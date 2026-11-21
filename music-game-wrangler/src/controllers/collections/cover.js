@@ -50,7 +50,7 @@ export async function persistCover(env, profileId, collectionId, file) {
 }
 
 // POST /profiles/:profileId/collections/:id/cover
-export async function uploadCover(request, env, { profileId, id }) {
+export async function uploadCover(request, env,ctx, { profileId, id }) {
   const collectionId = Number(id);
   const row = await loadCollection(env, profileId, collectionId);
   if (!row) return error('Collection not found', 404);
@@ -71,7 +71,7 @@ export async function uploadCover(request, env, { profileId, id }) {
 }
 
 // DELETE /profiles/:profileId/collections/:id/cover
-export async function deleteCover(request, env, { profileId, id }) {
+export async function deleteCover(request, env, ctx,{ profileId, id }) {
   const collectionId = Number(id);
   const row = await loadCollection(env, profileId, collectionId);
   if (!row) return error('Collection not found', 404);
@@ -94,7 +94,7 @@ export async function deleteCover(request, env, { profileId, id }) {
 }
 
 // GET /profiles/:profileId/collections/:id/cover
-export async function serveCover(request, env, { profileId, id }) {
+export async function serveCover(request, env, ctx,{ profileId, id }) {
   const collectionId = Number(id);
   const row = await env.DB.prepare(
     'SELECT cover_r2_key FROM collections WHERE id = ? AND profile_id = ?'

@@ -10,7 +10,7 @@ function extFromMime(mime) {
   return 'bin';
 }
 
-export async function uploadCover(request, env, { id }) {
+export async function uploadCover(request, env, ctx, { id }) {
   const authErr = requireAdmin(request, env);
   if (authErr) return authErr;
 
@@ -51,7 +51,7 @@ export async function uploadCover(request, env, { id }) {
   return json({ ok: true, key });
 }
 
-export async function deleteCover(request, env, { id }) {
+export async function deleteCover(request, env, ctx, { id }) {
   const authErr = requireAdmin(request, env);
   if (authErr) return authErr;
 
@@ -72,7 +72,7 @@ export async function deleteCover(request, env, { id }) {
   return json({ ok: true });
 }
 
-export async function serveCover(request, env, { id }) {
+export async function serveCover(request, env, ctx, { id }) {
   const templateId = Number(id);
   const row = await env.DB.prepare(
     'SELECT cover_r2_key FROM templates WHERE id = ?'

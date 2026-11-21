@@ -1,98 +1,63 @@
-// music-game-wrangler/src/controllers/game/rounds-methods/resolvers-lyrics.js
-import { chunkedIn, D1_CHUNK_SIZE } from '../../../utilities/chunkedIn.js';
+// rounds-methods/resolvers-lyrics.js
+//
+// Full lyric rows are stored per artist (pool:v2:lyr:{id}). To keep CPU low,
+// every resolver loads at most FALLBACK_ARTISTS artists. Callers should pass
+// the small "work set" of artist ids (see rounds.js) to lyricsByIds.
+
 import { shuffle } from '../../../utilities/shuffle.js';
+import {
+  loadArtistData,
+  getCatalogFromKV,
+  buildCatalogIndex,
+} from '../../../lib/cache.js';
 
-/* ═══════════════════════════════════════════════════════════
-   Lyrics-scope resolvers.
+const FALLBACK_ARTISTS = 8;
 
-   Each returns rows shaped as:
-     { id, artist_id, track_name, lyrics, artist_name,
-       album_name, reveal_r2_key }
-
-   - `album_name` is joined from tracks (nullable, 52% coverage).
-   - `reveal_r2_key` is the r2_key of any forward clip for this
-     song — used by the client to let the player hear the song
-     after answering. Picks the first available row; position
-     doesn't matter.
-   - Rows with `length(lyrics) < 200` are excluded.
-   ═══════════════════════════════════════════════════════════ */
-
-const MIN_LYRICS_LEN = 200;
-
-const LYRIC_COLUMNS = `
-  l.id,
-  l.artist_id,
-  l.track_name,
-  l.lyrics,
-  a.name AS artist_name,
-  (SELECT t.album_name FROM tracks t
-   WHERE t.artist_id = l.artist_id AND t.name = l.track_name
-   LIMIT 1) AS album_name,
-  (SELECT t.r2_key FROM tracks t
-   WHERE t.artist_id = l.artist_id AND t.name = l.track_name
-     AND t.r2_key IS NOT NULL
-   LIMIT 1) AS reveal_r2_key
-`;
-
-const FROM_CLAUSE = `
-  FROM lyrics l
-  JOIN artists a ON a.id = l.artist_id
-`;
-
-const BASE_WHERE = `
-  WHERE l.lyrics IS NOT NULL
-    AND length(l.lyrics) >= ${MIN_LYRICS_LEN}
-`;
+function sample(arr, n) {
+  return shuffle(arr.slice()).slice(0, n);
+}
 
 export async function lyricsByIds(env, ids) {
   if (!ids.length) return [];
-  return chunkedIn(ids, D1_CHUNK_SIZE, async (chunk) => {
-    const ph = chunk.map(() => '?').join(',');
-    const { results } = await env.DB.prepare(
-      `SELECT ${LYRIC_COLUMNS}
-       ${FROM_CLAUSE}
-       ${BASE_WHERE}
-         AND l.artist_id IN (${ph})`
-    ).bind(...chunk).all();
-    return results ?? [];
-  });
+  const data = await loadArtistData(env, 'lyr', ids);
+  const out = [];
+  for (const id of ids) {
+    const rows = data.get(String(id));
+    if (rows) for (const r of rows) out.push(r);
+  }
+  return out;
 }
 
 export async function lyricsByGenres(env, genreIds) {
   if (!genreIds.length) return [];
-  const ph = genreIds.map(() => '?').join(',');
-  const { results } = await env.DB.prepare(
-    `SELECT ${LYRIC_COLUMNS}
-     ${FROM_CLAUSE}
-     , json_each(a.genre_ids) g
-     ${BASE_WHERE}
-       AND CAST(g.value AS INTEGER) IN (${ph})`
-  ).bind(...genreIds).all();
-  return results ?? [];
+  const cat = await getCatalogFromKV(env);
+  if (!cat) return [];
+  const idx = buildCatalogIndex(cat);
+  const ids = new Set();
+  for (const g of genreIds) {
+    const set = idx.artistsByGenre.get(g);
+    if (set) for (const id of set) ids.add(id);
+  }
+  return lyricsByIds(env, sample([...ids], FALLBACK_ARTISTS));
 }
 
 export async function lyricsByYears(env, years) {
   if (!years.length) return [];
-  const ph = years.map(() => '?').join(',');
-  const { results } = await env.DB.prepare(
-    `SELECT DISTINCT ${LYRIC_COLUMNS}
-     ${FROM_CLAUSE}
-     JOIN tracks t2
-       ON t2.artist_id = l.artist_id AND t2.name = l.track_name
-     JOIN album_years ay
-       ON ay.artist_id = t2.artist_id AND ay.album_name = t2.album_name
-     ${BASE_WHERE}
-       AND ay.released_year IN (${ph})`
-  ).bind(...years).all();
-  return results ?? [];
+  const cat = await getCatalogFromKV(env);
+  if (!cat) return [];
+  const idx = buildCatalogIndex(cat);
+  const ids = new Set();
+  for (const y of years) {
+    const set = idx.artistsByYear.get(y);
+    if (set) for (const id of set) ids.add(id);
+  }
+  return lyricsByIds(env, sample([...ids], FALLBACK_ARTISTS));
 }
 
 export async function allLyrics(env, limit = 200) {
-  const { results } = await env.DB.prepare(
-    `SELECT ${LYRIC_COLUMNS}
-     ${FROM_CLAUSE}
-     ${BASE_WHERE}
-     LIMIT ?`
-  ).bind(limit).all();
-  return shuffle(results ?? []);
+  const cat = await getCatalogFromKV(env);
+  if (!cat) return [];
+  const idx = buildCatalogIndex(cat);
+  const rows = await lyricsByIds(env, sample(idx.artistsWithClips, FALLBACK_ARTISTS));
+  return shuffle(rows).slice(0, limit);
 }

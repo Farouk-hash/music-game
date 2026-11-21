@@ -2,15 +2,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { isAnswerCorrect } from '../rounds/answerCheck';
+import { POSITION_LABELS } from '@/constants';
 
 const QUESTIONS_PER_BATCH = 5;
 
-const POSITION_LABELS = {
-  start: 'البداية',
-  middle: 'المنتصف',
-  end: 'النهاية',
-  custom: 'مقطع مخصص',
-};
+
 
 function canonicalPosition(raw) {
   const s = String(raw ?? '').trim();

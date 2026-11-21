@@ -2,18 +2,24 @@
 import { useQuery } from '@tanstack/react-query';
 import { templatesApi } from '@/lib/templatesApi.js';
 
+const ONE_WEEK = 7 * 24 * 60 * 60 * 1000;
+
 /**
  * Client-side list of public templates.
- * Cached for 5 minutes — templates rarely change.
- *
- *   const { templates, isLoading, error } = useTemplates();
+ * Cached for 7 days on the client AND persisted to localStorage.
+ * Only refetches when the templates version is bumped by the admin.
  */
 export function useTemplates() {
+  const templatesVersion = localStorage.getItem('game.templatesVersion') || 'v1';
+
   const q = useQuery({
-    queryKey: ['templates', 'public'],
+    queryKey: ['game-templates', templatesVersion],
     queryFn: ({ signal }) => templatesApi.list({ signal }),
-    staleTime: 5 * 60 * 1000,
+    staleTime: ONE_WEEK,
+    gcTime: ONE_WEEK,
+    refetchOnMount: false,
     refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   return {
@@ -26,10 +32,11 @@ export function useTemplates() {
 
 export function useTemplate(id) {
   const q = useQuery({
-    queryKey: ['templates', 'byId', id],
+    queryKey: ['game-template', id],
     queryFn: ({ signal }) => templatesApi.get(id, { signal }),
     enabled: !!id,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 5 * 60 * 1000,   // memory-only, not persisted
+    refetchOnWindowFocus: false,
   });
 
   return {

@@ -9,6 +9,7 @@ export function OptionsGrid({
   onPick,
   labelFor = (opt) => opt.label,
   reversal = { reversed: false, style: null },
+  hiddenValue = null,
 }) {
   const { reversed, style } = reversal;
 
@@ -20,10 +21,15 @@ export function OptionsGrid({
 
   const locked = picked != null && !revealed;
 
+  // Filter out the hidden option, but only if it's not the correct one.
+  // (Never hide the correct answer — that would break the game.)
+  const visibleOptions = hiddenValue != null
+    ? options.filter(o => o.value !== hiddenValue || o.value === correctValue)
+    : options;
+
   return (
-    // 1. Ensure the grid takes full width and columns can shrink
     <div className="grid grid-cols-2 gap-2 sm:gap-3 w-full min-w-0">
-      {options.map((option) => {
+      {visibleOptions.map((option) => {
         const isPicked = picked === option.value;
         const isCorrect = option.value === correctValue;
 
@@ -46,17 +52,13 @@ export function OptionsGrid({
             disabled={revealed || locked}
             onClick={() => onPick(option.value)}
             className={[
-              // 2. Add w-full, min-w-0, and text wrapping
               'w-full min-w-0 rounded-md border px-4 py-3 text-left text-sm font-medium',
               'transition-colors disabled:cursor-not-allowed',
-              'break-words whitespace-normal', // <-- Fixes long text breaking layout
+              'break-words whitespace-normal',
               buttonStyle,
             ].join(' ')}
           >
-            <span 
-              dir={reversed ? 'ltr' : 'auto'} 
-              className="block w-full"
-            >
+            <span dir={reversed ? 'ltr' : 'auto'} className="block w-full">
               {label}
             </span>
           </button>

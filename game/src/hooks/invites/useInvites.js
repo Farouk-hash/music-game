@@ -5,14 +5,14 @@ import { useProfileContext } from '@/context/ProfileContext.jsx';
 
 const PENDING_KEY = (me) => ['invites', 'pending', me];
 
-export function usePendingInvites({ enabled = true } = {}) {
+export function usePendingInvites({ enabled = true, pollInterval = 15000 } = {}) {
   const { id } = useProfileContext();
   return useQuery({
     queryKey: PENDING_KEY(id),
     queryFn: () => inviteApi.pending(id),
     enabled: enabled && !!id,
     staleTime: 10 * 1000,
-    refetchInterval: 15000,          // poll every 15s while mounted
+    refetchInterval: enabled ? pollInterval : false,   // ← no poll when disabled
     refetchOnWindowFocus: true,
     refetchIntervalInBackground: false,
   });

@@ -4,10 +4,16 @@ import { BorderContainer } from '../../layout/BorderContainer.jsx';
 import { Button } from '../../ui/Button.jsx';
 import { storage } from '../../../lib/storage.js';
 
-export function EndScreen({ score, total, onReplay }) {
-  const pct = total > 0 ? Math.round((score / total) * 100) : 0;
+export function EndScreen({ score, total, lifelineCost = 0, onReplay }) {
+  // Calculate correct answers based on the ledger
+  const correctCount = score + lifelineCost; 
+  
+  // Clamp percentage at 0 so it never looks broken if score goes negative
+  const pct = total > 0 ? Math.max(0, Math.round((correctCount / total) * 100)) : 0;
+  
   const highScore = storage.getHighScore();
-  const isNewBest = score >= highScore;
+  // Only show "New high score" if it's positive and beats the best
+  const isNewBest = score > 0 && score >= highScore;
 
   return (
     <BorderContainer border="all" className="p-8 text-center space-y-6 max-w-lg mx-auto">
@@ -20,10 +26,19 @@ export function EndScreen({ score, total, onReplay }) {
           {score}
           <span className="text-ink-subtle text-4xl">/{total}</span>
         </p>
-        <p className="text-ink-muted mt-3">{pct}% correct</p>
+        
+        {/* Ledger breakdown (only shows if lifelines were used) */}
+        {lifelineCost > 0 ? (
+          <div className="mt-4 flex flex-col items-center gap-1 text-sm text-ink-muted">
+            <p>{correctCount} correct ({pct}%)</p>
+            <p className="text-wrong">−{lifelineCost} lifeline cost</p>
+          </div>
+        ) : (
+          <p className="text-ink-muted mt-3">{pct}% correct</p>
+        )}
       </div>
 
-      {isNewBest && score > 0 && (
+      {isNewBest && (
         <p className="text-highlight text-sm font-medium">🎉 New high score!</p>
       )}
 

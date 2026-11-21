@@ -1,14 +1,16 @@
-// music-game-wrangler/src/controllers/game/round-mutli.js
+// src/controllers/game/round-mutli.js
 import { error, json } from '../../lib/response.js';
 import { clamp } from '../../utilities/clamp.js';
 import { parseIdList } from '../../utilities/parseIdList.js';
 import { tryBuild } from './rounds-methods/buildingRounds.js';
 import { buildLyricsRound } from './rounds-methods/buildingLyrics.js';
-import { pickSlotsVaried } from './rounds-methods/slots.js';
+import { pickSlotsVaried, pickFeaturedSlots } from './rounds-methods/slots.js';
 import { computeDegenerateTypes } from './rounds-methods/degenerate-types.js';
 import { fetchInstrumentSlots } from './rounds-methods/instruments-slots.js';
 import { buildInstrumentalRoundMulti } from './rounds-methods/buildingInstrumental.js';
 import { fetchLyricsPool } from './rounds-methods/instruments-lyrics-pool.js';
+import { MAX_ROUNDS_PER_REQUEST, workSetFor } from './rounds-methods/work-set.js';
+import { PoolNotReady, loadArtistData } from '../../lib/cache.js';
 
 import {
   AUDIO_TYPES,
@@ -19,7 +21,6 @@ import {
   pickLyricsVaried,
   parseRequestedTypes,
 } from './rounds-methods/scope-helpers.js';
-import { chunkedIn, D1_CHUNK_SIZE } from '../../utilities/chunkedIn.js';
 
 const MULTI_ORDER = [
   'name-track',
@@ -30,8 +31,8 @@ const MULTI_ORDER = [
 ];
 
 const QUESTIONS_PER_ROUND_CAP = 5;
-
-const MAX_COUNT = 500;
+const MAX_COUNT = MAX_ROUNDS_PER_REQUEST;
+const OVERFETCH = 3;
 
 function featuredQuota(count, activeAudioOrder) {
   const onlyFeatured =
@@ -40,8 +41,19 @@ function featuredQuota(count, activeAudioOrder) {
   return Math.max(1, Math.floor(count * 0.4));
 }
 
-export async function getRoundMulti(request, env) {
-  // ── CHANGED: Read from POST body instead of URL ──
+export async function getRoundMulti(request, env, ctx) {
+  try {
+    return await handleRoundMulti(request, env, ctx);
+  } catch (err) {
+    if (err instanceof PoolNotReady) {
+      console.warn('pool not ready:', err.message);
+      return error('Game data cache is not built yet. Rebuild the pool and retry.', 503);
+    }
+    throw err;
+  }
+}
+
+async function handleRoundMulti(request, env, ctx) {
   const body = await request.json().catch(() => ({}));
 
   const requestedTypes = parseRequestedTypes(body.types);
@@ -62,23 +74,19 @@ export async function getRoundMulti(request, env) {
   const years     = parseIdList(body.years);
   const rendition = body.rendition === 'reverse' ? 'reverse' : 'forward';
 
-  /* ── instruments mode ──────────────────────────────────── */
   const instrumentsMode =
     body.instruments === 'all'   ? 'all'   :
     body.instruments === 'mixed' ? 'mixed' :
                                    'none';
 
-  // ── THE REST IS EXACTLY AS YOU PROVIDED IT ──
-
   const { ids: scopeArtistIds, tier: scopeTier } = await resolveScope(env, {
-    artistIds, genreIds, years,
+    artistIds, genreIds, years, ctx,
   });
 
   if (scopeArtistIds.length === 0) {
     return error('No clips match the selected scope', 404);
   }
 
-  /* ── Split count by mode ─────────────────────────────── */
   let traditionalCount = count;
   let instrumentalCount = 0;
   if (instrumentsMode === 'all') {
@@ -89,36 +97,47 @@ export async function getRoundMulti(request, env) {
     instrumentalCount = count - traditionalCount;
   }
 
+  /* ── Work set: only these artists are loaded from KV ──── */
+  const workIds = workSetFor(scopeArtistIds, count);
+
+  const needCore  = (traditionalCount > 0 && wantsAudio) || instrumentalCount > 0;
+  const needLyric = traditionalCount > 0 && wantsLyrics;
+
+  await Promise.all([
+    needCore  ? loadArtistData(env, 'core', workIds) : null,
+    needLyric ? loadArtistData(env, 'lyr',  workIds) : null,
+  ]);
+
   /* ── Traditional pool ─────────────────────────────────── */
   let usedRendition = rendition;
   let audioSlots = [];
   if (traditionalCount > 0 && wantsAudio) {
     audioSlots = await pickSlotsVaried(
-      env, scopeArtistIds, traditionalCount * 5, years, rendition
+      env, workIds, traditionalCount * OVERFETCH, years, rendition
     );
     if (rendition === 'reverse' && audioSlots.length === 0) {
       usedRendition = 'forward';
       audioSlots = await pickSlotsVaried(
-        env, scopeArtistIds, traditionalCount * 5, years, 'forward'
+        env, workIds, traditionalCount * OVERFETCH, years, 'forward'
       );
     }
   }
-  const lyricsRowsAll = (traditionalCount > 0 && wantsLyrics)
-    ? await resolveLyricsPool(env, { scopeArtistIds, genreIds, years })
-    : [];
-  const lyricsRows = (traditionalCount > 0 && wantsLyrics)
-    ? pickLyricsVaried(lyricsRowsAll, traditionalCount * 5)
-    : [];
+
+  let lyricsRows = [];
+  if (needLyric) {
+    const all = await resolveLyricsPool(env, { scopeArtistIds: workIds, genreIds, years });
+    lyricsRows = pickLyricsVaried(all, traditionalCount * OVERFETCH);
+  }
 
   /* ── Instrumental pool ────────────────────────────────── */
   let instrumentSlots = [];
   let lyricsByKey = null;
   if (instrumentalCount > 0) {
     instrumentSlots = await fetchInstrumentSlots(
-      env, scopeArtistIds, instrumentalCount * 5, years
+      env, workIds, instrumentalCount * OVERFETCH, years
     );
     if (instrumentSlots.length > 0) {
-      lyricsByKey = await fetchLyricsPool(env, scopeArtistIds);
+      lyricsByKey = await fetchLyricsPool(env, workIds);
     }
   }
 
@@ -139,23 +158,38 @@ export async function getRoundMulti(request, env) {
   const degenerateState = { degenerate, fired };
 
   const rounds = [];
-  const usedAudioSlotIds = new Set();        // traditional tracks
-  const usedInstrumentSlotIds = new Set();   // instruments
+  const usedAudioSlotIds = new Set();
+  const usedInstrumentSlotIds = new Set();
   const usedLyricIds = new Set();
   const typeTally = emptyTally();
 
+  const tallyQuestions = (round, prefix = '') => {
+    for (const q of round.questions) {
+      typeTally[q.type] = (typeTally[q.type] ?? 0) + 1;
+      if (degenerate.has(`${prefix}${q.type}`)) fired.add(`${prefix}${q.type}`);
+    }
+  };
+
+  const pushLyricsRound = (round, row) => {
+    rounds.push({
+      slotId: round.slotId,
+      lyrics: round.lyrics,
+      revealClip: round.revealClip,
+      questions: [{ ...round.question, type: round.type }],
+    });
+    usedLyricIds.add(row.id);
+    typeTally[round.type] = (typeTally[round.type] ?? 0) + 1;
+    if (degenerate.has(round.type)) fired.add(round.type);
+  };
+
   /* ── Featured reservation (traditional audio only) ────── */
   const wantsFeatured = activeAudioOrder.includes('name-featured');
-  let featuredPool = [];
-  if (wantsFeatured && traditionalCount > 0) {
-    featuredPool = await fetchFeaturedSlots(
-      env, scopeArtistIds, count * 3, years, usedRendition
+  if (wantsFeatured && traditionalCount > 0 && wantsAudio) {
+    const featuredPool = await pickFeaturedSlots(
+      env, workIds, traditionalCount * 2, years, usedRendition
     );
-  }
-
-  if (wantsFeatured && featuredPool.length > 0) {
     const featuredLimit = Math.min(
-      featuredQuota(count, activeAudioOrder),
+      featuredQuota(traditionalCount, activeAudioOrder),
       featuredPool.length
     );
     for (const slot of featuredPool) {
@@ -167,19 +201,15 @@ export async function getRoundMulti(request, env) {
       if (round) {
         rounds.push(round);
         usedAudioSlotIds.add(slot.id);
-        for (const q of round.questions) {
-          typeTally[q.type] = (typeTally[q.type] ?? 0) + 1;
-          if (degenerate.has(q.type)) fired.add(q.type);
-        }
+        tallyQuestions(round);
       }
     }
   }
 
   /* ── Instrumental pass (capped at instrumentalCount) ──── */
   if (instrumentalCount > 0 && instrumentSlots.length > 0) {
-    let builtInstrumental = 0;
-    for (let i = 0; i < instrumentSlots.length; i++) {
-      if (builtInstrumental >= instrumentalCount) break;
+    let built = 0;
+    for (let i = 0; i < instrumentSlots.length && built < instrumentalCount; i++) {
       const slot = instrumentSlots[i];
       if (usedInstrumentSlotIds.has(slot.id)) continue;
 
@@ -187,16 +217,11 @@ export async function getRoundMulti(request, env) {
         env, request, slot, requestedTypes, scopeArtistIds,
         i, typeTally, degenerateState, lyricsByKey
       );
-
       if (round && round.questions.length > 0) {
         rounds.push(round);
         usedInstrumentSlotIds.add(slot.id);
-        builtInstrumental += 1;
-
-        for (const q of round.questions) {
-          typeTally[q.type] = (typeTally[q.type] ?? 0) + 1;
-          if (degenerate.has(`instr:${q.type}`)) fired.add(`instr:${q.type}`);
-        }
+        built += 1;
+        tallyQuestions(round, 'instr:');
       }
     }
   }
@@ -215,10 +240,7 @@ export async function getRoundMulti(request, env) {
       if (round) {
         rounds.push(round);
         usedAudioSlotIds.add(slot.id);
-        for (const q of round.questions) {
-          typeTally[q.type] = (typeTally[q.type] ?? 0) + 1;
-          if (degenerate.has(q.type)) fired.add(q.type);
-        }
+        tallyQuestions(round);
       }
     } else if (li < lyricsRows.length) {
       const row = lyricsRows[li++];
@@ -226,17 +248,7 @@ export async function getRoundMulti(request, env) {
       const round = await buildLyricsRound(
         env, request, row, requestedTypes, scopeArtistIds, i, typeTally, degenerateState
       );
-      if (round) {
-        rounds.push({
-          slotId: round.slotId,
-          lyrics: round.lyrics,
-          revealClip: round.revealClip,
-          questions: [{ ...round.question, type: round.type }],
-        });
-        usedLyricIds.add(row.id);
-        typeTally[round.type] = (typeTally[round.type] ?? 0) + 1;
-        if (degenerate.has(round.type)) fired.add(round.type);
-      }
+      if (round) pushLyricsRound(round, row);
     }
   }
 
@@ -251,10 +263,7 @@ export async function getRoundMulti(request, env) {
       if (round) {
         rounds.push(round);
         usedAudioSlotIds.add(slot.id);
-        for (const q of round.questions) {
-          typeTally[q.type] = (typeTally[q.type] ?? 0) + 1;
-          if (degenerate.has(q.type)) fired.add(q.type);
-        }
+        tallyQuestions(round);
       }
     }
   }
@@ -267,17 +276,7 @@ export async function getRoundMulti(request, env) {
       const round = await buildLyricsRound(
         env, request, row, requestedTypes, scopeArtistIds, li, typeTally, degenerateState
       );
-      if (round) {
-        rounds.push({
-          slotId: round.slotId,
-          lyrics: round.lyrics,
-          revealClip: round.revealClip,
-          questions: [{ ...round.question, type: round.type }],
-        });
-        usedLyricIds.add(row.id);
-        typeTally[round.type] = (typeTally[round.type] ?? 0) + 1;
-        if (degenerate.has(round.type)) fired.add(round.type);
-      }
+      if (round) pushLyricsRound(round, row);
     }
   }
 
@@ -296,6 +295,7 @@ export async function getRoundMulti(request, env) {
     meta: {
       scope: {
         artistCount: scopeArtistIds.length,
+        workArtistCount: workIds.length,
         genreIds,
         artistIds,
         years,
@@ -318,7 +318,7 @@ export async function getRoundMulti(request, env) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   buildRoundMulti — one clip, up to 5 audio questions.
+   buildRoundMulti: one clip, up to 5 audio questions.
    ═══════════════════════════════════════════════════════════ */
 
 async function buildRoundMulti(
@@ -361,58 +361,6 @@ async function buildRoundMulti(
     },
     questions,
   };
-}
-
-/* ═══════════════════════════════════════════════════════════
-   fetchFeaturedSlots — chunked + rendition-aware.
-   ═══════════════════════════════════════════════════════════ */
-
-async function fetchFeaturedSlots(env, artistIds, limit, years = [], rendition = 'forward') {
-  if (!artistIds.length) return [];
-
-  const isReverse = rendition === 'reverse';
-  const keyColumn = isReverse ? 'r2_reversed_key' : 'r2_key';
-  const rows = [];
-
-  await chunkedIn(artistIds, D1_CHUNK_SIZE, async (chunk) => {
-    const idPh = chunk.map(() => '?').join(',');
-
-    if (years.length > 0) {
-      const yearPh = years.map(() => '?').join(',');
-      const { results } = await env.DB.prepare(
-        `SELECT t.id, t.name, t.artist_id, t.${keyColumn} AS r2_key, t.position,
-                t.album_name, t.featured_artists
-         FROM tracks t
-         JOIN album_years ay
-           ON ay.artist_id = t.artist_id
-          AND ay.album_name = t.album_name
-         WHERE t.artist_id IN (${idPh})
-           AND t.${keyColumn} IS NOT NULL
-           AND t.featured_artists IS NOT NULL
-           AND t.featured_artists != ''
-           AND ay.released_year IN (${yearPh})
-         ORDER BY RANDOM()
-         LIMIT ?`
-      ).bind(...chunk, ...years, limit).all();
-      for (const r of results ?? []) rows.push(r);
-    } else {
-      const { results } = await env.DB.prepare(
-        `SELECT id, name, artist_id, ${keyColumn} AS r2_key, position,
-                album_name, featured_artists
-         FROM tracks
-         WHERE artist_id IN (${idPh})
-           AND ${keyColumn} IS NOT NULL
-           AND featured_artists IS NOT NULL
-           AND featured_artists != ''
-         ORDER BY RANDOM()
-         LIMIT ?`
-      ).bind(...chunk, limit).all();
-      for (const r of results ?? []) rows.push(r);
-    }
-    return [];
-  });
-
-  return rows.slice(0, limit);
 }
 
 function shuffleInPlace(arr) {

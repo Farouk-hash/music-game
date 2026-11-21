@@ -4,13 +4,8 @@ import { BorderContainer } from '@/components/layout/BorderContainer.jsx';
 import { QuestionCard } from '@/components/domain/Rounds/QuestionCard.jsx';
 import { PromptSource } from '@/components/domain/Rounds/PromptSource.jsx';
 import { TimerBar } from '@/components/domain/Setup/Timer/Timerbar.jsx';
+import { POSITION_LABELS } from '@/constants';
 
-const POSITION_LABELS = {
-  start: 'البداية',
-  middle: 'المنتصف',
-  end: 'النهاية',
-  custom: 'مقطع مخصص',
-};
 
 export function ChallengePlay({
   mode,

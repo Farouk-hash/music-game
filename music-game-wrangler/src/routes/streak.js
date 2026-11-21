@@ -8,7 +8,7 @@ import { CHALLENGE_CONFIG } from '../controllers/streaks/challenge-config.js';
 const DATE = '\\d{4}-\\d{2}-\\d{2}';
 const UUID = '[0-9a-fA-F-]{36}';
 
-async function getChallengeHandler(request, env, params) {
+async function getChallengeHandler(request, env , ctx, params) {
   try {
     const url = new URL(request.url);
     const genreParam = url.searchParams.get('genreId');
@@ -23,7 +23,7 @@ async function getChallengeHandler(request, env, params) {
   }
 }
 
-async function submitAttemptHandler(request, env, params) {
+async function submitAttemptHandler(request, env,ctx , params) {
   let body;
   try { body = await request.json(); }
   catch { return json({ ok: false, error: 'Invalid JSON' }, 400); }
@@ -37,7 +37,7 @@ async function submitAttemptHandler(request, env, params) {
   }
 }
 
-async function grantBonusPowerHandler(request, env, params) {
+async function grantBonusPowerHandler(request, env,ctx , params) {
   let body;
   try { body = await request.json(); }
   catch { return json({ ok: false, error: 'Invalid JSON' }, 400); }
@@ -51,7 +51,7 @@ async function grantBonusPowerHandler(request, env, params) {
   }
 }
 
-async function listStreaksHandler(request, env, params) {
+async function listStreaksHandler(request, env,ctx , params) {
   const today = new Date().toISOString().slice(0, 10);
   const profileId = params.profileId;
 
@@ -119,7 +119,7 @@ async function listStreaksHandler(request, env, params) {
   }
 }
 
-async function startStreakHandler(request, env, params) {
+async function startStreakHandler(request, env,ctx , params) {
   let body;
   try { body = await request.json(); }
   catch { return json({ ok: false, error: 'Invalid JSON' }, 400); }
@@ -173,7 +173,7 @@ async function startStreakHandler(request, env, params) {
   }
 }
 
-async function abandonStreakHandler(request, env, params) {
+async function abandonStreakHandler(request, env,ctx , params) {
   let body;
   try { body = await request.json(); }
   catch { return json({ ok: false, error: 'Invalid JSON' }, 400); }
@@ -211,7 +211,7 @@ async function abandonStreakHandler(request, env, params) {
 }
 
 
-async function getConfigHandler(request, env, params) {
+async function getConfigHandler(request, env, ctx ,params) {
   return json({ ok: true, config: CHALLENGE_CONFIG });
 }
 

@@ -19,7 +19,7 @@ export function FriendsModal({ open, onClose }) {
   const [tab, setTab] = useState('friends');
   const { data: pending } = usePending();
 
-  const { data: pendingInvites } = usePendingInvites();
+const { data: pendingInvites } = usePendingInvites({ enabled: open });
   const inviteCount = pendingInvites?.invites?.length ?? 0;
 
   const incomingCount = pending?.incoming?.length ?? 0;

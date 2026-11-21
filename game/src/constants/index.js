@@ -5,3 +5,4 @@ export { ROUND_COUNT_OPTIONS } from './roundCount.js';
 export { TIMER_SECONDS, getTimerOptions } from './timer.js';
 export { INSTRUMENT_OPTIONS, VALID_INSTRUMENTS } from './instruments.js';
 export { ANSWER_MODE_OPTIONS, VALID_ANSWER_MODES } from './answerMode.js';
+export {POSITION_LABELS} from './position_labels.js'

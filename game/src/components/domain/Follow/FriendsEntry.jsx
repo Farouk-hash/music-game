@@ -7,7 +7,7 @@ export function FriendsEntry({ onClick }) {
   const { data } = usePending();
   const hasIncoming = (data?.incoming?.length ?? 0) > 0;
 
-  const { data: inv } = usePendingInvites();
+  const { data: inv } = usePendingInvites({ enabled: false });
   const hasInvites = (inv?.invites?.length ?? 0) > 0;
   const showDot = hasIncoming || hasInvites;
 

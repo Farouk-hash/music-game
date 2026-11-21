@@ -50,21 +50,16 @@ export function matchRoute(request) {
 
   for (const route of allRoutes) {
     if (route.method !== method) continue;
-
     const match = path.match(route.pattern);
     if (!match) continue;
 
-    // Named capture groups become params
     const params = { ...(match.groups ?? {}) };
-
-    // Coerce numeric params to numbers
     for (const [k, v] of Object.entries(params)) {
       if (/^\d+$/.test(v)) params[k] = Number(v);
     }
 
     return { handler: route.handler, params };
   }
-
   return null;
 }
 

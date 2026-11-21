@@ -8,7 +8,7 @@ const AVATAR_PREFIX = 'avatars';
 /* ═══════════════════════════════════════════════════════════
    POST /profiles/:id/avatar
    ═══════════════════════════════════════════════════════════ */
-export async function uploadAvatar(request, env, { id }) {
+export async function uploadAvatar(request, env,ctx, { id }) {
   const profile = await env.DB.prepare(
     'SELECT id, avatar_r2_key FROM profiles WHERE id = ?'
   ).bind(id).first();
@@ -53,7 +53,7 @@ export async function uploadAvatar(request, env, { id }) {
 /* ═══════════════════════════════════════════════════════════
    DELETE /profiles/:id/avatar
    ═══════════════════════════════════════════════════════════ */
-export async function deleteAvatar(request, env, { id }) {
+export async function deleteAvatar(request, env,ctx, { id }) {
   const profile = await env.DB.prepare(
     'SELECT id, avatar_r2_key FROM profiles WHERE id = ?'
   ).bind(id).first();
@@ -79,7 +79,7 @@ export async function deleteAvatar(request, env, { id }) {
 /* ═══════════════════════════════════════════════════════════
    GET /profiles/:id/avatar
    ═══════════════════════════════════════════════════════════ */
-export async function serveAvatar(request, env, { id }) {
+export async function serveAvatar(request, env,ctx, { id }) {
   const profile = await env.DB.prepare(
     'SELECT avatar_r2_key FROM profiles WHERE id = ?'
   ).bind(id).first();

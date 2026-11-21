@@ -125,6 +125,9 @@ export default function Setup() {
       answerMode: settings.answerMode,
       timer: settings.timer,
       reversed: settings.reversedAnswers,
+      skips:   settings.skips   ?? 0,
+      removes: settings.removes ?? 0,
+      reveals: settings.reveals ?? 0,
     };
   }
 
@@ -355,7 +358,7 @@ export default function Setup() {
         disabledTypes={disabledTypes}
         disabledReasons={disabledReasons}
         reversedClipsCount={reversedClipsCount}
-        allowInstruments={false} // not supported yet via server-side
+        allowInstruments={allowInstruments} 
         genreMode={scope.genreMode}
         effectiveSelectedArtistsCount={scope.effectiveSelectedArtists.size}
         onQuestionTypeUnfavorited={handleQuestionTypeUnfavorited}

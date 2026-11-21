@@ -12,7 +12,7 @@ function roundToConfig(round) {
     answerMode: round.answerMode || 'choose',
     roundCount: round.rounds || 10,
     reversedAnswers: round.reversedAnswers || 'no',
-    timer: round.timer ?? null, // Pass the raw number (or null) directly
+    timer: round.timer ?? null,
     audioRendition: round.reversedAudio ? 'reverse' : 'forward',
     instruments: round.instruments || 'none',
   };
@@ -27,14 +27,14 @@ function configToRound(config, prev) {
     reversedAnswers: config.reversedAnswers,
     reversedAudio: config.audioRendition === 'reverse',
     instruments: config.instruments,
-    timer: config.timer ?? null, // Pass the raw number (or null) directly
+    timer: config.timer ?? null,
   };
 }
 
 export function RoundRow({
   round, index, total, levels,
-  disabledTypes, 
-  disabledReasons, 
+  disabledTypes,
+  disabledReasons,
   reversedClipsCount,
   onUpdate, onRemove, onMoveUp, onMoveDown,
   readOnly = false,
@@ -128,6 +128,7 @@ export function RoundRow({
         reversedClipsCount={reversedClipsCount}
         allowInstruments={true}
         readOnly={readOnly}
+        showLifelines={false}
       />
     </div>
   );
