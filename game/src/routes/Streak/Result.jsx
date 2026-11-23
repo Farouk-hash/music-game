@@ -4,9 +4,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useProfile } from '@/hooks/profiles/useProfile.js';
 import { streakApi } from '@/lib/streakApi.js';
 import { useChallengeConfig } from '@/context/ChallengeConfigContext';
+import { useNetworkStatus } from '@/hooks/network/useNetworkStatus.js';
 import { BorderContainer } from '@/components/layout/BorderContainer.jsx';
 import { Button } from '@/components/ui/Button.jsx';
 import { Loader } from '@/components/ui/Loader.jsx';
+import { OfflineBlock } from '@/components/network/OfflineBlock.jsx';
 import { StreakSummaryCard } from '@/components/domain/Streak/Result/StreakSummaryCard.jsx';
 import { PowerCard } from '@/components/domain/Streak/Result/PowerCard.jsx';
 import { AllStreaksCard } from '@/components/domain/Streak/Result/AllStreaksCard';
@@ -17,6 +19,7 @@ export default function StreakResult() {
   const { id: profileId } = useProfile();
   const qc = useQueryClient();
   const config = useChallengeConfig();
+  const isOnline = useNetworkStatus();
   const today = new Date().toISOString().slice(0, 10);
 
   const urlKey = genreKey ?? 'default';
@@ -40,6 +43,28 @@ export default function StreakResult() {
       qc.invalidateQueries({ queryKey: ['streaks'] });
     },
   });
+
+  // Offline with nothing loaded (e.g. the page was reloaded offline).
+  // While offline the query is paused (isLoading is false, data is undefined),
+  // so without this check the page would show a spinner forever. The query
+  // resumes by itself when the connection returns.
+  if (!data && !isOnline) {
+    return (
+      <div className="max-w-lg mx-auto pt-12">
+        <OfflineBlock
+          title="You're offline"
+          subtitle="Your result needs a connection to load. It will appear as soon as you are back online."
+          onRetry={null}
+          showSetupLink={false}
+        />
+        <div className="flex justify-center pt-4">
+          <Button variant="secondary" onClick={() => navigate('/streak')}>
+            ← Back to streaks
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading || isFetching) return <Loader variant="page" label="Loading result…" />;
 
@@ -80,9 +105,20 @@ export default function StreakResult() {
   const maxBonus = power.max_bonus ?? config.maxBonusPower;
   const easyMode = (streak.consecutive_failures ?? 0) >= config.easyModeFailures;
 
+  const bonusError = grantBonusMutation.error;
+
   return (
     <div className="max-w-lg mx-auto pb-24 px-1 min-h-screen">
       <div className="space-y-6 pt-12">
+
+        {!isOnline && (
+          <OfflineBlock
+            variant="banner"
+            title="You're offline"
+            subtitle="Showing your last loaded result. Playing and bonuses need a connection."
+            onRetry={null}
+          />
+        )}
 
         <StreakSummaryCard
           streak={streak}
@@ -98,6 +134,14 @@ export default function StreakResult() {
           onPlayPower={() => navigate(`/streak/play/${urlKey}`)}
           onWatchAd={() => grantBonusMutation.mutate()}
         />
+
+        {grantBonusMutation.isError && (
+          <p role="alert" className="text-xs text-center text-wrong">
+            {bonusError?.isOffline
+              ? "You're offline. Reconnect and try again."
+              : bonusError?.message ?? 'Could not grant the bonus.'}
+          </p>
+        )}
 
         <AllStreaksCard
           streaks={streaks}

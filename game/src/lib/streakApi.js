@@ -1,7 +1,8 @@
-import { BASE } from './api.js';
+import { BASE, guardedFetch } from './api.js'; 
 
 async function request(path, options = {}) {
-  const res = await fetch(BASE + path, {
+  // ✅ Use guardedFetch instead of raw fetch
+  const res = await guardedFetch(BASE + path, {
     headers: { Accept: 'application/json', ...(options.headers ?? {}) },
     ...options,
   });

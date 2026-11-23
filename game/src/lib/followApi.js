@@ -1,38 +1,11 @@
 // game/src/lib/followApi.js
 //
-// Fetch wrapper for the follow endpoints on music-game-wrangler.
-// Mirrors profileApi.js — same BASE derivation, same error shape.
+// Follow endpoints on music-game-wrangler. Mirrors profileApi.js; requests go
+// through the shared guarded request in api.js (fail fast when offline).
 //
-// Every call needs `?as=<myProfileId>` — the profile UUID is the
-// credential in this project.
+// Every call needs `?as=<myProfileId>`: the profile UUID is the credential.
 
-import { BASE } from "./api";
-
-async function request(path, options = {}) {
-  const res = await fetch(BASE + path, {
-    headers: { Accept: 'application/json', ...(options.headers ?? {}) },
-    ...options,
-  });
-
-  let body = null;
-  const text = await res.text();
-  if (text) {
-    try { body = JSON.parse(text); } catch { body = text; }
-  }
-
-  if (!res.ok) {
-    const message =
-      (body && typeof body === 'object' && body.error) ||
-      (typeof body === 'string' && body) ||
-      `Request failed (${res.status})`;
-    const err = new Error(message);
-    err.status = res.status;
-    err.body = body;
-    throw err;
-  }
-
-  return body;
-}
+import { BASE, requestBase as request } from './api.js';
 
 export const followApi = {
   /* ── Reads ─────────────────────────────────────────────── */

@@ -29,6 +29,7 @@ export function useRoundMulti({
     queryFn: () => api.post('/round-multi', payload), 
     staleTime: 0,
     refetchOnWindowFocus: false,
+    refetchOnReconnect:false , 
     enabled,
   });
 }

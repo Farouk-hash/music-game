@@ -4,6 +4,7 @@ import { VALID_QUESTION_TYPES as VALID_TYPES } from '@/constants/questionTypes.j
 
 const VALID_REVERSED = new Set(['no', 'some', 'all']);
 const VALID_INSTRUMENTS = new Set(['none', 'mixed', 'all']);
+const VALID_MEMORY_MODES = new Set(['none', 'mixed', 'all']);
 
 export function usePlayParams() {
   return useMemo(() => {
@@ -19,7 +20,8 @@ export function usePlayParams() {
     const genres = Array.isArray(raw.genres) ? raw.genres.map(Number) : [];
     const artists = Array.isArray(raw.artists) ? raw.artists.map(Number) : [];
     const years = Array.isArray(raw.years) ? raw.years.map(Number) : [];
-    
+    const memoryGame = VALID_MEMORY_MODES.has(raw.memoryGame) ? raw.memoryGame : 'none';
+
     const rendition = raw.rendition === 'reverse' ? 'reverse' : 'forward';
     
     const types = Array.isArray(raw.types) 
@@ -47,6 +49,7 @@ export function usePlayParams() {
       answerMode, timer, timerSeconds, count, reversed,
       instruments,
       skips, removes, reveals, // <-- Wired up
+      memoryGame,
       
       // Expose level and players if they exist (for multiplayer)
       level: raw.level,

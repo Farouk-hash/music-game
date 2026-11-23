@@ -15,12 +15,14 @@ import { Level2Modal } from '@/components/domain/Setup/Modals/Level2Modal.jsx';
 import { Level3Modal } from '@/components/domain/Setup/Modals/Level3Modal.jsx';
 import { useGameSettings } from '@/context/GameSettingsContext.jsx';
 import { useCapabilityGates } from '@/hooks/setup/useCapabilityGates.js';
+import { OfflineBlock } from '@/components/network/OfflineBlock';
+import { IconWifiOff } from '@/icons';
 
 export default function Templates() {
   const navigate = useNavigate();
   const settings = useGameSettings();
 
-  const { templates, isLoading, error } = useTemplates();
+  const { templates, isLoading, error , refetch } = useTemplates();
 
   const resetKey = `${templates.length}:${templates[0]?.id ?? ''}`;
   const pagination = usePagination(templates, { pageSize: 8, resetKey });
@@ -147,7 +149,14 @@ export default function Templates() {
   if (error) {
     return (
       <BorderContainer border="all" className="p-8 text-center">
-        <p className="text-wrong">{error.message}</p>
+        <OfflineBlock
+        variant="page"
+        title="Templates Unavailable"
+        subtitle="Template data requires an internet connection. Please reconnect to browse ready-made games."
+        onRetry={() => refetch?.()} // Ensure useTemplates exposes refetch
+        showSetupLink={false}
+        icon={<IconWifiOff className="w-8 h-8 text-wrong mb-2" />}
+      />
       </BorderContainer>
     );
   }

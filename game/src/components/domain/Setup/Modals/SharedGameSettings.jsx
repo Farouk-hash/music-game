@@ -1,4 +1,3 @@
-// game/src/components/domain/Setup/Modals/SharedGameSettings.jsx
 import { QuestionTypePicker } from '../QuestionTypePicker/QuestionTypePicker.jsx';
 import { AnswerModePicker } from '../AnswerModePicker/AnswerModePicker.jsx';
 import { RoundCountPicker } from '../RoundCountPicker/RoundCountPicker.jsx';
@@ -11,6 +10,7 @@ import { Reveal } from '@/components/ui/Reveal.jsx';
 import { ReversedAudioPicker } from '../ReversedAudioPicker/ReversedAudioPicker.jsx';
 import { LifelinesPicker } from '../Lifelines/LifeLinesPickers.jsx';
 import { LIFELINE_DEFINITIONS } from '@/constants/lifelines';
+import { MemoryGamePicker } from '../MemoryGamePicker/MemoryGamePicker.jsx';
 
 export function SharedGameSettings({
   disabledTypes = new Set(),
@@ -36,6 +36,7 @@ export function SharedGameSettings({
   const timer           = isControlled ? controlledValue.timer           : ctx.timer;
   const audioRendition  = isControlled ? controlledValue.audioRendition  : ctx.audioRendition;
   const instruments     = isControlled ? controlledValue.instruments     : ctx.instruments;
+  const memoryGame      = isControlled ? controlledValue.memoryGame      : ctx.memoryGame;
 
   const skips   = isControlled ? (controlledValue.skips   ?? 0) : (ctx.skips   ?? 0);
   const removes = isControlled ? (controlledValue.removes ?? 0) : (ctx.removes ?? 0);
@@ -61,14 +62,11 @@ export function SharedGameSettings({
   const setSkips           = (v) => write('skips', v);
   const setRemoves         = (v) => write('removes', v);
   const setReveals         = (v) => write('reveals', v);
+  const setMemoryGame      = (v) => write('memoryGame', v);
 
   const reversedAudioAvailable = reversedClipsCount > 0;
   const isSporcle = variant === 'sporcle';
 
-  // Lifelines visible only if:
-  //   - not Sporcle
-  //   - roundCount is visible (multiplayer / Sporcle signal)
-  //   - caller didn't explicitly hide them (collections / templates)
   const showLifelines =
     showLifelinesProp !== false && !isSporcle && !hideRoundCount;
 
@@ -158,8 +156,6 @@ export function SharedGameSettings({
           </p>
           <div className="space-y-4">
             {LIFELINE_DEFINITIONS.map(({ key, label, hint }) => {
-              // Calculate max allowed for this specific lifeline.
-              // Max is: (Total Rounds) - (Points spent on the OTHER two lifelines)
               const otherLifelinesSum = 
                 (key === 'skips' ? 0 : skips) + 
                 (key === 'removes' ? 0 : removes) + 
@@ -177,7 +173,7 @@ export function SharedGameSettings({
                     value={lifelineValues[key]}
                     onChange={lifelineSetters[key]}
                     disabled={readOnly}
-                    max={maxAllowed} // Enforces the rule
+                    max={maxAllowed}
                   />
                 </div>
               );
@@ -293,6 +289,23 @@ export function SharedGameSettings({
           />
         </section>
       )}
+
+      {/* ✅ Memory Game Section */}
+      <section className="space-y-3">
+        <h3 className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">
+          Memory Game
+        </h3>
+        <p className="text-xs text-ink-muted">
+          Memorize answers during play, recall them at the end. 
+          Adds a cognitive challenge to standard rounds.
+        </p>
+        <MemoryGamePicker
+          value={memoryGame} 
+          onChange={setMemoryGame} 
+          disabled={readOnly} 
+        />
+      </section>
+
     </div>
   );
 }

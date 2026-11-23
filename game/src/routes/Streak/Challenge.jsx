@@ -1,5 +1,5 @@
 // game/src/routes/Streak/Challenge.jsx
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useStreak } from '@/hooks/streaks/useStreak.js';
 import { BorderContainer } from '@/components/layout/BorderContainer.jsx';
@@ -10,17 +10,33 @@ import { isAnswerCorrect } from '@/hooks/rounds/answerCheck';
 import { useChallengeConfig } from '@/context/ChallengeConfigContext';
 import { ChallengePreview } from '@/components/domain/Streak/Challenge/ChallengePreview';
 import { ChallengePlay } from '@/components/domain/Streak/Challenge/ChallengePlay';
+import { useNetworkStatus } from '@/hooks/network/useNetworkStatus.js';
+import { isNetworkError } from '@/lib/api.js';
+
 const PHASE = {
   PREVIEW: 'preview',
   PLAYING: 'playing',
   SUBMITTING: 'submitting',
 };
 
+// Immutable update (the old code mutated state objects in place, which
+// double-counts under React StrictMode in development).
+function bumpResult(prev, idx, correct) {
+  const next = [...prev];
+  const cur = next[idx] ?? { correct: 0, total: 0 };
+  next[idx] = {
+    correct: cur.correct + (correct ? 1 : 0),
+    total: cur.total + 1,
+  };
+  return next;
+}
+
 export default function StreakChallenge() {
   const navigate = useNavigate();
   const { genreKey } = useParams();
   const genreId = genreKey === 'default' ? null : Number(genreKey);
   const config = useChallengeConfig();
+  const online = useNetworkStatus();
   const {
     challenge, streak, power, loading, error,
     streakDay, consecutiveFailures, easyMode,
@@ -41,6 +57,11 @@ export default function StreakChallenge() {
   const [allBatches, setAllBatches] = useState(null);
   const [fetchingQuestions, setFetchingQuestions] = useState(false);
 
+  // A finished run whose submission failed. It is kept here so the player can
+  // retry WITHOUT replaying (and without being able to change answers).
+  const [submitError, setSubmitError] = useState(null);
+  const pendingPayloadRef = useRef(null);
+
   const currentBatch = allBatches?.[batchIndex] ?? null;
   const currentQuestion = currentBatch?.questions?.[questionIndex] ?? null;
 
@@ -49,6 +70,11 @@ export default function StreakChallenge() {
 
   const [timeLeft, setTimeLeft] = useState(batchTimerSeconds);
   const [timedOut, setTimedOut] = useState(false);
+
+  // Time left in the current batch. Kept in a ref so pausing (offline) and
+  // resuming continues from where it stopped instead of restarting.
+  const remainingRef = useRef(batchTimerSeconds);
+  const paused = !online;
 
   // ── Reset state when the challenge date changes ──────
   useEffect(() => {
@@ -61,19 +87,33 @@ export default function StreakChallenge() {
     setRevealed(false);
     setAllBatches(null);
     setTimedOut(false);
+    setSubmitError(null);
+    pendingPayloadRef.current = null;
   }, [challenge?.challenge_date]);
 
-  // ── Per-batch timer (unchanged deps — the timer is PER-BATCH) ──
+  // ── Per-batch timer: reset at the start of each batch ──
+  // (declared BEFORE the ticking effect so it runs first in the same commit)
   useEffect(() => {
     if (phase !== PHASE.PLAYING) return;
     if (!currentBatch) return;
+    remainingRef.current = batchTimerSeconds;
     setTimeLeft(batchTimerSeconds);
     setTimedOut(false);
+  }, [phase, batchIndex, batchTimerSeconds]);
+
+  // ── Per-batch timer: ticking. Frozen while offline. ──
+  useEffect(() => {
+    if (phase !== PHASE.PLAYING) return;
+    if (!currentBatch) return;
+    if (paused) return;
+    if (remainingRef.current <= 0) return; // already expired
 
     const start = Date.now();
+    const startRemaining = remainingRef.current;
     const id = setInterval(() => {
       const elapsed = (Date.now() - start) / 1000;
-      const left = Math.max(0, batchTimerSeconds - elapsed);
+      const left = Math.max(0, startRemaining - elapsed);
+      remainingRef.current = left;
       setTimeLeft(left);
       if (left <= 0) {
         clearInterval(id);
@@ -82,22 +122,45 @@ export default function StreakChallenge() {
     }, 100);
 
     return () => clearInterval(id);
-  }, [phase, batchIndex, batchTimerSeconds]);
+  }, [phase, batchIndex, batchTimerSeconds, paused]);
 
-  // ── Timeout → wrong answer (unchanged) ───────────────
+  // ── Timeout → wrong answer ───────────────────────────
   useEffect(() => {
     if (!timedOut || revealed) return;
     setPicked('__TIMEOUT__');
     setRevealed(true);
-    setBatchResults(prev => {
-      const next = [...prev];
-      if (!next[batchIndex]) next[batchIndex] = { correct: 0, total: 0 };
-      next[batchIndex].total += 1;
-      return next;
-    });
+    setBatchResults(prev => bumpResult(prev, batchIndex, false));
   }, [timedOut]);
 
-  // ── Handlers (unchanged) ─────────────────────────────
+  // ── Submit (with retry) ──────────────────────────────
+  const doSubmit = useCallback(async (payload) => {
+    setSubmitError(null);
+    try {
+      const result = await submit(payload);
+      console.log('[streak] submit result', result);
+      pendingPayloadRef.current = null;
+      navigate(`/streak/result/${genreKey}`);
+    } catch (e) {
+      console.error('[streak] submit threw', e);
+      // Stay on the saving screen (phase unchanged) and offer a retry. Going
+      // back to PLAYING would let the player answer the last question again.
+      setSubmitError(e);
+    }
+  }, [submit, navigate, genreKey]);
+
+  // If the failure was "offline" nothing was sent, so it is safe to retry
+  // automatically once the connection is back. A "server unreachable" failure
+  // may have reached the server, so that one is manual only.
+  useEffect(() => {
+    if (!submitError?.isOffline) return;
+    function onOnline() {
+      if (pendingPayloadRef.current) doSubmit(pendingPayloadRef.current);
+    }
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [submitError, doSubmit]);
+
+  // ── Handlers ─────────────────────────────────────────
   async function handleStart(chosenMode) {
     setMode(chosenMode);
     setFetchingQuestions(true);
@@ -116,7 +179,13 @@ export default function StreakChallenge() {
       setPhase(PHASE.PLAYING);
     } catch (e) {
       console.error('[streak] fetch questions failed', e);
-      alert(`Failed to load questions: ${e.message}`);
+      alert(
+        e?.isOffline
+          ? "You're offline. Reconnect and try again."
+          : isNetworkError(e)
+            ? "Can't reach the server. Please try again in a moment."
+            : `Failed to load questions: ${e.message}`
+      );
     } finally {
       setFetchingQuestions(false);
     }
@@ -135,13 +204,7 @@ export default function StreakChallenge() {
 
     setPicked(value);
     setRevealed(true);
-    setBatchResults(prev => {
-      const next = [...prev];
-      if (!next[batchIndex]) next[batchIndex] = { correct: 0, total: 0 };
-      if (correct) next[batchIndex].correct += 1;
-      next[batchIndex].total += 1;
-      return next;
-    });
+    setBatchResults(prev => bumpResult(prev, batchIndex, correct));
   }
 
   async function handleNext() {
@@ -185,16 +248,8 @@ export default function StreakChallenge() {
     };
 
     console.log('[streak] submitting payload', submitPayload);
-
-    try {
-      const result = await submit(submitPayload);
-      console.log('[streak] submit result', result);
-      navigate(`/streak/result/${genreKey}`);
-    } catch (e) {
-      console.error('[streak] submit threw', e);
-      alert(`Submit failed: ${e?.message ?? 'unknown error'}`);
-      setPhase(PHASE.PLAYING);
-    }
+    pendingPayloadRef.current = submitPayload;
+    await doSubmit(submitPayload);
   }
 
   async function handleWatchAd() {
@@ -202,7 +257,11 @@ export default function StreakChallenge() {
       await grantBonus();
     } catch (e) {
       console.error('[streak] bonus failed', e);
-      alert(`Bonus failed: ${e.message}`);
+      alert(
+        e?.isOffline
+          ? "You're offline. Reconnect and try again."
+          : `Bonus failed: ${e.message}`
+      );
     }
   }
 
@@ -236,11 +295,44 @@ export default function StreakChallenge() {
         grantingBonus={grantingBonus}
         onStart={handleStart}
         onWatchAd={handleWatchAd}
+        online={online}
       />
     );
   }
 
   if (phase === PHASE.SUBMITTING || submitting) {
+    // Submission failed: keep the finished run and let the player retry.
+    if (submitError && !submitting) {
+      return (
+        <div className="max-w-2xl mx-auto pb-24 px-1 min-h-screen">
+          <BorderContainer border="all" className="p-8 mt-16 text-center space-y-4">
+            <p className="text-ink font-medium text-lg">
+              {submitError.isOffline ? "You're offline" : "Couldn't save your progress"}
+            </p>
+            <p className="text-ink-muted text-sm">
+              {submitError.isOffline
+                ? 'Your answers are kept on this page. We will save them as soon as you are back online.'
+                : isNetworkError(submitError)
+                  ? 'The server could not be reached. Your answers are kept on this page, so you can try again.'
+                  : submitError.message}
+            </p>
+            <p className="text-ink-subtle text-xs">
+              Please keep this page open until your progress is saved.
+            </p>
+            <div className="flex justify-center gap-3 pt-2">
+              <Button
+                variant="primary"
+                onClick={() => pendingPayloadRef.current && doSubmit(pendingPayloadRef.current)}
+                disabled={!online}
+              >
+                Try again
+              </Button>
+            </div>
+          </BorderContainer>
+        </div>
+      );
+    }
+
     return (
       <div className="max-w-2xl mx-auto pb-24 px-1 min-h-screen">
         <div className="pt-16 text-center">

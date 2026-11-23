@@ -33,9 +33,10 @@ export function useRoundMultiplayer({
 
   return useQuery({
     queryKey,
-    queryFn: () => api.post('/round-multiplayer', payload), // Changed to POST
+    queryFn: () => api.post('/round-multiplayer', payload), 
     staleTime: 0,
     refetchOnWindowFocus: false,
+    refetchOnReconnect:false , 
     enabled: ok,
   });
 }

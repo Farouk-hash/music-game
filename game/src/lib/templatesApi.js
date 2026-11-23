@@ -1,8 +1,8 @@
 // game/src/lib/templatesApi.js
-import { BASE } from "./api";
+import { BASE, guardedFetch } from './api.js';
 
 async function requestJson(path, { signal } = {}) {
-  const res = await fetch(`${BASE}${path}`, { signal });
+  const res = await guardedFetch(`${BASE}${path}`, { signal });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     const err = new Error(data.error || `Request failed: ${res.status}`);

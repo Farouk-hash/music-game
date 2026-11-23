@@ -1,9 +1,9 @@
 // game/src/components/domain/Follow/FriendsEntry.jsx
-import { usePending } from '../../../hooks/follows/useFollows.js';
-import { usePendingInvites } from '../../../hooks/invites/useInvites.js';
-import { IconFriends } from '../../../icons/index.js';
+import { usePending } from '@/hooks/follows/useFollows.js';
+import { usePendingInvites } from '@/hooks/invites/useInvites.js';
+import { IconFriends } from '@/icons';
 
-export function FriendsEntry({ onClick }) {
+export function FriendsEntry({ onClick , disabled }) {
   const { data } = usePending();
   const hasIncoming = (data?.incoming?.length ?? 0) > 0;
 
@@ -15,10 +15,14 @@ export function FriendsEntry({ onClick }) {
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       aria-label="Friends"
       className={[
         'relative inline-flex items-center gap-2 h-10 px-3 rounded-md border border-border bg-surface-2',
         'text-ink-muted hover:border-accent-2 hover:text-ink transition-colors',
+        disabled 
+          ? 'opacity-50 cursor-not-allowed pointer-events-none' 
+          : 'hover:border-accent-2 hover:text-ink',
       ].join(' ')}
     >
       <IconFriends />

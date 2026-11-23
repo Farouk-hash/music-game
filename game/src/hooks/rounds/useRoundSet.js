@@ -1,4 +1,5 @@
 // game/src/hooks/useRoundSet.js
+// LEVEL 3 MODE
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api.js';
 
@@ -22,9 +23,10 @@ export function useRoundSet({
 
   return useQuery({
     queryKey,
-    queryFn: () => api.post('/round-set', payload), // Changed to POST
+    queryFn: () => api.post('/round-set', payload),
     staleTime: 0,
     refetchOnWindowFocus: false,
+    refetchOnReconnect: false, // ✅ Explicitly disable to prevent mid-game resets
     enabled: enabled && (genres.length > 0 || artists.length > 0),
   });
 }

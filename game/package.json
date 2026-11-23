@@ -15,7 +15,9 @@
     "@tanstack/react-query-persist-client": "^5.108.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-router-dom": "^6.27.0"
+    "react-router-dom": "^6.27.0",
+    "vite-plugin-pwa": "^2.0.0",
+    "workbox-window": "^7.4.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.3",

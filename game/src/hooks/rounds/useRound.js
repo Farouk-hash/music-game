@@ -24,6 +24,7 @@ export function useRound({
     staleTime: 0, // <--- Allow refetching for Play Again
     gcTime: 1000 * 60 * 60,
     refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     enabled,
   });
 }

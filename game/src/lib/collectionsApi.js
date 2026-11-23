@@ -1,9 +1,8 @@
 // game/src/lib/collectionsApi.js
-
-import { BASE } from "./api";
+import { BASE, guardedFetch } from './api.js';
 
 async function requestJson(path, { method = 'GET', body, signal } = {}) {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await guardedFetch(`${BASE}${path}`, {
     method,
     signal,
     headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
@@ -20,7 +19,7 @@ async function requestMultipart(path, { method, fields, file, signal } = {}) {
   if (file) {
     form.append('file', file);
   }
-  const res = await fetch(`${BASE}${path}`, { method, body: form, signal });
+  const res = await guardedFetch(`${BASE}${path}`, { method, body: form, signal });
   return handleResponse(res);
 }
 
@@ -69,7 +68,7 @@ export const collectionsApi = {
   uploadCover: async (profileId, id, file) => {
     const form = new FormData();
     form.append('file', file);
-    const res = await fetch(`${BASE}/profiles/${profileId}/collections/${id}/cover`, {
+    const res = await guardedFetch(`${BASE}/profiles/${profileId}/collections/${id}/cover`, {
       method: 'POST',
       body: form,
     });
@@ -79,7 +78,7 @@ export const collectionsApi = {
   removeCover: (profileId, id) =>
     requestJson(`/profiles/${profileId}/collections/${id}/cover`, { method: 'DELETE' }),
 
-   clone: (profileId, { sourceId, name }) =>
+  clone: (profileId, { sourceId, name }) =>
     requestJson(`/profiles/${profileId}/collections/clone`, {
       method: 'POST',
       body: { sourceId, name },

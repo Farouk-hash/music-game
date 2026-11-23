@@ -11,6 +11,12 @@ import { ProfileProvider } from '@/context/ProfileContext.jsx';
 import { ToastProvider } from '@/hooks/ui/useToast';
 import { ChallengeConfigProvider } from './context/ChallengeConfigContext';
 
+// One-time cleanup: earlier builds cached API responses and audio in this
+// service-worker cache. Phase 1 caches neither, so drop it for existing installs.
+if ('caches' in window) {
+  caches.delete('api-cache').catch(() => {});
+}
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>

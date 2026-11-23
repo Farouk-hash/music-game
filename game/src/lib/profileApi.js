@@ -1,37 +1,9 @@
 // game/src/lib/profileApi.js
 //
-// Fetch wrapper for the profile endpoints on music-game-wrangler.
-// Parallel to sporcleApi.js. Uses the same base URL as api.js
-// (VITE_API_BASE / /api/game), since profiles live in the same Worker.
+// Profile endpoints on music-game-wrangler. All requests go through the shared
+// guarded request in api.js, so they fail fast when offline.
 
-import { BASE } from "./api";
-
-
-async function request(path, options = {}) {
-  const res = await fetch(BASE + path, {
-    headers: { Accept: 'application/json', ...(options.headers ?? {}) },
-    ...options,
-  });
-
-  let body = null;
-  const text = await res.text();
-  if (text) {
-    try { body = JSON.parse(text); } catch { body = text; }
-  }
-
-  if (!res.ok) {
-    const message =
-      (body && typeof body === 'object' && body.error) ||
-      (typeof body === 'string' && body) ||
-      `Request failed (${res.status})`;
-    const err = new Error(message);
-    err.status = res.status;
-    err.body = body;
-    throw err;
-  }
-
-  return body;
-}
+import { BASE, requestBase as request } from './api.js';
 
 export const profileApi = {
   create: ({ nickname }) =>
@@ -41,7 +13,7 @@ export const profileApi = {
       body: JSON.stringify({ nickname }),
     }),
 
-   recover: ({ recoveryCode, email, phone }) =>
+  recover: ({ recoveryCode, email, phone }) =>
     request('/profiles/recover', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -70,7 +42,7 @@ export const profileApi = {
     return request(`/profiles/${id}/avatar`, {
       method: 'POST',
       body: fd,
-      // No Content-Type — the browser sets multipart boundary.
+      // No Content-Type: the browser sets the multipart boundary.
     });
   },
 

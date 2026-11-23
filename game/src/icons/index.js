@@ -6,3 +6,4 @@ export * from './collections/index.js';
 export * from './setup/index.js';
 export * from './ui/index.js';
 export * from './streak/index.js';
+export * from './network/IconWifiOff.jsx';

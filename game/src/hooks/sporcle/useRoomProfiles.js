@@ -10,6 +10,11 @@ import { profileApi } from '@/lib/profileApi.js';
  *
  * React Query dedupes + caches by `['profile', id]`, so this shares
  * cache entries with the local `useProfile` hook.
+ *
+ * Offline: queries that have never fetched stay paused (no request is made)
+ * and resume by themselves when the connection returns.
+ * `refetchOnReconnect` is off so a reconnect doesn't refetch every player's
+ * profile at once; avatars/nicknames rarely change mid-game.
  */
 export function useRoomProfiles(players = []) {
   const ids = Array.from(
@@ -24,6 +29,7 @@ export function useRoomProfiles(players = []) {
       gcTime: 30 * 60 * 1000,
       refetchOnMount: false,
       refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
       select: (data) => data?.profile ?? null,
     })),
   });

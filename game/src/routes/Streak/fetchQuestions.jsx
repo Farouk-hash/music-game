@@ -16,12 +16,18 @@ export async function fetchStreakQuestions({
   }
 
   const batches = [];
-  const presetCap = easyMode ? config.easyModeBatches : challengeConfig?.batches?.length ?? totalBatches;
+  // `easyModeBatches` is not part of the fallback config; `earlyBatches` is what
+  // useStreak uses for the number of batches in easy mode, so fall back to it.
+  // (Without the fallback, `undefined - 1` = NaN and easy mode threw
+  // "Preset missing for batch 1".)
+  const presetCap = easyMode
+    ? (config.easyModeBatches ?? config.earlyBatches)
+    : challengeConfig?.batches?.length ?? totalBatches;
 
   for (let b = 0; b < totalBatches; b++) {
-    // In easy mode, we only use the first 2 presets (warmup)
+    // In easy mode, we only use the first presets (warmup)
     const presetIndex = easyMode ? Math.min(b, presetCap - 1) : b;
-    
+
     // Fetch the specific preset from the server's config
     const batchConfig = challengeConfig.batches[presetIndex];
 
@@ -43,6 +49,8 @@ export async function fetchStreakQuestions({
       reversed: batchConfig.reversed,
     };
 
+    // api.post fails fast with an offline error (no request is made) if the
+    // connection is gone; the caller (Challenge.handleStart) shows a message.
     const data = await api.post('/round-dynamic', payload);
 
     const rawRounds =

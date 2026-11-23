@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { BorderContainer } from '@/components/layout/BorderContainer.jsx';
 import { Button } from '@/components/ui/Button.jsx';
 import { Loader } from '@/components/ui/Loader.jsx';
+import { OfflineBlock } from '@/components/network/OfflineBlock.jsx';
 import { useHostSporcle } from '@/hooks/sporcle/useHostSporcle.js';
 import { useHostSporcleIdentity } from '@/hooks/sporcle/useHostSporcleIdentity.js';
 import { useHostSporcleActions } from '@/hooks/sporcle/useHostSporcleActions.js';
@@ -28,7 +29,8 @@ export default function SporcleResult() {
   const myId = identity?.playerId ?? null;
 
   // playerId makes every poll double as a heartbeat on the server.
-  const { state, loading, error, refresh } = useHostSporcle(normalizedCode, { playerId: myId });
+  const { state, loading, error, refresh, isOffline } =
+    useHostSporcle(normalizedCode, { playerId: myId });
   const actions = useHostSporcleActions(normalizedCode, { onVersion: () => refresh() });
   const profilesById = useRoomProfiles(state?.players ?? []);
 
@@ -50,6 +52,18 @@ export default function SporcleResult() {
     beaconEnabled: true,
     onRejoined: refresh,
   });
+
+  // Opened (or reloaded) while offline: there is no state to show yet.
+  if (!state && isOffline) {
+    return (
+      <div className="max-w-lg mx-auto">
+        <OfflineBlock
+          message="The result needs a connection to load. It will appear as soon as you are back online."
+          onRetry={() => { if (navigator.onLine) refresh(); }}
+        />
+      </div>
+    );
+  }
 
   if (loading && !state) {
     return (
@@ -94,7 +108,8 @@ export default function SporcleResult() {
   }
 
   function handleBackToSetup() {
-    // Explicit leave: user clicked "Back to setup"
+    // Explicit leave: user clicked "Back to setup".
+    // Offline, the leave request fails silently; the server times the player out.
     if (myId) {
       markIntentionalLeave();
       actions.leave(myId).catch(() => {});
@@ -227,6 +242,12 @@ export default function SporcleResult() {
             </ul>
           </BorderContainer>
 
+          {isOffline && (
+            <p role="status" className="text-center text-xs text-wrong">
+              You're offline. Chat and "Play again" are unavailable until you reconnect.
+            </p>
+          )}
+
           {!isHost && (
             <p className="text-center text-xs text-ink-subtle">
               Waiting for the host to start another round…
@@ -243,7 +264,11 @@ export default function SporcleResult() {
             </button>
 
             {isHost && (
-              <Button variant="primary" onClick={() => setReplayOpen(true)}>
+              <Button
+                variant="primary"
+                disabled={isOffline}
+                onClick={() => setReplayOpen(true)}
+              >
                 Play again →
               </Button>
             )}

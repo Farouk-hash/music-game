@@ -1,6 +1,7 @@
-// game/src/components/layout/Header.jsx
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { useProfile } from '@/hooks/profiles/useProfile.js';
+import { useNetworkStatus } from '@/hooks/network/useNetworkStatus.js';
 import { ProfileChip } from '../domain/Profile/ProfileChip.jsx';
 import { ProfileModal } from '../domain/Profile/ProfileModal.jsx';
 import { FriendsEntry } from '../domain/Follow/FriendsEntry.jsx';
@@ -16,6 +17,24 @@ export function Header() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [collectionsOpen, setCollectionsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const { profile } = useProfile();
+  const isOnline = useNetworkStatus();
+
+  // ✅ UPDATED LOGIC: Disable if offline. 
+  // We don't care if we have a cached profile; we can't fetch new data anyway.
+  const isDisabled = !isOnline;
+
+  // ✅ Safe handlers that do nothing if disabled
+  const handleOpenCollections = () => {
+    if (!isDisabled) setCollectionsOpen(true);
+  };
+  const handleOpenFriends = () => {
+    if (!isDisabled) setFriendsOpen(true);
+  };
+  const handleOpenProfile = () => {
+    if (!isDisabled) setProfileOpen(true);
+  };
 
   // Auto-close the mobile menu if the viewport crosses into desktop.
   useEffect(() => {
@@ -44,9 +63,9 @@ export function Header() {
 
           {/* Desktop: split entries — Collections · Friends · Profile */}
           <nav className="hidden sm:flex items-center gap-3">
-            <CollectionsEntry onClick={() => setCollectionsOpen(true)} />
-            <FriendsEntry onClick={() => setFriendsOpen(true)} />
-            <ProfileChip />
+            <CollectionsEntry onClick={handleOpenCollections} disabled={isDisabled} />
+            <FriendsEntry onClick={handleOpenFriends} disabled={isDisabled} />
+            <ProfileChip disabled={isDisabled} onClick={handleOpenProfile} />
           </nav>
 
           {/* Mobile: burger + anchored dropdown */}
@@ -56,13 +75,15 @@ export function Header() {
               onClick={() => setMenuOpen((o) => !o)}
               aria-label="Account menu"
               aria-expanded={menuOpen}
-              className="
+              disabled={isDisabled} 
+              className={`
                 inline-flex items-center justify-center
                 w-10 h-10 rounded-md border border-border
                 bg-surface-2 text-ink
                 hover:border-accent-2
                 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent
-              "
+                ${isDisabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}
+              `}
             >
              <IconBurger />
             </button>
@@ -70,9 +91,10 @@ export function Header() {
             <MobileUserMenu
               open={menuOpen}
               onClose={() => setMenuOpen(false)}
-              onOpenProfile={() => { setMenuOpen(false); setProfileOpen(true); }}
-              onOpenFriends={() => { setMenuOpen(false); setFriendsOpen(true); }}
-              onOpenCollections={() => { setMenuOpen(false); setCollectionsOpen(true); }}
+              onOpenProfile={handleOpenProfile}
+              onOpenFriends={handleOpenFriends}
+              onOpenCollections={handleOpenCollections}
+              disabled={isDisabled} 
             />
           </div>
         </div>

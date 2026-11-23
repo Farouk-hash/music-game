@@ -1,24 +1,19 @@
-// game/src/components/domain/Profile/ProfileChip.jsx
 import { useState } from 'react';
 import { useProfileContext } from '../../../context/ProfileContext.jsx';
 import { PlayerAvatar } from '../../Avatar/PlayerAvatar.jsx';
 import { ProfileModal } from './ProfileModal.jsx';
 import { absoluteAvatarUrl } from '../../../lib/profileApi.js';
 
-/**
- * Header chip. Shows the current avatar + nickname.
- * Clicking opens the profile modal.
- *
- * Props:
- *   bare — if true, renders the chip content only (no modal, no click
- *          handler). Use inside a mobile menu row where the parent
- *          owns the modal. Default false: standalone with its own modal.
- */
-export function ProfileChip({ bare = false, onClick }) {
+export function ProfileChip({ bare = false, onClick, disabled }) {
   const { profile, isLoading } = useProfileContext();
   const [modalOpen, setModalOpen] = useState(false);
 
-  const open = onClick ?? (() => setModalOpen(true));
+  // ✅ Only open modal if not disabled and no external onClick is provided
+  const handleOpen = () => {
+    if (disabled) return;
+    if (onClick) onClick();
+    else setModalOpen(true);
+  };
 
   // Placeholder while the profile loads for the first time.
   if (isLoading || !profile) {
@@ -33,14 +28,17 @@ export function ProfileChip({ bare = false, onClick }) {
   const chip = (
     <button
       type="button"
-      onClick={open}
-      className="
+      onClick={handleOpen} // ✅ Use the safe handler
+      disabled={disabled}
+      className={`
         flex items-center gap-2 px-3 h-10 rounded-md
         border border-border bg-surface-2
         text-sm text-ink-muted
-        hover:border-accent-2 hover:text-ink
         transition-colors
-      "
+        ${disabled 
+          ? 'opacity-50 cursor-not-allowed pointer-events-none' 
+          : 'hover:border-accent-2 hover:text-ink'}
+      `}
       aria-label="Open profile"
     >
       <ProfileAvatarSmall profile={profile} size={28} />
@@ -60,12 +58,6 @@ export function ProfileChip({ bare = false, onClick }) {
   );
 }
 
-/**
- * Renders the profile's avatar in the chip.
- * Uses uploaded image if present, otherwise DiceBear.
- *
- * Exported so the mobile menu can reuse the exact same avatar logic.
- */
 export function ProfileAvatarSmall({ profile, size = 28 }) {
   const uploadedUrl = absoluteAvatarUrl(profile);
 

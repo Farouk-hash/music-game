@@ -10,6 +10,9 @@
 //
 // The beacon must NOT fire on React unmount (in-app navigation Play → Result
 // must not mark anyone as left), so it only listens to real page events.
+//
+// Offline: pings are skipped (nothing is sent). On reconnect a ping goes out
+// immediately, and if the server already marked us as left, we rejoin.
 
 import { useCallback, useEffect, useRef } from 'react';
 import { sporcleApi, leaveBeaconRaw } from '@/lib/sporcleApi.js';
@@ -35,16 +38,21 @@ export function useSporclePresence(
   const rejoinTriedRef = useRef(false);
   const beaconEnabledRef = useRef(beaconEnabled);
   const onRejoinedRef = useRef(onRejoined);
+  const meLeftRef = useRef(meLeft);
 
   useEffect(() => { beaconEnabledRef.current = beaconEnabled; }, [beaconEnabled]);
   useEffect(() => { onRejoinedRef.current = onRejoined; }, [onRejoined]);
+  useEffect(() => { meLeftRef.current = meLeft; }, [meLeft]);
 
   const rejoin = useCallback(() => {
     if (!code || !myId) return;
     sporcleApi
       .action(code, { type: 'rejoin', playerId: myId })
       .then(() => onRejoinedRef.current?.())
-      .catch(() => {});
+      .catch(() => {
+        // Allow another attempt (e.g. when the connection returns).
+        rejoinTriedRef.current = false;
+      });
   }, [code, myId]);
 
   /* 1 ── Instant leave on real page teardown + bfcache restore */
@@ -94,6 +102,7 @@ export function useSporclePresence(
 
     const send = () => {
       if (intentionalRef.current || beaconSentRef.current) return;
+      if (!navigator.onLine) return; // offline: nothing to send
       sporcleApi.ping(code, myId).catch(() => {});
     };
 
@@ -104,11 +113,18 @@ export function useSporclePresence(
     function onVisible() {
       if (document.visibilityState === 'visible') send();
     }
+    // Connection returned: tell the server we're alive right away instead of
+    // waiting up to PING_INTERVAL_MS (the server may be about to time us out).
+    function onOnline() {
+      send();
+    }
     document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('online', onOnline);
 
     return () => {
       clearInterval(t);
       document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('online', onOnline);
     };
   }, [code, myId]);
 
@@ -124,6 +140,17 @@ export function useSporclePresence(
     rejoinTriedRef.current = true;
     rejoin();
   }, [meLeft, rejoin]);
+
+  /* 3b ── A rejoin that failed (e.g. still offline) is retried on reconnect. */
+  useEffect(() => {
+    function onOnline() {
+      if (!meLeftRef.current) return;
+      if (intentionalRef.current || beaconSentRef.current) return;
+      rejoin();
+    }
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [rejoin]);
 
   const markIntentionalLeave = useCallback(() => {
     intentionalRef.current = true;

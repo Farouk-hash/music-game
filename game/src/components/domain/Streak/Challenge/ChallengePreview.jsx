@@ -1,6 +1,6 @@
-// game/src/routes/Streak/ChallengePreview.jsx
 import { BorderContainer } from '@/components/layout/BorderContainer.jsx';
 import { Button } from '@/components/ui/Button.jsx';
+import { IconWifiOff } from '@/icons/index.js'; // ✅ Import for offline indicator
 
 export function ChallengePreview({
   challenge,
@@ -16,11 +16,14 @@ export function ChallengePreview({
   grantingBonus,
   onStart,
   onWatchAd,
+  online = true, // ✅ NEW PROP: Network status from parent
 }) {
   const powerRemaining = power?.remaining ?? 0;
-  const canPlayPower = powerRemaining > 0;
+  const canPlayPower = powerRemaining > 0 && online;
   const bonusAtCap = (power?.bonus ?? 0) >= 3;
-  const dailyDisabled = dailyAttempted || fetchingQuestions;
+  
+  // ✅ Daily is disabled if attempted, fetching, OR offline
+  const dailyDisabled = !online || dailyAttempted || fetchingQuestions;
 
   return (
     <div className="max-w-2xl mx-auto pb-24 px-1 min-h-screen">
@@ -38,8 +41,12 @@ export function ChallengePreview({
           </div>
         )}
 
+  
         {/* Daily card */}
-        <BorderContainer border="all" className="p-8 sm:p-10 text-center space-y-4">
+        <BorderContainer 
+          border="all" 
+          className={`p-8 sm:p-10 text-center space-y-4 transition-opacity ${!online ? 'opacity-60' : ''}`}
+        >
           <p className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">
             Today · {challenge.challenge_date}
           </p>
@@ -56,21 +63,31 @@ export function ChallengePreview({
           <p className="text-sm text-ink-muted pt-2">
             {totalBatches} batches · {totalBatches * questionsPerBatch} questions
           </p>
+          
           <Button
-            onClick={() => onStart('daily')}
+            onClick={() => online && onStart('daily')}
             disabled={dailyDisabled}
             className="w-full mt-4"
           >
-            {dailyAttempted
-              ? '✓ Daily complete — come back tomorrow'
-              : fetchingQuestions
-                ? 'Loading…'
-                : 'Start daily challenge'}
+            {!online ? (
+              <span className="inline-flex items-center gap-2">
+                <IconWifiOff className="w-4 h-4" /> Offline
+              </span>
+            ) : dailyAttempted ? (
+              '✓ Daily complete — come back tomorrow'
+            ) : fetchingQuestions ? (
+              'Loading…'
+            ) : (
+              'Start daily challenge'
+            )}
           </Button>
         </BorderContainer>
 
         {/* Power card */}
-        <BorderContainer border="all" className="p-6 space-y-3">
+        <BorderContainer 
+          border="all" 
+          className={`p-6 space-y-3 transition-opacity ${!online ? 'opacity-60' : ''}`}
+        >
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs uppercase tracking-[0.2em] text-highlight">
@@ -82,26 +99,42 @@ export function ChallengePreview({
             </div>
             <span className="text-2xl">⚡</span>
           </div>
+          
+          {/* ✅ Primary Action Button */}
           <Button
             variant="secondary"
-            onClick={() => onStart('power')}
-            disabled={!canPlayPower || fetchingQuestions}
+            onClick={() => online && onStart('power')}
+            disabled={!canPlayPower || fetchingQuestions || !online} // ✅ Explicitly disable when offline
             className="w-full"
           >
-            {canPlayPower
-              ? `Play power (${powerRemaining} left)`
-              : 'Out of power attempts'}
+            {!online ? (
+              <span className="inline-flex items-center gap-2">
+                <IconWifiOff className="w-4 h-4" /> Offline
+              </span>
+            ) : canPlayPower ? (
+              `Play power (${powerRemaining} left)`
+            ) : (
+              'Out of power attempts'
+            )}
           </Button>
-          {!canPlayPower && !bonusAtCap && (
+          
+          {/* ✅ Secondary Ad Button - ONLY show if online AND out of power AND under cap */}
+          {!online ? null : !canPlayPower && !bonusAtCap && (
             <Button
               variant="secondary"
-              onClick={onWatchAd}
+              onClick={onWatchAd} // ✅ No need for online guard here since parent condition handles it
               disabled={grantingBonus}
               className="w-full text-xs"
             >
-              {grantingBonus ? 'Granting…' : '🎬 Watch a video for +1 attempt'}
+              {grantingBonus ? (
+                'Granting…'
+              ) : (
+                '🎬 Watch a video for +1 attempt'
+              )}
             </Button>
           )}
+          
+          {/* ✅ Bonus Cap Message - Only relevant when online or viewing cached state */}
           {bonusAtCap && (
             <p className="text-center text-xs text-ink-subtle">
               Bonus limit reached for today

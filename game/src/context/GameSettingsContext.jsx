@@ -14,6 +14,12 @@ export function GameSettingsProvider({ children }) {
     localStorage.getItem('game.reversedAnswers') || 'no'
   );
 
+  // MEMORY GAME ADDED ; 
+  const [memoryGame, setMemoryGame] = useState(() => {
+    const saved = localStorage.getItem('game.memoryGame');
+    return ['none', 'mixed', 'all'].includes(saved) ? saved : 'none';
+  });
+
   const [timer, setTimer] = useState(() => {
     const saved = localStorage.getItem('game.timer');
     if (!saved || saved === 'off') return null;
@@ -52,7 +58,8 @@ export function GameSettingsProvider({ children }) {
     localStorage.setItem('game.skips', String(skips));
     localStorage.setItem('game.removes', String(removes));
     localStorage.setItem('game.reveals', String(reveals));
-  }, [answerMode, reversedAnswers, timer, audioRendition, instruments, skips, removes, reveals]);
+    localStorage.setItem('game.memoryGame', memoryGame);
+  }, [answerMode, reversedAnswers, timer, audioRendition, instruments, skips, removes, reveals , memoryGame]);
 
   const applySettings = useCallback((partial) => {
     if (partial.questionTypes !== undefined) setQuestionTypes(partial.questionTypes);
@@ -79,6 +86,9 @@ export function GameSettingsProvider({ children }) {
     skips, setSkips,
     removes, setRemoves,
     reveals, setReveals,
+    // MEMORY GAME ADDED ;
+    memoryGame, setMemoryGame,
+
     applySettings,
   };
 

@@ -1,6 +1,7 @@
 // game/src/hooks/sporcle/useHostSporcleActions.js
 import { useCallback, useState } from 'react';
 import { sporcleApi } from '@/lib/sporcleApi.js';
+import { isNetworkError } from '@/lib/api.js';
 
 export function useHostSporcleActions(code, { onVersion } = {}) {
   const [pending, setPending] = useState(null);
@@ -15,12 +16,15 @@ export function useHostSporcleActions(code, { onVersion } = {}) {
       if (onVersion && typeof result.version === 'number') onVersion(result.version);
       return result;
     } catch (e) {
-      console.error('[action failed]', {
-        type,
-        playerId: body.playerId,
-        error: e.message,
-        body: e.body,
-      });
+      // Offline / unreachable are expected situations, not bugs: no error spam.
+      if (!isNetworkError(e)) {
+        console.error('[action failed]', {
+          type,
+          playerId: body.playerId,
+          error: e.message,
+          body: e.body,
+        });
+      }
       setError(e);
       throw e;
     } finally {

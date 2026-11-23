@@ -114,22 +114,24 @@ export default function Setup() {
     settings.setQuestionTypes(current.filter((t) => t !== slug));
   }, [settings]);
 
-  function buildPayload() {
-    return {
-      genres: scope.genreMode === 'some' ? [...scope.selectedGenres] : [],
-      artists: [...scope.effectiveSelectedArtists],
-      years: [...scope.effectiveSelectedYears],
-      types: effectiveQuestionTypes,
-      rendition: settings.audioRendition === 'reverse' && reversedClipsCount > 0 ? 'reverse' : 'forward',
-      instruments: settings.instruments,
-      answerMode: settings.answerMode,
-      timer: settings.timer,
-      reversed: settings.reversedAnswers,
-      skips:   settings.skips   ?? 0,
-      removes: settings.removes ?? 0,
-      reveals: settings.reveals ?? 0,
-    };
-  }
+ function buildPayload() {
+  return {
+    genres: scope.genreMode === 'some' ? [...scope.selectedGenres] : [],
+    artists: [...scope.effectiveSelectedArtists],
+    years: [...scope.effectiveSelectedYears],
+    types: effectiveQuestionTypes,
+    rendition: settings.audioRendition === 'reverse' && reversedClipsCount > 0 ? 'reverse' : 'forward',
+    instruments: settings.instruments,
+    answerMode: settings.answerMode,
+    timer: settings.timer,
+    reversed: settings.reversedAnswers,
+    skips:   settings.skips   ?? 0,
+    removes: settings.removes ?? 0,
+    reveals: settings.reveals ?? 0,
+    // ✅ CRITICAL FIX: Include memoryGame in the payload
+    memoryGame: settings.memoryGame,
+  };
+}
 
   function handlePlay(level) {
     const payload = buildPayload();

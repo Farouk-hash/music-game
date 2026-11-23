@@ -1,7 +1,9 @@
-// game/src/hooks/profile/useProfile.js
+// game/src/hooks/profiles/useProfile.js
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { profileApi } from '@/lib/profileApi.js';
+import { isNetworkError, offlineError } from '@/lib/api.js';
+import { useNetworkStatus } from '@/hooks/network/useNetworkStatus.js';
 import {
   getProfileId,
   setProfileId,
@@ -21,11 +23,19 @@ const EMPTY_FAVORITES = Object.freeze({
   questionTypes: [],
 });
 
+const BOOT_RETRY_MS = 5000;
+
 function shortSuffix() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let s = '';
   for (let i = 0; i < 3; i++) s += chars[Math.floor(Math.random() * chars.length)];
   return s;
+}
+
+// Every write needs the server. Fail fast with an identifiable offline error
+// instead of letting the request (or an upload) start and hang.
+function assertOnline() {
+  if (!navigator.onLine) throw offlineError();
 }
 
 let creatingPromise = null;
@@ -51,8 +61,10 @@ function ensureProfileCreated() {
 }
 
 function useEnsureProfile() {
+  const online = useNetworkStatus();
   const [id, setId] = useState(() => getProfileId());
   const [bootError, setBootError] = useState(null);
+  const [attempt, setAttempt] = useState(0);
 
   const [recoveryCode, setRecoveryCodeState] = useState(() => getRecoveryCode());
   const [recoveryHidden, setRecoveryHidden] = useState(() => {
@@ -62,8 +74,13 @@ function useEnsureProfile() {
   });
 
   useEffect(() => {
-    if (id) return;
+    // Already have a profile, or offline: do nothing. When the connection
+    // returns, `online` changes and this effect runs again.
+    if (id || !online) return;
+
     let cancelled = false;
+    let timer = null;
+    setBootError(null);
 
     ensureProfileCreated()
       .then((newId) => {
@@ -73,16 +90,29 @@ function useEnsureProfile() {
         setRecoveryHidden(false);
       })
       .catch((e) => {
-        if (!cancelled) setBootError(e);
+        if (cancelled) return;
+        if (isNetworkError(e)) {
+          // Server unreachable while the browser says "online": retry later
+          // without surfacing an error.
+          timer = setTimeout(() => {
+            if (!cancelled) setAttempt((n) => n + 1);
+          }, BOOT_RETRY_MS);
+        } else {
+          setBootError(e);
+        }
       });
 
-    return () => { cancelled = true; };
-  }, [id]);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [id, online, attempt]);
 
   return {
     id, setId, bootError,
     recoveryCode, setRecoveryCodeState,
     recoveryHidden, setRecoveryHidden,
+    needsConnection: !id && !online,
   };
 }
 
@@ -93,6 +123,7 @@ export function useProfile() {
     id, setId, bootError,
     recoveryCode, setRecoveryCodeState,
     recoveryHidden, setRecoveryHidden,
+    needsConnection,
   } = useEnsureProfile();
 
   const query = useQuery({
@@ -112,7 +143,8 @@ export function useProfile() {
   });
 
   const profile = query.data?.profile ?? null;
-  const isLoading = !id || (query.isLoading && !profile);
+  // First visit while offline: there is nothing to wait for, so don't spin forever.
+  const isLoading = needsConnection ? false : (!id || (query.isLoading && !profile));
   const queryError = query.error;
   const refetch = query.refetch;
 
@@ -129,46 +161,55 @@ export function useProfile() {
   }, [id, profile]);
 
   const updateNickname = useCallback(async (nickname) => {
+    assertOnline();
     const r = await profileApi.patch(id, { nickname });
     if (r?.profile) writeProfileToCache(r.profile);
   }, [id, writeProfileToCache]);
 
   const updateAvatarStyle = useCallback(async (style, seed) => {
+    assertOnline();
     const r = await profileApi.patch(id, { avatar_style: style, avatar_seed: seed });
     if (r?.profile) writeProfileToCache(r.profile);
   }, [id, writeProfileToCache]);
 
   const uploadAvatar = useCallback(async (file) => {
+    assertOnline();
     const r = await profileApi.uploadAvatar(id, file);
     if (r?.profile) writeProfileToCache(r.profile);
   }, [id, writeProfileToCache]);
 
   const removeUploadedAvatar = useCallback(async () => {
+    assertOnline();
     const r = await profileApi.deleteAvatar(id);
     if (r?.profile) writeProfileToCache(r.profile);
   }, [id, writeProfileToCache]);
 
   const save = useCallback(async (payload) => {
+    assertOnline();
     const r = await profileApi.save(id, payload);
     if (r?.profile) writeProfileToCache(r.profile);
   }, [id, writeProfileToCache]);
 
   const addFavorite = useCallback(async (kind, value) => {
+    assertOnline();
     const r = await profileApi.addFavorite(id, kind, value);
     if (r?.profile) writeProfileToCache(r.profile);
   }, [id, writeProfileToCache]);
 
   const removeFavorite = useCallback(async (kind, value) => {
+    assertOnline();
     const r = await profileApi.removeFavorite(id, kind, value);
     if (r?.profile) writeProfileToCache(r.profile);
   }, [id, writeProfileToCache]);
 
   const clearUploadedAvatarAndKind = useCallback(async () => {
+    assertOnline();
     const r = await profileApi.deleteAvatar(id);
     if (r?.profile) writeProfileToCache(r.profile);
   }, [id, writeProfileToCache]);
 
   const updateContacts = useCallback(async ({ email, phone }) => {
+    assertOnline();
     const patch = {};
     if (email !== undefined) patch.email = email;
     if (phone !== undefined) patch.phone = phone;
@@ -177,6 +218,7 @@ export function useProfile() {
   }, [id, writeProfileToCache]);
 
   const recoverProfile = useCallback(async ({ recoveryCode, email, phone }) => {
+    assertOnline(); // must happen BEFORE any local state is touched
     const oldId = getProfileId();
 
     const r = await profileApi.recover({ recoveryCode, email, phone });
@@ -223,6 +265,7 @@ export function useProfile() {
     profile,
     favorites,
     isLoading,
+    needsConnection,
     error: bootError ?? queryError,
 
     updateNickname,
@@ -247,6 +290,7 @@ export function useProfile() {
     profile,
     favorites,
     isLoading,
+    needsConnection,
     bootError,
     queryError,
 
