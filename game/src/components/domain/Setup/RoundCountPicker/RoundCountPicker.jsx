@@ -1,7 +1,7 @@
 // game/src/components/domain/RoundCountPicker.jsx
 import { ROUND_COUNT_OPTIONS } from "@/constants/roundCount";
 import { HorizontalScroll } from '@/components/ui/HorizontalScroll';
-import { ChoiceCard } from "../Modals/ChoiceCard";
+import { ChoiceCard } from "../ChoiceCard/ChoiceCard";
 
 export function RoundCountPicker({ value, onChange, disabled = false }) {
   return (

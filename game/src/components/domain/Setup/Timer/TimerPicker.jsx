@@ -1,7 +1,7 @@
 // game/src/components/domain/Setup/Timer/TimerPicker.jsx
 import { getTimerOptions } from '@/constants/timer.js';
 import { HorizontalScroll } from '@/components/ui/HorizontalScroll';
-import { ChoiceCard } from '../Modals/ChoiceCard';
+import { ChoiceCard } from '../ChoiceCard/ChoiceCard';
 
 export function TimerPicker({ value, onChange, disabled = false }) {
   const OPTIONS = getTimerOptions();

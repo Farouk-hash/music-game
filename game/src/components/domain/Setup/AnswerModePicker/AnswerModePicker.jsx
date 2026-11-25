@@ -1,6 +1,6 @@
 // game/src/components/domain/AnswerModePicker/AnswerModePicker.jsx
 import { HorizontalScroll } from '@/components/ui/HorizontalScroll';
-import { ChoiceCard } from '../Modals/ChoiceCard';
+import { ChoiceCard } from '../ChoiceCard/ChoiceCard';
 import { ANSWER_MODE_OPTIONS } from '@/constants';
 
 

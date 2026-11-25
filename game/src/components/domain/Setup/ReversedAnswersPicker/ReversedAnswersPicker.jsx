@@ -1,6 +1,6 @@
 // game/src/components/domain/Setup/ReversedAnswersPicker/ReversedAnswersPicker.jsx
 import { HorizontalScroll } from '@/components/ui/HorizontalScroll';
-import { ChoiceCard } from '../Modals/ChoiceCard.jsx';
+import { ChoiceCard } from '../ChoiceCard/ChoiceCard.jsx';
 import { REVERSED_ANSWER_OPTIONS } from '@/constants/reversedAnswers';
 
 export function ReversedAnswersPicker({ value, onChange, disabled }) {

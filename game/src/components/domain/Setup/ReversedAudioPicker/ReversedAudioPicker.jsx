@@ -1,6 +1,6 @@
 // game/src/components/domain/Setup/ReversedAudio/ReversedAudioPicker.jsx
 import { HorizontalScroll } from '@/components/ui/HorizontalScroll';
-import { ChoiceCard } from '../Modals/ChoiceCard.jsx';
+import { ChoiceCard } from '../ChoiceCard/ChoiceCard.jsx';
 import { REVERSED_AUDIO_OPTIONS } from '@/constants/reversedAudioOptions.js';
 
 export function ReversedAudioPicker({ 

@@ -1,6 +1,6 @@
 // game/src/components/domain/Setup/Modals/LevelModalWrapper.jsx
 import { Modal } from '@/components/Modal/Modal.jsx';
-import { SharedGameSettings } from './SharedGameSettings.jsx';
+import { SharedGameSettings } from '../Shared-Game-Settings/SharedGameSettings.jsx';
 import { IconClose, IconPlay } from '@/icons/index.js';
 
 export function LevelModalWrapper({

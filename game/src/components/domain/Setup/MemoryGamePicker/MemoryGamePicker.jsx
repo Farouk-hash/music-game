@@ -1,6 +1,6 @@
 import { options } from '@/constants/memoryGameOptions.js';
 import { HorizontalScroll } from '@/components/ui/HorizontalScroll';
-import { ChoiceCard } from '../Modals/ChoiceCard';
+import { ChoiceCard } from '../ChoiceCard/ChoiceCard';
 
 export function MemoryGamePicker({ value, onChange, disabled }) {
   return (

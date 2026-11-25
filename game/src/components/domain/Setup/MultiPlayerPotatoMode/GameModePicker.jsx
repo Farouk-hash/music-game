@@ -1,5 +1,5 @@
 import { HorizontalScroll } from '@/components/ui/HorizontalScroll';
-import { ChoiceCard } from '../Modals/ChoiceCard.jsx';
+import { ChoiceCard } from '../ChoiceCard/ChoiceCard.jsx';
 import { MULTIPLAYER_MODE_OPTIONS } from '@/constants/potato-multiplayersmode.js';
 
 

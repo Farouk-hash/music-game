@@ -1,7 +1,7 @@
-import { SharedGameSettings } from '../../Setup/Modals/SharedGameSettings.jsx';
+import { SharedGameSettings } from '../../Setup/Shared-Game-Settings/SharedGameSettings.jsx';
 import { Badge } from '../primitives/Badge.jsx';
 import { IconChevronUp, IconChevronDown, IconTrash } from '@/icons';
-import { ChoiceCard } from '../../Setup/Modals/ChoiceCard.jsx';
+import { ChoiceCard } from '../../Setup/ChoiceCard/ChoiceCard.jsx';
 import { configToRound, roundToConfig } from './roundRowConfig.js';
 
 const LEVELS = [1, 2, 3];

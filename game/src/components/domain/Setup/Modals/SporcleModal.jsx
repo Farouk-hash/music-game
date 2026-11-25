@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Modal } from '@/components/Modal/Modal.jsx';
 import { Button } from '@/components/ui/Button.jsx';
-import { SharedGameSettings } from './SharedGameSettings.jsx';
+import { SharedGameSettings } from '../Shared-Game-Settings/SharedGameSettings.jsx';
 import { useGameSettings } from '@/context/GameSettingsContext.jsx';
 import { sporcleApi } from '@/lib/sporcleApi.js';
 import { RoomPanel } from '../../Sporcle/RoomPanel.jsx';

@@ -1,7 +1,7 @@
 // game/src/components/domain/Setup/Instruments/InstrumentsPicker.jsx
 import { INSTRUMENT_OPTIONS } from "@/constants";
 import { HorizontalScroll } from '@/components/ui/HorizontalScroll';
-import { ChoiceCard } from '../Modals/ChoiceCard.jsx';
+import { ChoiceCard } from '../ChoiceCard/ChoiceCard.jsx';
 
 export function InstrumentsPicker({ value, onChange, disabled = false }) {
   return (
