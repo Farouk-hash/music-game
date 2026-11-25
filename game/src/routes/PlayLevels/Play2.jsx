@@ -1,6 +1,6 @@
-import { usePlayParams } from '@/hooks/rounds/usePlayParams.js';
-import { useRoundMulti } from '@/hooks/rounds/useRoundMulti.js';
-import { useGameEngine } from '@/hooks/rounds/useGameEngine.js';
+import { usePlayParams } from '@/hooks/rounds/solo/usePlayParams.js';
+import { useRoundMulti } from '@/hooks/rounds/solo/useRoundMulti.js';
+import { useGameEngine } from '@/hooks/rounds/solo/useGameEngine.js';
 import PlayView from '@/components/domain/Play/PlayView.jsx';
 
 export default function Play2() {

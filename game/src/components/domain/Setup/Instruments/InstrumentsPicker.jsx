@@ -5,7 +5,7 @@ import { ChoiceCard } from '../Modals/ChoiceCard.jsx';
 
 export function InstrumentsPicker({ value, onChange, disabled = false }) {
   return (
-    <HorizontalScroll size="md">
+    <HorizontalScroll >
       {INSTRUMENT_OPTIONS.map((opt) => (
         <ChoiceCard
           key={opt.value}

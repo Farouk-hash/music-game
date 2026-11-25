@@ -1,8 +1,8 @@
 // game/src/routes/Play3.jsx
 import { useState, useRef } from 'react';
-import { usePlayParams } from '@/hooks/rounds/usePlayParams.js';
-import { useRoundSet } from '@/hooks/rounds/useRoundSet.js';
-import { useGameEngineL3 } from '@/hooks/rounds/useGameEngineL3.js';
+import { usePlayParams } from '@/hooks/rounds/solo/usePlayParams.js';
+import { useRoundSet } from '@/hooks/rounds/solo/useRoundSet.js';
+import { useGameEngineL3 } from '@/hooks/rounds/solo/useGameEngineL3.js';
 import { Button } from '@/components/ui/Button.jsx';
 import { Loader } from '@/components/ui/Loader.jsx';
 import { BorderContainer } from '@/components/layout/BorderContainer';

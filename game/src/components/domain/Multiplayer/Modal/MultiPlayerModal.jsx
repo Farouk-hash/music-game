@@ -1,7 +1,9 @@
 // game/src/components/domain/Multiplayer/MultiplayerModal.jsx
 import { useState } from 'react';
-import { LevelModalWrapper } from '../Setup/Modals/LevelModalWrapper.jsx';
-import { LEVELS, PLAYER_COUNTS, ROUND_CHOICES } from '@/constants/MultiPlayers.js';
+import { LevelModalWrapper } from '../../Setup/Modals/LevelModalWrapper.jsx';
+import { LEVELS, PLAYER_COUNTS } from '@/constants/MultiPlayers.js';
+import { MultiplayerModePicker } from '../../Setup/MultiPlayerPotatoMode/GameModePicker.jsx';
+import { useGameSettings } from '@/context/GameSettingsContext.jsx';
 
 function defaultNames(n) {
   return Array.from({ length: n }, (_, i) => `Player ${i + 1}`);
@@ -22,6 +24,11 @@ export function MultiplayerModal({
   const [names, setNames] = useState(() => defaultNames(2));
   const [level, setLevel] = useState(1);
   const [roundsPerPlayer, setRoundsPerPlayer] = useState(defaultRoundsPerPlayer);
+
+  // Single source of truth: the settings context (persisted in localStorage).
+  // Before, the modal kept its own copy, so Setup (which builds the payload from
+  // the context) never saw the player's choice.
+  const { multiplayerMode, setMultiplayerMode } = useGameSettings();
 
   function changePlayerCount(n) {
     setPlayerCount(n);
@@ -52,6 +59,7 @@ export function MultiplayerModal({
       names: names.map(n => n.trim()),
       level,
       roundsPerPlayer,
+      multiplayerMode, // 'normal' | 'hotpotato'
     });
   }
 
@@ -66,19 +74,21 @@ export function MultiplayerModal({
       disabledReasons={disabledReasons}
       reversedClipsCount={reversedClipsCount}
       allowInstruments={allowInstruments}
-      hideRoundCount={true} 
+      hideRoundCount={true}
       canPlay={canStart}
       playLabel={starting ? 'Starting…' : 'Play'}
+      isInMultiplayerModal={true} // hides the solo-only memory game picker
     >
       <p className="text-sm text-ink-muted">
-        Everyone plays on this device, taking turns. Rounds alternate between players.
+        Everyone plays on this device, taking turns.{' '}
+        {multiplayerMode === 'hotpotato'
+          ? 'Everyone answers the same questions, results are revealed at the end.'
+          : 'Rounds alternate between players.'}
       </p>
 
       {/* Player count */}
       <div className="space-y-2">
-        <p className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">
-          Players
-        </p>
+        <p className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">Players</p>
         <div className="flex gap-2">
           {PLAYER_COUNTS.map(n => (
             <button
@@ -101,9 +111,7 @@ export function MultiplayerModal({
 
       {/* Names */}
       <div className="space-y-2">
-        <p className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">
-          Names
-        </p>
+        <p className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">Names</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {names.map((name, i) => (
             <input
@@ -122,9 +130,7 @@ export function MultiplayerModal({
 
       {/* Level */}
       <div className="space-y-2">
-        <p className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">
-          Level
-        </p>
+        <p className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">Level</p>
         <div className="grid grid-cols-2 gap-2">
           {LEVELS.map(l => (
             <button
@@ -146,7 +152,14 @@ export function MultiplayerModal({
         </div>
       </div>
 
-     
+      {/* Game mode: normal | hotpotato */}
+      <div className="space-y-2">
+        <p className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">Game Mode</p>
+        <MultiplayerModePicker
+          value={multiplayerMode}
+          onChange={setMultiplayerMode}
+        />
+      </div>
     </LevelModalWrapper>
   );
 }

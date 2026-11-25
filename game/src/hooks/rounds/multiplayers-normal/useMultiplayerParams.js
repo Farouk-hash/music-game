@@ -1,6 +1,6 @@
 // game/src/hooks/useMultiplayerParams.js
 import { useMemo } from 'react';
-import { usePlayParams } from './usePlayParams.js';
+import { usePlayParams } from '../solo/usePlayParams.js';
 
 export function useMultiplayerParams() {
   const base = usePlayParams();

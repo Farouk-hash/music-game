@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useGameSettings } from '@/context/GameSettingsContext.jsx';
 import { useToast } from '@/hooks/ui/useToast.jsx';
 
+
 export function useCollectionMultiplayer() {
   const navigate = useNavigate();
   const settings = useGameSettings();
@@ -13,7 +14,6 @@ export function useCollectionMultiplayer() {
 
   const openMultiplayerFor = useCallback((collection, { onCloseReadOnly } = {}) => {
     const rounds = Array.isArray(collection.rounds) ? collection.rounds : [];
-    // Normalize levels to an array
     const levels = collection.levels 
       ? Array.from(collection.levels).sort((a, b) => a - b) 
       : [];
@@ -21,7 +21,7 @@ export function useCollectionMultiplayer() {
     const firstLevel = levels.length > 0 ? levels[0] : null;
     const seedRound = firstLevel != null
       ? rounds.find(r => Number(r.level) === Number(firstLevel))
-      : rounds[0]; // fallback to first round if no levels array
+      : rounds[0];
 
     if (seedRound) {
       settings.applySettings({
@@ -32,6 +32,12 @@ export function useCollectionMultiplayer() {
         audioRendition: seedRound.reversedAudio ? 'reverse' : 'forward',
         instruments: seedRound.instruments || 'none',
         roundCount: seedRound.rounds || 10,
+        
+        // ✅ NEW: Apply lifelines and memory mode to global settings
+        skips: seedRound.skips ?? 0,
+        removes: seedRound.removes ?? 0,
+        reveals: seedRound.reveals ?? 0,
+        memoryGame: seedRound.memoryGame || 'none',
       });
     }
 
@@ -50,21 +56,17 @@ export function useCollectionMultiplayer() {
       return;
     }
 
-    // 1. Normalize levels properly
     const levelsAvailable = col.levels 
       ? Array.from(col.levels).sort((a, b) => a - b) 
       : [];
 
-    // 2. Determine the effective level
     const effectiveLevel = levelsAvailable.length > 0
       ? (levelsAvailable.includes(level) ? level : levelsAvailable[0])
       : 1;
 
-    // 3. Find the round
     const rounds = Array.isArray(col.rounds) ? col.rounds : [];
     let targetRound = rounds.find(r => Number(r.level) === Number(effectiveLevel));
     
-    // 4. Fallback: if not found (e.g. empty levels array), just use the first available round
     if (!targetRound && rounds.length > 0) {
       targetRound = rounds[0];
     }
@@ -74,7 +76,6 @@ export function useCollectionMultiplayer() {
       return;
     }
 
-    // 5. Use the ACTUAL level of the round we found
     const actualLevel = targetRound.level || effectiveLevel;
 
     const payload = {
@@ -91,6 +92,12 @@ export function useCollectionMultiplayer() {
       players: names,
       level: actualLevel,
       roundsPerPlayer,
+      
+      // ✅ NEW: Include lifelines and memory mode in multiplayer payload
+      skips: targetRound.skips ?? 0,
+      removes: targetRound.removes ?? 0,
+      reveals: targetRound.reveals ?? 0,
+      memoryGame: targetRound.memoryGame || 'none',
     };
 
     sessionStorage.setItem('game.lastPlayParams', JSON.stringify(payload));

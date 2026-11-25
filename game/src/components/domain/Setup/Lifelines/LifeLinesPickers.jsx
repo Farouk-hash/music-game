@@ -7,7 +7,7 @@ export function LifelinesPicker({ value = 0, onChange, disabled = false, max = 1
   const options = LIFELINE_OPTIONS.filter(opt => opt <= max);
 
   return (
-    <HorizontalScroll size="sm">
+    <HorizontalScroll >
       {options.map((opt) => (
         <ChoiceCard
           key={opt}

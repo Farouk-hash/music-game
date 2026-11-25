@@ -5,7 +5,7 @@ import { ChoiceCard } from "../Modals/ChoiceCard";
 
 export function RoundCountPicker({ value, onChange, disabled = false }) {
   return (
-    <HorizontalScroll size="sm">
+    <HorizontalScroll >
       {ROUND_COUNT_OPTIONS.map((opt) => (
         <ChoiceCard
           key={opt.value}

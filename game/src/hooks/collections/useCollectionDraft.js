@@ -1,23 +1,28 @@
-// game/src/hooks/collections/useCollectionDraft.js
 import { useState, useCallback } from 'react';
 import { TIMER_SECONDS } from '@/constants/timer.js';
 
-// Default: timer ON, using the "choose" preset (matches the game's actual timer).
-const DEFAULT_TIMER = TIMER_SECONDS.short;   // 5
+const DEFAULT_TIMER = TIMER_SECONDS.short;
 const DEFAULT_ROUNDS = 5;
 const VALID_REVERSED_ANSWERS = ['no', 'some', 'all'];
+// ✅ NEW: Define all valid modes including 'none' for Standard collections
+const VALID_MODES = ['none', 'speed', 'collect']; 
 
 function makeDefaultRound(level = 1) {
   return {
     level,
     questionTypes: ['name-track'],
     answerMode: 'choose',
-    mode: 'speed',
+    // ✅ FIXED: Use 'none' to match RoundRow's Standard toggle
+    mode: 'none', 
     rounds: DEFAULT_ROUNDS,
     reversedAnswers: 'no',
     reversedAudio: false,
     instruments: 'none',
     timer: DEFAULT_TIMER,
+    skips: 0,
+    removes: 0,
+    reveals: 0,
+    memoryGame: 'none',
   };
 }
 
@@ -42,7 +47,7 @@ function readReversedAnswers(raw) {
 }
 
 function readTimer(raw, fallback) {
-  if (raw === null) return null;        // explicitly no timer
+  if (raw === null) return null;
   if (raw === undefined) return fallback;
   return raw;
 }
@@ -55,12 +60,17 @@ export function draftFromCollection(collection) {
     level: r.level ?? 1,
     questionTypes: Array.isArray(r.questionTypes) ? r.questionTypes : ['name-track'],
     answerMode: r.answerMode ?? 'choose',
-    mode: r.mode ?? 'speed',
+    // ✅ SAFE: Default to 'none' if stored mode is invalid/missing
+    mode: VALID_MODES.includes(r.mode) ? r.mode : 'none', 
     rounds: r.rounds ?? DEFAULT_ROUNDS,
     reversedAnswers: readReversedAnswers(r.reversedAnswers),
     reversedAudio: Boolean(r.reversedAudio),
     instruments: r.instruments ?? 'none',
     timer: readTimer(r.timer, DEFAULT_TIMER),
+    skips: r.skips ?? 0,
+    removes: r.removes ?? 0,
+    reveals: r.reveals ?? 0,
+    memoryGame: r.memoryGame || 'none',
   }));
 
   return {
@@ -94,6 +104,10 @@ export function draftToBody(draft) {
       reversedAudio: Boolean(r.reversedAudio),
       instruments: r.instruments,
       timer: r.timer ?? null,
+      skips: r.skips ?? 0,
+      removes: r.removes ?? 0,
+      reveals: r.reveals ?? 0,
+      memoryGame: r.memoryGame || 'none',
     })),
   };
 }
@@ -102,16 +116,8 @@ export function useCollectionDraft(initialDraft) {
   const [draft, setDraft] = useState(() => initialDraft ?? emptyDraft());
 
   const setName = useCallback((name) => setDraft((d) => ({ ...d, name })), []);
-
-  const setCoverFile = useCallback(
-    (file) => setDraft((d) => ({ ...d, coverFile: file })),
-    []
-  );
-
-  const setCover = useCallback(
-    (cover) => setDraft((d) => ({ ...d, cover })),
-    []
-  );
+  const setCoverFile = useCallback((file) => setDraft((d) => ({ ...d, coverFile: file })), []);
+  const setCover = useCallback((cover) => setDraft((d) => ({ ...d, cover })), []);
 
   const toggleLevel = useCallback((level) => {
     setDraft((d) => {
@@ -197,6 +203,7 @@ export function useCollectionDraft(initialDraft) {
     if (!draft.name.trim()) errors.push('Name is required.');
     if (draft.levels.size === 0) errors.push('Pick at least one level.');
     if (draft.rounds.length === 0) errors.push('Add at least one round.');
+    
     draft.rounds.forEach((r, i) => {
       if (!draft.levels.has(r.level)) {
         errors.push(`Round ${i + 1}: level ${r.level} is not enabled.`);
@@ -204,9 +211,12 @@ export function useCollectionDraft(initialDraft) {
       if (!Array.isArray(r.questionTypes) || r.questionTypes.length === 0) {
         errors.push(`Round ${i + 1}: pick at least one question type.`);
       }
-      if (r.mode !== 'speed' && r.mode !== 'collect') {
-        errors.push(`Round ${i + 1}: mode must be speed or collect.`);
+      
+      // ✅ FIXED: Validate against ALL valid modes, not just sporcle ones
+      if (!VALID_MODES.includes(r.mode)) {
+        errors.push(`Round ${i + 1}: invalid game mode.`);
       }
+      
       if (!VALID_REVERSED_ANSWERS.includes(r.reversedAnswers)) {
         errors.push(`Round ${i + 1}: reversed answers must be no, some, or all.`);
       }

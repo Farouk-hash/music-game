@@ -7,7 +7,7 @@ import { ANSWER_MODE_OPTIONS } from '@/constants';
 
 export function AnswerModePicker({ value, onChange, disabled = false }) {
   return (
-    <HorizontalScroll size="sm">
+    <HorizontalScroll >
       {ANSWER_MODE_OPTIONS.map((opt) => (
         <ChoiceCard
           key={opt.value}

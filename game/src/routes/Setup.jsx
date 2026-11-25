@@ -19,7 +19,7 @@ import { StrictModeToggle } from '@/components/domain/Setup/Years/StrictModeTogg
 import { Level1Modal } from '@/components/domain/Setup/Modals/Level1Modal.jsx';
 import { Level2Modal } from '@/components/domain/Setup/Modals/Level2Modal.jsx';
 import { Level3Modal } from '@/components/domain/Setup/Modals/Level3Modal.jsx';
-import { MultiplayerModal } from '@/components/domain/Multiplayer/MultiplayerModal.jsx';
+import { MultiplayerModal } from '@/components/domain/Multiplayer/Modal/MultiPlayerModal.jsx';
 import { SporcleModal } from '@/components/domain/Setup/Modals/SporcleModal.jsx';
 import { ViewToggle } from '@/components/ui/ViewToggle.jsx';
 import { YearRangeModal } from '@/components/domain/Setup/Years/YearRangeModal.jsx';
@@ -128,8 +128,10 @@ export default function Setup() {
     skips:   settings.skips   ?? 0,
     removes: settings.removes ?? 0,
     reveals: settings.reveals ?? 0,
-    // ✅ CRITICAL FIX: Include memoryGame in the payload
+
     memoryGame: settings.memoryGame,
+
+    multiplayerMode: settings.multiplayerMode ?? 'normal',
   };
 }
 
@@ -143,16 +145,18 @@ export default function Setup() {
     navigate(path);
   }
 
-  function handleMultiplayerStart({ names, level, roundsPerPlayer }) {
+  function handleMultiplayerStart({ names, level, roundsPerPlayer, multiplayerMode }) {
     const payload = buildPayload();
+    
     payload.players = names;
     payload.level = level;
-    payload.roundsPerPlayer = roundsPerPlayer;
-
+    payload.count = roundsPerPlayer;
+    
+    payload.multiplayerMode = multiplayerMode ?? 'normal';     
     sessionStorage.setItem('game.lastPlayParams', JSON.stringify(payload));
     navigate('/play-multi');
   }
-
+  
   function buildScope() {
     const out = {};
     if (scope.genreMode === 'some' && scope.selectedGenres.size > 0) out.genres = [...scope.selectedGenres];

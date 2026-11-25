@@ -1,11 +1,10 @@
 import { options } from '@/constants/memoryGameOptions.js';
+import { HorizontalScroll } from '@/components/ui/HorizontalScroll';
 import { ChoiceCard } from '../Modals/ChoiceCard';
 
 export function MemoryGamePicker({ value, onChange, disabled }) {
-
-
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+    <HorizontalScroll >
       {options.map((opt) => (
         <ChoiceCard
           key={opt.key}
@@ -16,6 +15,6 @@ export function MemoryGamePicker({ value, onChange, disabled }) {
           disabled={disabled}
         />
       ))}
-    </div>
+    </HorizontalScroll>
   );
 }

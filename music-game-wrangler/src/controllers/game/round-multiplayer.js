@@ -36,9 +36,15 @@ export async function getRoundMultiplayer(request, env, ctx) {
   const requestedRoundsPerPlayer = clamp(
     Number(body.count ?? 5), 1, MAX_ROUNDS_PER_PLAYER
   );
-  const perPlayerCap = Math.max(1, Math.floor(MAX_ROUNDS_PER_REQUEST / playerCount));
+  // 'hotpotato': everyone answers the SAME rounds, so only `count` rounds are
+  // built. 'normal': every player gets their own rounds (count * players).
+  const mode = body.mode === 'hotpotato' ? 'hotpotato' : 'normal';
+
+  const perPlayerCap = mode === 'hotpotato'
+    ? MAX_ROUNDS_PER_REQUEST
+    : Math.max(1, Math.floor(MAX_ROUNDS_PER_REQUEST / playerCount));
   const roundsPerPlayer = Math.min(requestedRoundsPerPlayer, perPlayerCap);
-  const totalCount = playerCount * roundsPerPlayer;
+  const totalCount = mode === 'hotpotato' ? roundsPerPlayer : playerCount * roundsPerPlayer;
 
   const innerReq = new Request(request.url, {
     method: 'POST',
@@ -66,6 +72,23 @@ export async function getRoundMultiplayer(request, env, ctx) {
       ? resBody.sets
       : [];
 
+  // Hot potato: one shared list, no per-player split.
+  if (mode === 'hotpotato') {
+    return json({
+      rounds: flatRounds,
+      meta: {
+        ...(resBody.meta ?? {}),
+        level,
+        mode,
+        playerCount,
+        roundsPerPlayer,
+        requestedRoundsPerPlayer,
+        totalRounds: flatRounds.length,
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  }
+
   const players = Array.from({ length: playerCount }, (_, i) => ({
     index: i,
     rounds: [],
@@ -79,6 +102,7 @@ export async function getRoundMultiplayer(request, env, ctx) {
     meta: {
       ...(resBody.meta ?? {}),
       level,
+      mode,
       playerCount,
       roundsPerPlayer,
       requestedRoundsPerPlayer,

@@ -1,7 +1,7 @@
 // game/src/routes/PlayLevels/Play.jsx
-import { usePlayParams } from '@/hooks/rounds/usePlayParams.js';
-import { useRound } from '@/hooks/rounds/useRound.js';
-import { useGameEngine } from '@/hooks/rounds/useGameEngine.js';
+import { usePlayParams } from '@/hooks/rounds/solo/usePlayParams.js';
+import { useRound } from '@/hooks/rounds/solo/useRound.js';
+import { useGameEngine } from '@/hooks/rounds/solo/useGameEngine.js';
 import PlayView from '@/components/domain/Play/PlayView.jsx';
 
 // Module-scope so its identity is stable (useGameEngine memoizes on it).

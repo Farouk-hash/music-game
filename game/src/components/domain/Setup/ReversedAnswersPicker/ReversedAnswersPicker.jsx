@@ -5,7 +5,7 @@ import { REVERSED_ANSWER_OPTIONS } from '@/constants/reversedAnswers';
 
 export function ReversedAnswersPicker({ value, onChange, disabled }) {
   return (
-    <HorizontalScroll size="md">
+    <HorizontalScroll >
       {REVERSED_ANSWER_OPTIONS.map((opt) => (
         <ChoiceCard
           key={opt.value}

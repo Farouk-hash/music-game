@@ -11,6 +11,7 @@ import { ReversedAudioPicker } from '../ReversedAudioPicker/ReversedAudioPicker.
 import { LifelinesPicker } from '../Lifelines/LifeLinesPickers.jsx';
 import { LIFELINE_DEFINITIONS } from '@/constants/lifelines';
 import { MemoryGamePicker } from '../MemoryGamePicker/MemoryGamePicker.jsx';
+import { MultiplayerModePicker } from '../MultiPlayerPotatoMode/GameModePicker.jsx';
 
 export function SharedGameSettings({
   disabledTypes = new Set(),
@@ -25,6 +26,8 @@ export function SharedGameSettings({
   value: controlledValue,
   onChange: controlledOnChange,
   readOnly = false,
+
+  isInMultiplayerModal = false,
 }) {
   const ctx = useGameSettings();
   const isControlled = controlledValue != null && typeof controlledOnChange === 'function';
@@ -37,6 +40,8 @@ export function SharedGameSettings({
   const audioRendition  = isControlled ? controlledValue.audioRendition  : ctx.audioRendition;
   const instruments     = isControlled ? controlledValue.instruments     : ctx.instruments;
   const memoryGame      = isControlled ? controlledValue.memoryGame      : ctx.memoryGame;
+
+  const multiplayerMode = isControlled ? controlledValue.multiplayerMode : ctx.multiplayerMode;
 
   const skips   = isControlled ? (controlledValue.skips   ?? 0) : (ctx.skips   ?? 0);
   const removes = isControlled ? (controlledValue.removes ?? 0) : (ctx.removes ?? 0);
@@ -63,6 +68,15 @@ export function SharedGameSettings({
   const setRemoves         = (v) => write('removes', v);
   const setReveals         = (v) => write('reveals', v);
   const setMemoryGame      = (v) => write('memoryGame', v);
+
+  const setMultiplayerMode = (v) => {
+    if (readOnly) return;
+    if (isControlled) {
+      controlledOnChange({ ...controlledValue, multiplayerMode: v });
+    } else {
+      ctx.setMultiplayerMode(v);
+    }
+  };
 
   const reversedAudioAvailable = reversedClipsCount > 0;
   const isSporcle = variant === 'sporcle';
@@ -291,20 +305,22 @@ export function SharedGameSettings({
       )}
 
       {/* ✅ Memory Game Section */}
-      <section className="space-y-3">
-        <h3 className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">
-          Memory Game
-        </h3>
-        <p className="text-xs text-ink-muted">
-          Memorize answers during play, recall them at the end. 
-          Adds a cognitive challenge to standard rounds.
-        </p>
-        <MemoryGamePicker
-          value={memoryGame} 
-          onChange={setMemoryGame} 
-          disabled={readOnly} 
-        />
-      </section>
+      {!isInMultiplayerModal && (
+        <section className="space-y-3">
+          <h3 className="text-xs font-semibold text-highlight uppercase tracking-[0.2em]">
+            Memory Game
+          </h3>
+          <p className="text-xs text-ink-muted">
+            Memorize answers during play, recall them at the end. 
+            Adds a cognitive challenge to standard rounds.
+          </p>
+          <MemoryGamePicker
+            value={memoryGame} 
+            onChange={setMemoryGame} 
+            disabled={readOnly} 
+          />
+        </section>
+      )}
 
     </div>
   );

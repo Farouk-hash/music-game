@@ -1,5 +1,5 @@
 // game/src/components/domain/Multiplayer/MultiplayerProgress.jsx
-import { SegmentedProgress } from '../../ui/SegmentedProgress.jsx';
+import { SegmentedProgress } from "@/components/ui/SegmentedProgress";
 
 /**
  * Per-player progress bars for the multiplayer session.

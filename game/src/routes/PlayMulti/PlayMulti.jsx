@@ -1,28 +1,119 @@
-// game/src/routes/PlayMulti.jsx
-import { useMultiplayerParams } from '@/hooks/rounds/useMultiplayerParams.js';
-import { useMultiplayerSession } from '@/hooks/rounds/useMultiplayerSession.js';
+import { useMemo } from 'react';
+import { useMultiplayerParams } from '@/hooks/rounds/multiplayers-normal/useMultiplayerParams.js';
 import { Loader } from '@/components/ui/Loader.jsx';
-import { BorderContainer } from '@/components/layout/BorderContainer.jsx';
-import { PromptSource } from '@/components/domain/Rounds/PromptSource.jsx';
-import { AudioPlayer } from '@/components/domain/Rounds/AudioPlayer.jsx';
-import { QuestionCard } from '@/components/domain/Rounds/QuestionCard.jsx';
 import { ErrorBlock } from '@/components/domain/Rounds/ErrorBlock.jsx';
 import { EmptyBlock } from '@/components/domain/Rounds/EmptyBlock';
-import { TimerBar } from '@/components/domain/Setup/Timer/Timerbar.jsx';
-import { useRoundReversal } from '@/hooks/rounds/useRoundReversal.js';
 import { TurnBanner } from '@/components/domain/Multiplayer/TurnBanner.jsx';
-import { PlayerBadge } from '@/components/domain/Multiplayer/PlayerBadge.jsx';
-import { useRoundMultiplayer } from '@/hooks/rounds/useRoundMultiPlayer.js';
 import { Leaderboard } from '@/components/domain/Multiplayer/LeaderBoard.jsx';
-import { MultiplayerProgress } from '@/components/domain/Multiplayer/MultiplayerProgress.jsx';
-import { POSITION_LABELS } from '@/constants';
+import { HotPotatoRevealScreen } from '@/components/domain/Multiplayer/HotPotato/HotPotatoRevealScreen';
+import { useRoundMultiplayer } from '@/hooks/rounds/multiplayers-normal/useRoundMultiplayer.js';
+import { useRoundHotPotato } from '@/hooks/rounds/hotpotato/useRoundHotPotato';
+import { useMultiplayerSession } from '@/hooks/rounds/multiplayers-normal/useMultiplayerSession.js';
+import { useHotPotatoSession } from '@/hooks/rounds/hotpotato/useHotPotatoSession';
+import { flattenSharedRounds } from '@/hooks/rounds/hotpotato/flattenSharedRounds';
+import { useRoundReversal } from '@/hooks/rounds/features/useRoundReversal.js';
+import { HotPotatoPlayingView } from '@/components/domain/Multiplayer/HotPotato/HotPotatoPlayingView.jsx';
+import { NormalPlayingView } from '@/components/domain/Multiplayer/Normal/NormalPlayingView.jsx';
 
+const EMPTY = [];
 
+function makeBuildSuddenDeathUrl(params) {
+  return (mode, winnerNames) => {
+    const payload = {
+      genres: params.genres,
+      artists: params.artists,
+      years: params.years,
+      types: params.types,
+      rendition: params.rendition,
+      instruments: params.instruments,
+      answerMode: mode === 'options' ? 'choose' : 'type',
+      players: winnerNames,
+      level: params.level,
+    };
+    sessionStorage.setItem('game.lastPlayParams', JSON.stringify(payload));
+    return '/sudden-death';
+  };
+}
 
 export default function PlayMulti() {
   const params = useMultiplayerParams();
+  return params.multiplayerMode === 'hotpotato'
+    ? <PlayHotPotato params={params} />
+    : <PlayMultiNormal params={params} />;
+}
 
-   const { data, isLoading, error } = useRoundMultiplayer({
+/* ═══════════════════════ HOT POTATO ═══════════════════════ */
+function PlayHotPotato({ params }) {
+  const { data, isLoading, error } = useRoundHotPotato({
+    genres: params.genres,
+    artists: params.artists,
+    years: params.years,
+    types: params.types,
+    players: params.players,
+    level: params.level,
+    count: params.roundsPerPlayer,
+    rendition: params.rendition,
+    instruments: params.instruments,
+  });
+
+  const sharedRounds = useMemo(
+    () => flattenSharedRounds(data?.rounds ?? EMPTY),
+    [data]
+  );
+
+  const session = useHotPotatoSession({
+    players: params.players,
+    sharedRounds,
+    timerSeconds: params.timerSeconds,
+  });
+
+  const reversal = useRoundReversal(params.reversed, session.trackIndex ?? 0);
+
+  if (isLoading) return <Loader variant="page" label="Preparing Hot Potato rounds…" />;
+  if (error) return <ErrorBlock error={error} />;
+  if (sharedRounds.length === 0) return <EmptyBlock />;
+
+  if (session.phase === 'game-end') {
+    return (
+      <Leaderboard
+        players={params.players}
+        scores={session.aggregatedScores}
+        onReplay={() => window.location.reload()}
+        buildSuddenDeathUrl={makeBuildSuddenDeathUrl(params)}
+      />
+    );
+  }
+
+  if (session.phase === 'revealing') {
+    return (
+      <HotPotatoRevealScreen
+        players={params.players}
+        sharedRounds={sharedRounds}
+        hiddenAnswers={session.hiddenAnswers}
+        aggregatedScores={session.aggregatedScores}
+        onDismiss={() => session.dismissReveal()}
+      />
+    );
+  }
+
+  if (session.phase === 'turn-intro') {
+    return (
+      <TurnBanner
+        playerName={session.currentPlayerName}
+        roundNumber={session.trackIndex + 1}
+        totalRounds={session.totalTracks}
+        onStart={session.startTurn}
+      />
+    );
+  }
+
+  // ✅ PLAYING PHASE - Delegated to sub-component
+  return <HotPotatoPlayingView session={session} params={params} reversal={reversal} />;
+}
+
+/* ═══════════════════════ NORMAL MULTIPLAYER ═══════════════════════ */
+function PlayMultiNormal({ params }) {
+  const { data, isLoading, error } = useRoundMultiplayer({
     genres: params.genres,
     artists: params.artists,
     years: params.years,
@@ -35,13 +126,11 @@ export default function PlayMulti() {
   });
 
   const playerRounds = data?.players ?? [];
-
   const session = useMultiplayerSession({
     players: params.players,
     playerRounds,
     timerSeconds: params.timerSeconds,
   });
-
   const reversal = useRoundReversal(params.reversed, session.roundIndex);
 
   if (isLoading) {
@@ -55,38 +144,17 @@ export default function PlayMulti() {
   if (error) return <ErrorBlock error={error} />;
   if (playerRounds.length === 0) return <EmptyBlock />;
 
-    const buildSuddenDeathUrl = (mode, winnerNames) => {
-      // Build the payload from the current game params
-      const payload = {
-        genres: params.genres,
-        artists: params.artists,
-        years: params.years,
-        types: params.types,
-        rendition: params.rendition,
-        instruments: params.instruments,
-        answerMode: mode === 'options' ? 'choose' : 'type',
-        players: winnerNames,
-        level: params.level, // Keep the same level for sudden death
-      };
-
-      // Save to sessionStorage
-      sessionStorage.setItem('game.lastPlayParams', JSON.stringify(payload));
-      
-      // Navigate
-      return '/sudden-death';
-    };
   if (session.phase === 'game-end') {
     return (
       <Leaderboard
         players={params.players}
         scores={session.scores}
         onReplay={() => window.location.reload()}
-        buildSuddenDeathUrl={buildSuddenDeathUrl}
+        buildSuddenDeathUrl={makeBuildSuddenDeathUrl(params)}
       />
     );
   }
 
-  
   if (session.phase === 'turn-intro') {
     return (
       <TurnBanner
@@ -98,66 +166,6 @@ export default function PlayMulti() {
     );
   }
 
-  // phase === 'playing'
-  const q = session.currentQuestion;
-  const labelFor = (opt) =>
-    q.type === 'name-position'
-      ? POSITION_LABELS[opt.value] ?? opt.label
-      : opt.label;
-
-  const revealClip = session.currentRound?.revealClip;
-
-  return (
-    <div className="space-y-6 max-w-2xl mx-auto">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <PlayerBadge
-          currentIndex={session.currentPlayerIndex}
-          players={params.players}
-          scores={session.scores}
-        />
-        <span className="text-xs text-ink-subtle tabular-nums">
-          Round {session.roundNumber} / {session.totalRounds}
-        </span>
-      </div>
-
-      <MultiplayerProgress
-        players={params.players}
-        scores={session.scores}
-        roundScores={session.roundScores}
-        totalRounds={session.totalRounds}
-        roundIndex={session.roundIndex}
-        currentPlayerIndex={session.currentPlayerIndex}
-      />
-
-      <BorderContainer border="all" className="p-6 space-y-6">
-        {session.hasTimer && (
-          <TimerBar
-            timeLeft={session.timeLeft}
-            total={params.timerSeconds}
-            timedOut={session.timedOut}
-          />
-        )}
-
-        <PromptSource round={session.currentRound} />
-
-        <QuestionCard
-          eyebrow={q.type.replace('name-', '').replace('lyrics-', '')}
-          prompt={q.prompt}
-          options={q.options}
-          correctValue={q.correctValue}
-          picked={session.picked}
-          revealed={session.revealed}
-          onPick={session.pick}
-          onNext={session.next}
-          nextLabel={session.isLastQuestionOverall ? 'See final scores' : 'Next →'}
-          labelFor={labelFor}
-          answerMode={params.answerMode}
-          questionType={q.type}
-          source={session.currentRound?.source}
-          reversal={reversal}
-          revealExtra={revealClip ? <AudioPlayer src={revealClip.serveUrl} /> : null}
-        />
-      </BorderContainer>
-    </div>
-  );
+  // ✅ PLAYING PHASE - Delegated to sub-component
+  return <NormalPlayingView session={session} params={params} reversal={reversal} />;
 }

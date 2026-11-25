@@ -5,6 +5,11 @@ import { QUESTION_TYPE_VALUES } from '@/constants/questionTypes.js';
 const GameSettingsContext = createContext(null);
 
 export function GameSettingsProvider({ children }) {
+  const [multiplayerMode, setMultiplayerMode] = useState(() => {
+    const saved = localStorage.getItem('game.multiplayerMode');
+    return ['normal', 'hotpotato'].includes(saved) ? saved : 'normal';
+  });
+
   const [questionTypes, setQuestionTypes] = useState(QUESTION_TYPE_VALUES);
   const [answerMode, setAnswerMode] = useState(() =>
     localStorage.getItem('game.answerMode') || 'choose'
@@ -59,7 +64,10 @@ export function GameSettingsProvider({ children }) {
     localStorage.setItem('game.removes', String(removes));
     localStorage.setItem('game.reveals', String(reveals));
     localStorage.setItem('game.memoryGame', memoryGame);
-  }, [answerMode, reversedAnswers, timer, audioRendition, instruments, skips, removes, reveals , memoryGame]);
+
+    localStorage.setItem('game.multiplayerMode', multiplayerMode);
+
+  }, [answerMode, reversedAnswers, timer, audioRendition, instruments, skips, removes, reveals , memoryGame , multiplayerMode]);
 
   const applySettings = useCallback((partial) => {
     if (partial.questionTypes !== undefined) setQuestionTypes(partial.questionTypes);
@@ -89,6 +97,9 @@ export function GameSettingsProvider({ children }) {
     // MEMORY GAME ADDED ;
     memoryGame, setMemoryGame,
 
+    // POTATO MODE ; 
+    multiplayerMode, setMultiplayerMode,
+    
     applySettings,
   };
 

@@ -6,7 +6,7 @@ import { BorderContainer } from '@/components/layout/BorderContainer.jsx';
 import { Button } from '@/components/ui/Button.jsx';
 import { Loader } from '@/components/ui/Loader.jsx';
 import { fetchStreakQuestions } from './fetchQuestions';
-import { isAnswerCorrect } from '@/hooks/rounds/answerCheck';
+import { isAnswerCorrect } from '@/hooks/rounds/features/answerCheck';
 import { useChallengeConfig } from '@/context/ChallengeConfigContext';
 import { ChallengePreview } from '@/components/domain/Streak/Challenge/ChallengePreview';
 import { ChallengePlay } from '@/components/domain/Streak/Challenge/ChallengePlay';

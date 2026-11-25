@@ -20,12 +20,19 @@ export function usePlayCollection() {
 
       types: targetRound.questionTypes || [],
       answerMode: targetRound.answerMode || 'choose',
-      // FIX: pass raw seconds value (or null) — not 'on'/'off'
       timer: targetRound.timer ?? null,
       reversed: targetRound.reversedAnswers || 'no',
       instruments: targetRound.instruments || 'none',
       rendition: targetRound.reversedAudio ? 'reverse' : 'forward',
       count: targetRound.rounds || 10,
+
+      // ✅ NEW: Extract lifelines from collection round config
+      skips: targetRound.skips ?? 0,
+      removes: targetRound.removes ?? 0,
+      reveals: targetRound.reveals ?? 0,
+
+      // ✅ NEW: Include Memory Game mode
+      memoryGame: targetRound.memoryGame || 'none',
 
       level: Number(level),
     };
@@ -37,9 +44,6 @@ export function usePlayCollection() {
     if (onPlay) onPlay();
   }
 
-  // Templates and collections share the same shape:
-  // { genresIds, artistsIds, years, rounds: [...], levels: [...] }
-  // So a single `launch` handles both.
   const startGame = (collection, level, onPlay) => launch(collection, level, onPlay);
   const startTemplate = (template, level, onPlay) => launch(template, level, onPlay);
 

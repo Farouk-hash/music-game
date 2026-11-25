@@ -1,9 +1,9 @@
 // game/src/hooks/rounds/useGameEngine.js
 import { useMemo } from 'react';
-import { usePlaySession } from '@/hooks/rounds/usePlaySession.js';
-import { useLifelines } from '@/hooks/rounds/useLifelines.js';
-import { useRoundReversal } from '@/hooks/rounds/useRoundReversal.js';
-import { tagMemoryRounds } from '../memory/tagMemoryRounds.js';
+import { usePlaySession } from '@/hooks/rounds/solo/usePlaySession.js';
+import { useLifelines } from '@/hooks/rounds/features/useLifelines.js';
+import { useRoundReversal } from '@/hooks/rounds/features/useRoundReversal.js';
+import { tagMemoryRounds } from '../../memory/tagMemoryRounds.js';
 
 const EMPTY = [];
 const identity = (r) => r;

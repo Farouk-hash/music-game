@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/Button.jsx';
 import { OptionsGrid } from './OptionsGrid.jsx';
 import { TextAnswerInput } from '../TextAnswerInput/TextAnswerInput.jsx';
-import { isAnswerCorrect } from '@/hooks/rounds/answerCheck.js';
+import { isAnswerCorrect } from '@/hooks/rounds/features/answerCheck.js';
 import { applyReversal } from '@/lib/reverseText.js';
 import { Reveal } from '@/components/ui/Reveal.jsx';
 import { LifelinesBar } from './LifelinesBar.jsx';

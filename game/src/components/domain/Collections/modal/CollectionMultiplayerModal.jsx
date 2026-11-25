@@ -1,5 +1,5 @@
 // game/src/components/domain/Collections/modal/CollectionMultiplayerModal.jsx
-import { MultiplayerModal } from '@/components/domain/Multiplayer/MultiplayerModal.jsx';
+import { MultiplayerModal } from '@/components/domain/Multiplayer/Modal/MultiPlayerModal.jsx';
 
 export function CollectionMultiplayerModal({
   collection,

@@ -1,8 +1,8 @@
 // game/src/hooks/rounds/useGameEngineL3.js
 import { useMemo } from 'react';
-import { usePlaySession } from '@/hooks/rounds/usePlaySession.js';
-import { useLifelines } from '@/hooks/rounds/useLifelines.js';
-import { tagMemoryRounds } from '../memory/tagMemoryRounds.js';
+import { usePlaySession } from '@/hooks/rounds/solo/usePlaySession.js';
+import { useLifelines } from '@/hooks/rounds/features/useLifelines.js';
+import { tagMemoryRounds } from '../../memory/tagMemoryRounds.js';
 
 const EMPTY = [];
 

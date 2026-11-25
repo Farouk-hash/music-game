@@ -35,9 +35,11 @@ export function CollectionEditor({
         ? `r:${draft.years.values}`
         : `s:${[...draft.years.values].sort((a, b) => a - b).join(',')}`
       : 'null';
-    const rounds = draft.rounds.map((r) =>
-      `${r.level}|${r.mode}|${r.questionTypes.join('+')}|${r.answerMode}|${r.rounds}|${r.reversedAnswers ? 1 : 0}|${r.reversedAudio ? 1 : 0}|${r.instruments}|${r.timer ?? ''}`
-    ).join(';');
+    
+      const rounds = draft.rounds.map((r) =>
+        `${r.level}|${r.mode}|${r.questionTypes.join('+')}|${r.answerMode}|${r.rounds}|${r.reversedAnswers ? 1 : 0}|${r.reversedAudio ? 1 : 0}|${r.instruments}|${r.timer ?? ''}|${r.skips ?? 0}|${r.removes ?? 0}|${r.reveals ?? 0}|${r.memoryGame || 'none'}`
+      ).join(';');
+  
     const cover = draft.coverFile ? 'staged' : (draft.cover?.kind ?? 'generated');
     return `${draft.name.trim()}|${levels.join(',')}|${genres.join(',')}|${artists.join(',')}|${years}|${rounds}|${cover}`;
   }, [draft]);

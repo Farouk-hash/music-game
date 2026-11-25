@@ -11,7 +11,7 @@ import { SuddenDeathQuestionCard } from '@/components/domain/SuddenDeath/SuddenD
 import PassAndPlayInput from '@/components/domain/SuddenDeath/PassAndPlayInput.jsx';
 import SuddenDeathReveal from '@/components/domain/SuddenDeath/SuddenDeathReveal.jsx';
 import SuddenDeathResult from '@/components/domain/SuddenDeath/SuddenDeathResult.jsx';
-import { usePlayParams } from '@/hooks/rounds/usePlayParams';
+import { usePlayParams } from '@/hooks/rounds/solo/usePlayParams';
 import { POSITION_LABELS } from '@/constants';
 
 

@@ -7,7 +7,7 @@ export function TimerPicker({ value, onChange, disabled = false }) {
   const OPTIONS = getTimerOptions();
 
   return (
-    <HorizontalScroll size="sm">
+    <HorizontalScroll>
       {OPTIONS.map((opt) => (
         <ChoiceCard
           key={opt.label}

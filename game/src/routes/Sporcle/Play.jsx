@@ -14,7 +14,7 @@ import { useHostSporcle } from '@/hooks/sporcle/useHostSporcle.js';
 import { useHostSporcleIdentity } from '@/hooks/sporcle/useHostSporcleIdentity.js';
 import { useHostSporcleActions } from '@/hooks/sporcle/useHostSporcleActions.js';
 import { useSporclePresence } from '@/hooks/sporcle/useSporclePresence.js';
-import { useRoundReversal } from '@/hooks/rounds/useRoundReversal.js';
+import { useRoundReversal } from '@/hooks/rounds/features/useRoundReversal.js';
 import { useRoomProfiles } from '@/hooks/sporcle/useRoomProfiles.js';
 import { ChatButton } from '@/components/domain/Sporcle/ChatButton.jsx';
 import { ChatModal } from '@/components/domain/Sporcle/ChatModal.jsx';

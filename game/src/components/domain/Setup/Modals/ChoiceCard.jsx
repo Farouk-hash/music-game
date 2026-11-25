@@ -6,7 +6,8 @@ export function ChoiceCard({ active, onClick, title, description, disabled }) {
       disabled={disabled}
       aria-pressed={active}
       className={[
-        'w-full h-full text-left p-3 rounded-md border transition-colors space-y-1', // <-- w-full h-full
+        // ✅ PURE FLEX: No w-full, no min-w. Just grow to fill available space.
+        'flex-1 shrink-0 text-left p-3 rounded-md border transition-colors space-y-1', 
         active
           ? 'bg-accent-soft border-accent text-ink'
           : 'bg-surface-2 border-border text-ink-muted hover:border-accent-2',
@@ -14,7 +15,9 @@ export function ChoiceCard({ active, onClick, title, description, disabled }) {
       ].join(' ')}
     >
       <p className="text-sm font-semibold">{title}</p>
-      <p className="text-[11px] leading-tight">{description}</p>
+      <p className="text-[11px] leading-snug whitespace-normal break-words">
+        {description}
+      </p>
     </button>
   );
 }
